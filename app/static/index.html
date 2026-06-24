@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>CleanRun IQ</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-row">
+      <div class="logo-mark">C</div>
+      <div class="logo-word">CleanRun <span>IQ</span></div>
+    </div>
+    <div class="project-line" id="activeProject">Loading project…</div>
+  </header>
+
+  <main class="shell">
+    <section class="hero-card">
+      <div>
+        <p class="eyebrow">Capture Item</p>
+        <h1>Photo first. Assign. Close with proof.</h1>
+      </div>
+      <button class="small-btn" id="resetDemo">Reset demo</button>
+    </section>
+
+    <section class="card photo-first">
+      <div class="section-title-row">
+        <div>
+          <h2>Photo Evidence</h2>
+          <p id="photoRequirement">Required for this item type</p>
+        </div>
+        <span class="required-chip">Evidence first</span>
+      </div>
+      <p class="helper">Start with evidence. Defects and client defects require at least one photo.</p>
+      <div class="photo-actions">
+        <label class="photo-btn photo-btn-primary">
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+          <span>Take Photo</span>
+        </label>
+        <label class="photo-btn">
+          <input id="libraryInput" type="file" accept="image/*" multiple hidden />
+          <span>Upload Photo</span>
+        </label>
+      </div>
+      <div class="thumb-row" id="thumbRow"></div>
+    </section>
+
+    <section class="voice-card">
+      <div class="section-title-row">
+        <div>
+          <h2>Voice-to-Note AI</h2>
+          <p>After adding evidence, describe the item and CleanRun IQ will draft the fields.</p>
+        </div>
+      </div>
+      <textarea id="voiceNote" placeholder="No mic? Type the note instead. e.g. B3 Unit 201 bathroom cracked tile, tiler to action"></textarea>
+      <button class="secondary-btn" id="draftFromNote">Draft form from note</button>
+    </section>
+
+    <section class="form-panel">
+      <div class="form-group">
+        <h3>Task</h3>
+        <label>Item type</label>
+        <select id="type">
+          <option value="defect">Defect</option>
+          <option value="incomplete">Incomplete Work</option>
+          <option value="client">Client Defect</option>
+        </select>
+
+        <div id="raisedByWrap" class="hidden">
+          <label>Raised by *</label>
+          <select id="raisedBy"></select>
+        </div>
+
+        <label>Priority</label>
+        <select id="priority">
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <h3>Location</h3>
+        <label>Project</label>
+        <select id="project"></select>
+        <label>Building *</label>
+        <input id="building" list="buildingOptions" placeholder="Select or type building" />
+        <datalist id="buildingOptions"></datalist>
+        <label>Level</label>
+        <input id="level" list="levelOptions" placeholder="Select or type level" />
+        <datalist id="levelOptions"></datalist>
+        <label>Unit / Area *</label>
+        <input id="unit" list="unitOptions" placeholder="Select or type unit / area" />
+        <datalist id="unitOptions"></datalist>
+        <label>Room / Location</label>
+        <input id="room" list="roomOptions" placeholder="Select or type room" />
+        <datalist id="roomOptions"></datalist>
+      </div>
+
+      <div class="form-group">
+        <h3>Assign</h3>
+        <label>Trade</label>
+        <select id="trade"></select>
+        <label>Subcontractor</label>
+        <input id="subcontractor" list="subOptions" placeholder="Select or type subcontractor" />
+        <datalist id="subOptions"></datalist>
+        <label>Due date</label>
+        <input id="dueDate" type="date" />
+      </div>
+
+      <div class="form-group last">
+        <h3>Description</h3>
+        <textarea id="description" placeholder="Short, specific. e.g. Cracked tile under vanity, replace and regrout."></textarea>
+      </div>
+    </section>
+
+    <div class="action-bar">
+      <button class="ghost-btn" id="saveBtn">Save</button>
+      <button class="primary-btn" id="issueBtn">Issue Now</button>
+    </div>
+
+    <section class="list-section">
+      <div class="section-title-row">
+        <h2>Items</h2>
+        <a href="/api/reports/handover" target="_blank">Handover report</a>
+      </div>
+      <div id="itemsList" class="items-list"></div>
+    </section>
+  </main>
+
+  <div id="keyboardDone" class="keyboard-done hidden">Done</div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
