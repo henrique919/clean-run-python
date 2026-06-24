@@ -24,6 +24,31 @@
       <button class="small-btn" id="resetDemo" type="button">Reset demo</button>
     </section>
 
+    <section class="register-tools">
+      <div id="statsBar" class="stats-grid" aria-label="Register summary"></div>
+      <div class="tool-row">
+        <input id="searchInput" type="search" placeholder="Search item, trade, subbie, location…" />
+        <select id="statusFilter" aria-label="Filter status">
+          <option value="all">All statuses</option>
+          <option value="open">Open</option>
+          <option value="issued">Issued</option>
+          <option value="in_progress">In progress</option>
+          <option value="ready_for_review">Ready for review</option>
+          <option value="under_inspection">Under inspection</option>
+          <option value="rejected">Rejected</option>
+          <option value="closed">Closed</option>
+          <option value="complete">Complete</option>
+        </select>
+      </div>
+      <div class="report-row">
+        <a href="/api/reports/open" target="_blank" rel="noreferrer">Open report</a>
+        <a href="/api/reports/overdue" target="_blank" rel="noreferrer">Overdue</a>
+        <a href="/api/reports/client" target="_blank" rel="noreferrer">Client defects</a>
+        <a href="/api/reports/incomplete" target="_blank" rel="noreferrer">Incomplete works</a>
+        <a href="/api/reports/handover" target="_blank" rel="noreferrer">Handover</a>
+      </div>
+    </section>
+
     <section class="card photo-first">
       <div class="section-title-row">
         <div>
@@ -125,7 +150,7 @@
     <section class="list-section">
       <div class="section-title-row">
         <h2>Items</h2>
-        <a href="/api/reports/handover" target="_blank" rel="noreferrer">Handover report</a>
+        <span class="list-count" id="listCount">0 shown</span>
       </div>
       <div id="itemsList" class="items-list"></div>
     </section>
