@@ -349,18 +349,45 @@ function locationText(item) {
   return [item.building, item.level, item.unit, item.room].filter(Boolean).join(" / ") || "Unassigned location";
 }
 
+function filteredItems() {
+  const query = ($("searchInput")?.value || "").trim().toLowerCase();
+  const status = $("statusFilter")?.value || "all";
+  return state.items.filter((item) => {
+    if (status !== "all" && item.status !== status) return false;
+    if (!query) return true;
+    return [item.code, item.type, item.status, item.description, item.project, item.building, item.level, item.unit, item.room, item.trade, item.subcontractor]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
+}
+
+function renderStats() {
+  const bar = $("statsBar");
+  if (!bar) return;
+  const terminal = new Set(["closed", "complete"]);
+  const today = new Date().toISOString().slice(0, 10);
+  const open = state.items.filter((item) => !terminal.has(item.status)).length;
+  const overdue = state.items.filter((item) => !terminal.has(item.status) && item.due_date && item.due_date < today).length;
+  const closed = state.items.filter((item) => terminal.has(item.status)).length;
+  const stats = [[state.items.length, "Total"], [open, "Open"], [overdue, "Overdue"], [closed, "Closed"]];
+  bar.innerHTML = stats.map(([value, label]) => `<div class="stat-card"><span class="stat-value">${value}</span><span class="stat-label">${label}</span></div>`).join("");
+}
+
 function renderItems() {
   const list = $("itemsList");
   if (!list) return;
+  const items = filteredItems();
+  renderStats();
+  if ($("listCount")) $("listCount").textContent = `${items.length} shown`;
   list.textContent = "";
-  if (state.items.length === 0) {
+  if (items.length === 0) {
     const empty = document.createElement("div");
     empty.className = "item-card";
-    empty.innerHTML = `<div class="code">No items</div><div class="meta">Capture the first item to start the register.</div>`;
+    empty.innerHTML = `<div class="code">No matching items</div><div class="meta">Adjust the register filters or capture a new item.</div>`;
     list.appendChild(empty);
     return;
   }
-  state.items.slice(0, 18).forEach((item) => {
+  items.slice(0, 50).forEach((item) => {
     const counts = evidenceCounts(item);
     const div = document.createElement("div");
     div.className = `item-card status-${item.status}`;
@@ -388,9 +415,12 @@ function renderItems() {
         <button type="button" data-edit>Edit</button>
         <button type="button" data-issue>Issue</button>
         <button type="button" data-progress>In Progress</button>
+        <button type="button" data-rectify>Add Rectification</button>
         <button type="button" data-ready>Ready</button>
         <button type="button" data-inspect>Inspect</button>
+        <button type="button" data-reject>Reject</button>
         <button type="button" data-close>Close</button>
+        <button type="button" data-comment>Comment</button>
         <button type="button" data-report>Report</button>
       </div>`;
     div.querySelector("[data-edit]").onclick = () => openEdit(item);
@@ -410,12 +440,54 @@ function renderItems() {
       } catch (error) { toast(error.message || "Issue failed"); }
     };
     div.querySelector("[data-progress]").onclick = () => action(item.id, "in-progress").then(() => toast("Marked in progress")).catch((e) => toast(e.message));
+    div.querySelector("[data-rectify]").onclick = () => addRectification(item);
     div.querySelector("[data-ready]").onclick = () => action(item.id, "ready").then(() => toast("Marked ready for review")).catch((e) => toast(e.message));
     div.querySelector("[data-inspect]").onclick = () => action(item.id, "inspection/start").then(() => toast("Inspection started")).catch((e) => toast(e.message));
+    div.querySelector("[data-reject]").onclick = () => rejectItem(item);
     div.querySelector("[data-close]").onclick = () => closeItem(item);
+    div.querySelector("[data-comment]").onclick = () => addComment(item);
     div.querySelector("[data-report]").onclick = () => window.open("/api/reports/handover", "_blank");
     list.appendChild(div);
   });
+}
+
+async function postItemUpdate(item, endpoint, body, successMessage) {
+  try {
+    const res = await fetch(`/api/items/${item.id}/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || "Action failed");
+    }
+    const updated = await res.json();
+    const index = state.items.findIndex((candidate) => candidate.id === item.id);
+    if (index >= 0) state.items[index] = updated;
+    renderItems();
+    toast(successMessage);
+  } catch (error) {
+    toast(error.message || "Action failed");
+  }
+}
+
+function addRectification(item) {
+  const comment = prompt("Rectification evidence", "Works completed and ready for review.");
+  if (comment === null || !comment.trim()) return;
+  postItemUpdate(item, "rectification", { by: state.settings.prepared_by, comment: comment.trim(), advance_to_ready: false }, "Rectification evidence added");
+}
+
+function rejectItem(item) {
+  const reason = prompt("Reason for rejection");
+  if (reason === null || !reason.trim()) return;
+  postItemUpdate(item, "inspection/reject", { by: state.settings.prepared_by, reason: reason.trim() }, "Item rejected");
+}
+
+function addComment(item) {
+  const comment = prompt("Add register comment");
+  if (comment === null || !comment.trim()) return;
+  postItemUpdate(item, "comments", { by: state.settings.prepared_by, text: comment.trim() }, "Comment added");
 }
 
 async function closeItem(item) {
@@ -534,6 +606,13 @@ function bind() {
   if ($("editType")) $("editType").onchange = () => $("editRaisedByWrap").classList.toggle("hidden", $("editType").value !== "client");
   if ($("editProject")) $("editProject").onchange = () => { refreshEditProjectConfig($("editProject").value); $("editBuilding").value = ""; $("editLevel").value = ""; $("editUnit").value = ""; $("editRoom").value = ""; };
   if ($("editTrade")) $("editTrade").onchange = () => { refreshEditSubcontractors(); $("editSubcontractor").value = ""; };
+  if ($("searchInput")) $("searchInput").oninput = renderItems;
+  if ($("statusFilter")) $("statusFilter").onchange = renderItems;
+  if ($("clearFilters")) $("clearFilters").onclick = () => {
+    if ($("searchInput")) $("searchInput").value = "";
+    if ($("statusFilter")) $("statusFilter").value = "all";
+    renderItems();
+  };
 }
 
 bindKeyboardDone();
