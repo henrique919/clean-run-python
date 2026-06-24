@@ -49,8 +49,8 @@ def group_by_location(items: list[Item]) -> dict[str, list[Item]]:
     return dict(sorted(groups.items(), key=lambda pair: pair[0]))
 
 
-def evidence_chip(label: str, count: int, color: str) -> str:
-    return f'<span class="ev" style="background:{color}1a;color:{color}">{escape(label)}: {count}</span>'
+def evidence_badge(label: str, count: int, klass: str) -> str:
+    return f'<span class="ev {klass}">{escape(label)} {count}</span>'
 
 
 def photo_cell(value: str | None, caption: str | None = None, by: str | None = None) -> str:
@@ -60,37 +60,57 @@ def photo_cell(value: str | None, caption: str | None = None, by: str | None = N
     if value and value.startswith("seed://"):
         label = caption or value.replace("seed://", "").replace("/", " · ")
     by_html = f'<div class="by">{escape(by)}</div>' if by else ""
-    return f'<div class="photo"><div class="cap">📷 {escape(label)}</div>{by_html}</div>'
+    return f'<div class="photo"><div class="cap">Photo · {escape(label)}</div>{by_html}</div>'
 
 
 def item_card(item: Item) -> str:
     closeout = item.closeout_evidence[0] if item.closeout_evidence else None
-    original = "".join(photo_cell(p) for p in item.original_photos) or '<div class="none">No photos</div>'
-    rectification = "".join(photo_cell(e.photo, e.comment, e.by) for e in item.rectification_evidence) or '<div class="none">—</div>'
-    closeout_html = "".join(photo_cell(e.photo, e.note, f"{e.by} ({e.role})") for e in item.closeout_evidence) or '<div class="none">—</div>'
-    signoff = f'<div class="signoff">✓ Signed off by {escape(closeout.by)} ({escape(closeout.role)})</div>' if closeout else ""
+    status_class = str(item.status).replace("_", "-")
+    original = "".join(photo_cell(p) for p in item.original_photos) or '<div class="none">No original evidence</div>'
+    rectification = "".join(photo_cell(e.photo, e.comment, e.by) for e in item.rectification_evidence) or '<div class="none">No rectification evidence</div>'
+    closeout_html = "".join(photo_cell(e.photo, e.note, f"{e.by} ({e.role})") for e in item.closeout_evidence) or '<div class="none">No closeout evidence</div>'
+    signoff = f'<div class="signoff">Signed off by {escape(closeout.by)} · {escape(closeout.role)}</div>' if closeout else ""
+    overdue_class = " overdue" if is_overdue(item) else ""
     return f"""
-    <article class="item">
+    <article class="item status-{escape(status_class)}">
       <div class="item-head">
-        <div><span class="code">{escape(item.code)}</span><span class="type">{escape(TYPE_LABEL[item.type])}</span></div>
-        <span class="status status-{escape(item.status)}">{escape(STATUS_LABEL[item.status])}</span>
+        <div>
+          <div class="code">{escape(item.code)}</div>
+          <div class="type">{escape(TYPE_LABEL[item.type])}</div>
+        </div>
+        <span class="status-badge status-{escape(status_class)}">{escape(STATUS_LABEL[item.status])}</span>
       </div>
-      <div class="loc">{escape(location(item))} · {escape(item.trade or '—')} · {escape(item.subcontractor or 'Unassigned')}</div>
+      <div class="register-line">
+        <span>{escape(location(item))}</span>
+        <span>{escape(item.trade or 'No trade')}</span>
+        <span>{escape(item.subcontractor or 'Unassigned')}</span>
+      </div>
       <div class="desc">{escape(item.description)}</div>
       <div class="evidence-cols">
-        <div class="col"><div class="col-title">Original issue</div>{original}</div>
-        <div class="col"><div class="col-title">Rectification</div>{rectification}</div>
-        <div class="col"><div class="col-title">Closeout</div>{closeout_html}</div>
+        <div class="col original"><div class="col-title">Original issue evidence</div>{original}</div>
+        <div class="col rectification"><div class="col-title">Subcontractor rectification</div>{rectification}</div>
+        <div class="col closeout"><div class="col-title">Supervisor closeout</div>{closeout_html}</div>
       </div>
       {signoff}
       <div class="meta-line">
-        {evidence_chip('Original', len(item.original_photos), '#0E1F3A')}
-        {evidence_chip('Rectification', len(item.rectification_evidence), '#F59E0B')}
-        {evidence_chip('Closeout', len(item.closeout_evidence), '#16A34A')}
-        <span class="due {'overdue' if is_overdue(item) else ''}">Due {escape(item.due_date)}</span>
+        {evidence_badge('Original', len(item.original_photos), 'original')}
+        {evidence_badge('Rectification', len(item.rectification_evidence), 'rectification')}
+        {evidence_badge('Closeout', len(item.closeout_evidence), 'closeout')}
+        <span class="due{overdue_class}">Due {escape(item.due_date)}</span>
       </div>
     </article>
     """
+
+
+def build_section(title: str, items: list[Item]) -> str:
+    groups = group_by_location(items)
+    if not groups:
+        return '<div class="none block">No items in this section.</div>'
+    body = "".join(
+        f'<section class="group"><h3>{escape(key)}</h3>{"".join(item_card(i) for i in group)}</section>'
+        for key, group in groups.items()
+    )
+    return f'<section class="report-section"><h2>{escape(title)}</h2>{body}</section>'
 
 
 def build_report_html(items: list[Item], settings: Settings, report_type: str = "handover") -> str:
@@ -98,21 +118,17 @@ def build_report_html(items: list[Item], settings: Settings, report_type: str = 
     filtered = filter_items(items, report_type)
     closed = [i for i in filtered if i.status in {ItemStatus.CLOSED, ItemStatus.COMPLETE}]
     outstanding = [i for i in filtered if i.status not in {ItemStatus.CLOSED, ItemStatus.COMPLETE}]
-    main_items = closed if report_type == "handover" else filtered
-    groups = group_by_location(main_items)
 
-    group_html = "".join(
-        f'<section class="group"><h2>{escape(key)}</h2>{"".join(item_card(i) for i in group)}</section>'
-        for key, group in groups.items()
-    )
+    if report_type == "handover":
+        main_html = build_section("Closed / Complete Evidence", closed)
+        outstanding_html = build_section("Outstanding / Rejected", outstanding) if outstanding else ""
+    else:
+        main_html = build_section(title, filtered)
+        outstanding_html = ""
 
-    outstanding_html = ""
-    if report_type == "handover" and outstanding:
-        rows = "".join(
-            f'<div class="out-row"><span class="code">{escape(i.code)}</span> {escape(location(i))} — <strong>{escape(STATUS_LABEL[i.status])}</strong>{" · " + escape(i.rejection_reason) if i.rejection_reason else ""}</div>'
-            for i in outstanding
-        )
-        outstanding_html = f'<section class="outstanding"><h2>Outstanding / Rejected ({len(outstanding)})</h2>{rows}</section>'
+    generated = date.today().isoformat()
+    overdue = len([i for i in filtered if is_overdue(i)])
+    client_count = len([i for i in filtered if i.type == "client"])
 
     return f"""<!doctype html>
 <html>
@@ -121,57 +137,84 @@ def build_report_html(items: list[Item], settings: Settings, report_type: str = 
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{escape(title)} Report</title>
 <style>
-* {{ box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color:#0E1B2E; margin:0; padding:28px; background:#fff; }}
-.header {{ display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #0E1F3A; padding-bottom:16px; margin-bottom:18px; }}
-.logo {{ font-size:30px; font-weight:900; color:#0E1F3A; letter-spacing:-1px; }}
-.logo span {{ color:#09B734; }}
-.meta {{ text-align:right; color:#5A6B82; font-size:12px; }}
-h1 {{ margin:0 0 4px; font-size:24px; color:#0E1F3A; }}
-.subtitle {{ color:#5A6B82; font-size:13px; margin-bottom:18px; }}
-.summary {{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:18px 0; }}
-.stat {{ background:#F4F6F9; border-radius:12px; padding:14px; text-align:center; }}
-.num {{ font-size:26px; font-weight:900; color:#0E1F3A; }}
-.lbl {{ font-size:10px; color:#5A6B82; text-transform:uppercase; letter-spacing:.4px; }}
-.group h2 {{ background:#0E1F3A; color:#fff; border-radius:8px; padding:8px 12px; font-size:14px; }}
-.item {{ border:1px solid #E3E8F0; border-radius:12px; padding:14px; margin-top:10px; page-break-inside:avoid; }}
-.item-head {{ display:flex; justify-content:space-between; gap:12px; align-items:center; }}
-.code {{ font-weight:900; color:#0E1F3A; }}
-.type {{ margin-left:8px; color:#5A6B82; font-size:11px; }}
-.status {{ font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; background:#EEF1F6; color:#5A6B82; }}
-.status-closed,.status-complete {{ background:#DCFCE7; color:#15803D; }}
-.status-rejected {{ background:#FEE2E2; color:#B91C1C; }}
-.loc {{ color:#5A6B82; font-size:12px; margin-top:4px; }}
-.desc {{ font-size:13px; margin:8px 0; }}
-.evidence-cols {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:8px; }}
-.col {{ background:#F8FAFC; border-radius:8px; padding:8px; }}
-.col-title {{ color:#5A6B82; font-size:10px; font-weight:800; text-transform:uppercase; margin-bottom:6px; }}
-.photo {{ background:#E7ECF5; border-radius:6px; padding:8px; margin-bottom:6px; font-size:11px; }}
-.by {{ color:#64748B; font-size:10px; margin-top:2px; }}
-.none {{ color:#94A3B8; font-size:11px; }}
-.signoff {{ color:#15803D; font-weight:700; font-size:12px; margin-top:8px; }}
-.meta-line {{ display:flex; gap:6px; align-items:center; margin-top:8px; }}
-.ev {{ font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; }}
-.due {{ margin-left:auto; font-size:11px; color:#5A6B82; }}
-.due.overdue {{ color:#B91C1C; font-weight:900; }}
-.outstanding {{ border-top:2px solid #FEE2E2; margin-top:22px; padding-top:12px; }}
-.outstanding h2 {{ color:#B91C1C; font-size:15px; }}
-.out-row {{ font-size:12px; padding:6px 0; border-bottom:1px solid #F1F5F9; }}
-.footer {{ margin-top:24px; text-align:center; color:#94A3B8; font-size:11px; }}
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+* {{ box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+body {{ font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color:#1E2328; margin:0; padding:28px; background:#F3F1EC; }}
+.report-shell {{ background:#fff; border:1px solid #D8D3C8; padding:24px; }}
+.header {{ display:grid; grid-template-columns:1.2fr .8fr; gap:24px; border-bottom:4px solid #E86D24; padding-bottom:16px; margin-bottom:18px; }}
+.logo {{ font-family:'Barlow Condensed', 'Arial Narrow', sans-serif; font-size:36px; font-weight:800; letter-spacing:.2px; color:#20252B; text-transform:uppercase; }}
+.logo span {{ color:#E86D24; }}
+.tag {{ color:#667085; font-size:12px; text-transform:uppercase; letter-spacing:1px; font-weight:800; margin-top:2px; }}
+.meta {{ text-align:right; color:#667085; font-size:12px; line-height:1.5; }}
+h1,h2,h3 {{ font-family:'Barlow Condensed', 'Arial Narrow', sans-serif; text-transform:uppercase; letter-spacing:.3px; }}
+h1 {{ margin:0; font-size:34px; color:#20252B; line-height:.95; }}
+.subtitle {{ color:#667085; font-size:13px; margin:6px 0 18px; }}
+.summary {{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:18px 0 22px; }}
+.stat {{ background:#FAF8F2; border:1px solid #D8D3C8; border-left:4px solid #20252B; padding:12px; }}
+.stat:nth-child(2) {{ border-left-color:#15803D; }}
+.stat:nth-child(3) {{ border-left-color:#B42318; }}
+.stat:nth-child(4) {{ border-left-color:#2F80ED; }}
+.num {{ font-family:'Barlow Condensed', sans-serif; font-size:30px; line-height:.9; font-weight:800; color:#20252B; }}
+.lbl {{ font-size:10px; color:#667085; text-transform:uppercase; letter-spacing:.6px; font-weight:800; margin-top:5px; }}
+.report-section {{ margin-top:18px; }}
+.report-section > h2 {{ background:#20252B; color:#fff; padding:8px 12px; font-size:20px; margin:0 0 10px; border-left:5px solid #E86D24; }}
+.group h3 {{ color:#20252B; border-bottom:2px solid #D8D3C8; padding-bottom:5px; margin:16px 0 8px; font-size:16px; }}
+.item {{ border:1px solid #D8D3C8; border-left:6px solid #BDB6A7; padding:12px; margin-top:10px; page-break-inside:avoid; }}
+.item.status-closed,.item.status-complete {{ border-left-color:#15803D; }}
+.item.status-rejected {{ border-left-color:#B42318; }}
+.item.status-ready-for-review,.item.status-under-inspection {{ border-left-color:#2F80ED; }}
+.item.status-issued,.item.status-in-progress {{ border-left-color:#B45309; }}
+.item-head {{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }}
+.code {{ font-family:'Barlow Condensed', sans-serif; font-size:22px; font-weight:800; color:#20252B; }}
+.type {{ color:#667085; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.6px; }}
+.status-badge {{ font-size:10px; font-weight:900; padding:4px 8px; border:1px solid #D8D3C8; background:#FAF8F2; text-transform:uppercase; white-space:nowrap; }}
+.status-badge.status-closed,.status-badge.status-complete {{ background:#DCFCE7; color:#15803D; border-color:rgba(21,128,61,.25); }}
+.status-badge.status-rejected {{ background:#FEE4E2; color:#B42318; border-color:rgba(180,35,24,.25); }}
+.register-line {{ display:grid; grid-template-columns:1.2fr .8fr 1fr; gap:8px; color:#667085; font-size:11px; margin-top:6px; }}
+.register-line span {{ background:#FAF8F2; border:1px solid #D8D3C8; padding:5px 6px; }}
+.desc {{ font-size:13px; margin:9px 0; line-height:1.4; }}
+.evidence-cols {{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; }}
+.col {{ background:#FAF8F2; border:1px solid #D8D3C8; padding:8px; min-height:70px; }}
+.col.original {{ border-top:3px solid #20252B; }}
+.col.rectification {{ border-top:3px solid #B45309; }}
+.col.closeout {{ border-top:3px solid #15803D; }}
+.col-title {{ color:#667085; font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.6px; margin-bottom:6px; }}
+.photo {{ background:#fff; border:1px solid #D8D3C8; padding:7px; margin-bottom:5px; font-size:10px; }}
+.by {{ color:#667085; font-size:9px; margin-top:2px; }}
+.none {{ color:#8B9380; font-size:11px; }}
+.none.block {{ padding:12px; border:1px dashed #D8D3C8; background:#FAF8F2; }}
+.signoff {{ color:#15803D; font-weight:800; font-size:12px; margin-top:8px; }}
+.meta-line {{ display:flex; gap:6px; align-items:center; margin-top:8px; flex-wrap:wrap; }}
+.ev {{ font-size:9px; font-weight:900; padding:3px 6px; border:1px solid #D8D3C8; background:#fff; text-transform:uppercase; }}
+.ev.original {{ color:#20252B; }}
+.ev.rectification {{ color:#B45309; }}
+.ev.closeout {{ color:#15803D; }}
+.due {{ margin-left:auto; font-size:10px; color:#667085; font-weight:800; }}
+.due.overdue {{ color:#B42318; }}
+.footer {{ margin-top:24px; padding-top:12px; border-top:1px solid #D8D3C8; text-align:center; color:#8B9380; font-size:10px; text-transform:uppercase; letter-spacing:.7px; font-weight:800; }}
+@media print {{ body {{ background:#fff; padding:0; }} .report-shell {{ border:0; }} }}
 </style>
 </head>
 <body>
-  <div class="header"><div class="logo">CleanRun <span>IQ</span></div><div class="meta"><strong>{escape(settings.company)}</strong><br />{escape(settings.active_project)}<br />Generated {escape(date.today().isoformat())}</div></div>
-  <h1>{escape(title)} Report</h1>
-  <div class="subtitle">Capture → Assign → Issue → Inspect → Close with Evidence → Report</div>
-  <div class="summary">
-    <div class="stat"><div class="num">{len(filtered)}</div><div class="lbl">Total items</div></div>
-    <div class="stat"><div class="num">{len(closed)}</div><div class="lbl">Closed</div></div>
-    <div class="stat"><div class="num">{len([i for i in filtered if is_overdue(i)])}</div><div class="lbl">Overdue</div></div>
-    <div class="stat"><div class="num">{len([i for i in filtered if i.type == 'client'])}</div><div class="lbl">Client defects</div></div>
+  <div class="report-shell">
+    <div class="header">
+      <div>
+        <div class="logo">CleanRun <span>IQ</span></div>
+        <div class="tag">Site QA Control · Evidence Register</div>
+      </div>
+      <div class="meta"><strong>{escape(settings.company)}</strong><br />{escape(settings.active_project)}<br />Generated {escape(generated)}</div>
+    </div>
+    <h1>{escape(title)} Report</h1>
+    <div class="subtitle">Capture → Assign → Issue → In Progress → Ready for Review → Inspect → Close with Evidence → Report</div>
+    <div class="summary">
+      <div class="stat"><div class="num">{len(filtered)}</div><div class="lbl">Total items</div></div>
+      <div class="stat"><div class="num">{len(closed)}</div><div class="lbl">Closed / Complete</div></div>
+      <div class="stat"><div class="num">{overdue}</div><div class="lbl">Overdue</div></div>
+      <div class="stat"><div class="num">{client_count}</div><div class="lbl">Client defects</div></div>
+    </div>
+    {main_html}
+    {outstanding_html}
+    <div class="footer">Generated with CleanRun IQ · Original Issue Evidence / Rectification Evidence / Supervisor Closeout Evidence</div>
   </div>
-  {group_html or '<div class="none">No items match this report.</div>'}
-  {outstanding_html}
-  <div class="footer">Generated with CleanRun IQ</div>
 </body>
 </html>"""
