@@ -4,9 +4,26 @@ const state = {
   trades: [],
   raisedByOptions: [],
   photos: [],
+  editingItem: null,
 };
 
 const $ = (id) => document.getElementById(id);
+
+const TYPE_LABELS = { defect: "Defect", incomplete: "Incomplete Work", client: "Client Defect" };
+const STATUS_LABELS = {
+  open: "Open",
+  issued: "Issued",
+  in_progress: "In Progress",
+  ready_for_review: "Ready for Review",
+  under_inspection: "Under Inspection",
+  rejected: "Rejected",
+  closed: "Closed",
+  complete: "Complete",
+};
+
+function text(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
 
 function toast(message) {
   const el = $("toast");
@@ -15,8 +32,40 @@ function toast(message) {
   setTimeout(() => el.classList.add("hidden"), 2600);
 }
 
+function showValidation(message, title = "Check required fields") {
+  const el = $("validationAlert");
+  el.textContent = "";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  el.appendChild(strong);
+  el.appendChild(document.createTextNode(message));
+  el.classList.remove("hidden");
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function clearValidation() {
+  $("validationAlert").classList.add("hidden");
+  $("validationAlert").textContent = "";
+}
+
+function showEditAlert(message) {
+  const el = $("editAlert");
+  el.textContent = "";
+  const strong = document.createElement("strong");
+  strong.textContent = "Cannot save edit";
+  el.appendChild(strong);
+  el.appendChild(document.createTextNode(message));
+  el.classList.remove("hidden");
+}
+
+function clearEditAlert() {
+  $("editAlert").classList.add("hidden");
+  $("editAlert").textContent = "";
+}
+
 function setOptions(select, values, placeholder) {
-  select.innerHTML = "";
+  if (!select) return;
+  select.textContent = "";
   if (placeholder) {
     const opt = document.createElement("option");
     opt.value = "";
@@ -33,7 +82,8 @@ function setOptions(select, values, placeholder) {
 
 function setDatalist(id, values) {
   const list = $(id);
-  list.innerHTML = "";
+  if (!list) return;
+  list.textContent = "";
   values.forEach((value) => {
     const opt = document.createElement("option");
     opt.value = value;
@@ -41,28 +91,39 @@ function setDatalist(id, values) {
   });
 }
 
-function activeConfig() {
-  const project = $("project").value || state.settings.active_project;
+function projectConfig(projectName) {
+  const project = projectName || $("project").value || state.settings.active_project;
   return state.settings.project_configs[project];
 }
 
-function refreshProjectConfig() {
-  const cfg = activeConfig();
-  $("activeProject").textContent = `Active project · ${$("project").value || state.settings.active_project}`;
+function refreshProjectConfig(projectName) {
+  const project = projectName || $("project").value || state.settings.active_project;
+  const cfg = projectConfig(project);
+  $("activeProject").textContent = project;
   setDatalist("buildingOptions", cfg?.buildings || []);
   setDatalist("levelOptions", cfg?.levels || []);
   setDatalist("unitOptions", cfg?.units || []);
   setDatalist("roomOptions", cfg?.rooms || []);
 }
 
-function refreshSubcontractors() {
-  const trade = $("trade").value;
+function refreshEditProjectConfig(projectName) {
+  const cfg = projectConfig(projectName || $("editProject").value);
+  setDatalist("editBuildingOptions", cfg?.buildings || []);
+  setDatalist("editLevelOptions", cfg?.levels || []);
+  setDatalist("editUnitOptions", cfg?.units || []);
+  setDatalist("editRoomOptions", cfg?.rooms || []);
+}
+
+function subcontractorsForTrade(trade) {
   const subs = state.settings.subcontractors.filter((name) => {
     const profile = state.settings.sub_profiles[name];
     return !trade || !profile?.trade || profile.trade === trade;
   });
-  setDatalist("subOptions", subs.length ? subs : state.settings.subcontractors);
+  return subs.length ? subs : state.settings.subcontractors;
 }
+
+function refreshSubcontractors() { setDatalist("subOptions", subcontractorsForTrade($("trade").value)); }
+function refreshEditSubcontractors() { setDatalist("editSubOptions", subcontractorsForTrade($("editTrade").value)); }
 
 function dueDate(days = 7) {
   const d = new Date();
@@ -79,26 +140,36 @@ async function bootstrap() {
   state.raisedByOptions = data.raised_by_options;
 
   setOptions($("project"), state.settings.projects);
+  setOptions($("editProject"), state.settings.projects);
   $("project").value = state.settings.active_project;
   setOptions($("raisedBy"), state.raisedByOptions, "Who raised this?");
+  setOptions($("editRaisedBy"), state.raisedByOptions, "Who raised this?");
   setOptions($("trade"), state.trades, "Select trade");
+  setOptions($("editTrade"), state.trades, "Select trade");
   $("dueDate").value = dueDate(7);
   refreshProjectConfig();
+  refreshEditProjectConfig(state.settings.active_project);
   refreshSubcontractors();
+  refreshEditSubcontractors();
   renderItems();
 }
 
 function renderThumbs() {
   const row = $("thumbRow");
-  row.innerHTML = "";
+  row.textContent = "";
   state.photos.forEach((photo, index) => {
     const div = document.createElement("div");
     div.className = "thumb";
-    div.innerHTML = `<img src="${photo}" alt="photo" /><button aria-label="Remove photo">×</button>`;
-    div.querySelector("button").onclick = () => {
-      state.photos.splice(index, 1);
-      renderThumbs();
-    };
+    const img = document.createElement("img");
+    img.src = photo;
+    img.alt = `Captured evidence ${index + 1}`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("aria-label", "Remove photo");
+    btn.textContent = "×";
+    btn.onclick = () => { state.photos.splice(index, 1); renderThumbs(); };
+    div.appendChild(img);
+    div.appendChild(btn);
     row.appendChild(div);
   });
 }
@@ -112,23 +183,27 @@ function fileToDataUrl(file) {
   });
 }
 
-async function handleFiles(files) {
+async function handleFiles(files, input) {
+  if (!files || files.length === 0) return;
   const next = await Promise.all([...files].map(fileToDataUrl));
   state.photos.push(...next);
   renderThumbs();
+  if (input) input.value = "";
+  clearValidation();
 }
 
 function draftFromNote() {
-  const text = $("voiceNote").value.trim();
-  if (!text) return;
-  const lower = text.toLowerCase();
-  const cfg = activeConfig();
-  for (const building of cfg.buildings || []) if (lower.includes(building.toLowerCase())) $("building").value = building;
-  for (const unit of cfg.units || []) if (lower.includes(unit.toLowerCase())) $("unit").value = unit;
-  for (const room of cfg.rooms || []) if (lower.includes(room.toLowerCase())) $("room").value = room;
+  const value = $("voiceNote").value.trim();
+  if (!value) return;
+  const lower = value.toLowerCase();
+  const cfg = projectConfig();
+  for (const building of cfg?.buildings || []) if (lower.includes(building.toLowerCase())) $("building").value = building;
+  for (const unit of cfg?.units || []) if (lower.includes(unit.toLowerCase())) $("unit").value = unit;
+  for (const room of cfg?.rooms || []) if (lower.includes(room.toLowerCase())) $("room").value = room;
   for (const trade of state.trades) if (lower.includes(trade.toLowerCase())) $("trade").value = trade;
-  if (!$("description").value.trim()) $("description").value = text;
+  if (!$("description").value.trim()) $("description").value = value;
   refreshSubcontractors();
+  clearValidation();
   toast("Drafted fields from note. Review before saving.");
 }
 
@@ -149,13 +224,21 @@ function payload() {
     raised_by: $("type").value === "client" ? $("raisedBy").value : null,
     original_photos: state.photos,
     voice_transcript: voiceText || null,
-    voice_note: voiceText ? {
-      transcript: voiceText,
-      parsed_fields: {},
-      status: "parsed",
-    } : null,
+    voice_note: voiceText ? { transcript: voiceText, parsed_fields: {}, status: "parsed" } : null,
     created_by: state.settings.prepared_by,
   };
+}
+
+function clientValidate(issueNow) {
+  const data = payload();
+  if (!data.building) return "Select a building.";
+  if (!data.unit) return "Select a unit / area.";
+  if ((data.type === "defect" || data.type === "client") && data.original_photos.length === 0) return data.type === "client" ? "A Client Defect requires at least one original photo." : "A Defect requires at least one original photo.";
+  if (data.type === "client" && !data.raised_by) return "Client Defects require a Raised By / source.";
+  if (!data.description) return "Add a short description.";
+  if (issueNow && !data.trade) return "Issue Now requires a trade.";
+  if (issueNow && !data.subcontractor) return "Issue Now requires a subcontractor.";
+  return null;
 }
 
 function resetForm(keepLocation = true) {
@@ -164,6 +247,7 @@ function resetForm(keepLocation = true) {
   $("raisedBy").value = "";
   state.photos = [];
   renderThumbs();
+  clearValidation();
   if (!keepLocation) {
     $("building").value = "";
     $("level").value = "";
@@ -175,12 +259,12 @@ function resetForm(keepLocation = true) {
 }
 
 async function save(issueNow = false) {
+  clearValidation();
+  const warning = clientValidate(issueNow);
+  if (warning) return showValidation(warning);
+  if ($("type").value === "incomplete" && state.photos.length === 0 && !confirm("Incomplete Work can be saved without a photo, but evidence is recommended. Save anyway?")) return;
   try {
-    const res = await fetch(`/api/items?issue_now=${issueNow}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload()),
-    });
+    const res = await fetch(`/api/items?issue_now=${issueNow}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload()) });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.detail || "Could not save item");
@@ -190,76 +274,68 @@ async function save(issueNow = false) {
     renderItems();
     resetForm(true);
     toast(issueNow ? "Item issued" : "Item saved");
-  } catch (e) {
-    toast(e.message);
+  } catch (error) {
+    showValidation(error.message || "Could not save item.");
   }
 }
 
 async function patchItem(id, patch) {
-  const res = await fetch(`/api/items/${id}?by=${encodeURIComponent(state.settings.prepared_by)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) throw new Error("Update failed");
+  const res = await fetch(`/api/items/${id}?by=${encodeURIComponent(state.settings.prepared_by)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Update failed");
+  }
   const item = await res.json();
-  const index = state.items.findIndex((i) => i.id === id);
+  const index = state.items.findIndex((candidate) => candidate.id === id);
   if (index >= 0) state.items[index] = item;
   renderItems();
+  return item;
 }
 
 async function action(id, endpoint, body = {}) {
-  const res = await fetch(`/api/items/${id}/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ by: state.settings.prepared_by, ...body }),
-  });
+  const res = await fetch(`/api/items/${id}/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ by: state.settings.prepared_by, ...body }) });
   if (!res.ok) throw new Error("Action failed");
   const item = await res.json();
-  const index = state.items.findIndex((i) => i.id === id);
+  const index = state.items.findIndex((candidate) => candidate.id === id);
   if (index >= 0) state.items[index] = item;
   renderItems();
+  return item;
 }
+
+function evidenceCounts(item) {
+  return { original: item.original_photos?.length || 0, rectification: item.rectification_evidence?.length || 0, closeout: item.closeout_evidence?.length || 0 };
+}
+
+function locationText(item) { return [item.building, item.level, item.unit, item.room].filter(Boolean).join(" / ") || "Unassigned location"; }
 
 function renderItems() {
   const list = $("itemsList");
-  list.innerHTML = "";
-  state.items.slice(0, 12).forEach((item) => {
+  list.textContent = "";
+  if (state.items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "item-card";
+    empty.innerHTML = `<div class="code">No items</div><div class="meta">Capture the first item to start the register.</div>`;
+    list.appendChild(empty);
+    return;
+  }
+  state.items.slice(0, 18).forEach((item) => {
+    const counts = evidenceCounts(item);
     const div = document.createElement("div");
-    div.className = "item-card";
+    div.className = `item-card status-${item.status}`;
     div.innerHTML = `
-      <div class="item-top">
-        <div>
-          <div class="code">${item.code}</div>
-          <div class="meta">${[item.building, item.level, item.unit, item.room].filter(Boolean).join(" / ")}</div>
-        </div>
-        <span class="status ${item.status}">${item.status.replaceAll("_", " ")}</span>
-      </div>
-      <div class="desc">${item.description}</div>
-      <div class="meta">${item.trade || "No trade"} · ${item.subcontractor || "Unassigned"} · due ${item.due_date}</div>
-      <div class="card-actions">
-        <button data-edit>Edit</button>
-        <button data-issue>Issue</button>
-        <button data-ready>Ready</button>
-        <button data-report>Report</button>
-      </div>`;
-    div.querySelector("[data-edit]").onclick = async () => {
-      const description = prompt("Edit description", item.description);
-      if (description === null) return;
-      await patchItem(item.id, { description });
-      toast("Item updated");
-    };
+      <div class="item-top"><div><div class="code">${text(item.code)}</div><div class="item-type">${text(TYPE_LABELS[item.type] || item.type)}</div></div><span class="status ${text(item.status)}">${text(STATUS_LABELS[item.status] || item.status)}</span></div>
+      <div class="desc">${text(item.description)}</div>
+      <div class="item-meta-grid"><div><strong>Location</strong> · ${text(locationText(item))}</div><div><strong>Trade</strong> · ${text(item.trade || "No trade")}</div><div><strong>Subcontractor</strong> · ${text(item.subcontractor || "Unassigned")}</div><div><strong>Due</strong> · ${text(item.due_date)}</div></div>
+      <div class="evidence-counts"><span class="ev-chip original">Original ${counts.original}</span><span class="ev-chip rectification">Rectification ${counts.rectification}</span><span class="ev-chip closeout">Closeout ${counts.closeout}</span></div>
+      <div class="card-actions"><button type="button" data-edit>Edit</button><button type="button" data-issue>Issue</button><button type="button" data-ready>Ready</button><button type="button" data-report>Report</button></div>`;
+    div.querySelector("[data-edit]").onclick = () => openEdit(item);
     div.querySelector("[data-issue]").onclick = async () => {
-      const to = item.subcontractor || prompt("Subcontractor", "");
-      if (!to) return;
-      const res = await fetch(`/api/items/${item.id}/issue`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, by: state.settings.prepared_by }),
-      });
+      if (!item.subcontractor) return toast("Add a subcontractor before issuing.");
+      const res = await fetch(`/api/items/${item.id}/issue`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: item.subcontractor, by: state.settings.prepared_by }) });
       const updated = await res.json();
-      state.items[state.items.findIndex((i) => i.id === item.id)] = updated;
+      state.items[state.items.findIndex((candidate) => candidate.id === item.id)] = updated;
       renderItems();
+      toast("Item issued");
     };
     div.querySelector("[data-ready]").onclick = () => action(item.id, "ready").then(() => toast("Marked ready for review"));
     div.querySelector("[data-report]").onclick = () => window.open("/api/reports/handover", "_blank");
@@ -267,38 +343,100 @@ function renderItems() {
   });
 }
 
+function openEdit(item) {
+  state.editingItem = item;
+  clearEditAlert();
+  $("editType").value = item.type;
+  $("editProject").value = item.project;
+  $("editBuilding").value = item.building || "";
+  $("editLevel").value = item.level || "";
+  $("editUnit").value = item.unit || "";
+  $("editRoom").value = item.room || "";
+  $("editTrade").value = item.trade || "";
+  $("editSubcontractor").value = item.subcontractor || "";
+  $("editPriority").value = item.priority || "high";
+  $("editDueDate").value = item.due_date || dueDate(7);
+  $("editDescription").value = item.description || "";
+  $("editRaisedBy").value = item.raised_by || "";
+  $("editRaisedByWrap").classList.toggle("hidden", item.type !== "client");
+  refreshEditProjectConfig(item.project);
+  refreshEditSubcontractors();
+  $("editOverlay").classList.remove("hidden");
+  $("editOverlay").setAttribute("aria-hidden", "false");
+}
+
+function closeEdit() {
+  state.editingItem = null;
+  $("editOverlay").classList.add("hidden");
+  $("editOverlay").setAttribute("aria-hidden", "true");
+}
+
+function editPayload() {
+  const type = $("editType").value;
+  return {
+    type,
+    project: $("editProject").value,
+    building: $("editBuilding").value.trim(),
+    level: $("editLevel").value.trim(),
+    unit: $("editUnit").value.trim(),
+    room: $("editRoom").value.trim(),
+    trade: $("editTrade").value,
+    subcontractor: $("editSubcontractor").value.trim(),
+    priority: $("editPriority").value,
+    due_date: $("editDueDate").value,
+    description: $("editDescription").value.trim(),
+    raised_by: type === "client" ? $("editRaisedBy").value : null,
+  };
+}
+
+async function saveEdit() {
+  if (!state.editingItem) return;
+  clearEditAlert();
+  const patch = editPayload();
+  if (!patch.building) return showEditAlert("Building cannot be blank.");
+  if (!patch.unit) return showEditAlert("Unit / Area cannot be blank.");
+  if (!patch.description) return showEditAlert("Description cannot be blank.");
+  if (patch.type === "client" && !patch.raised_by) return showEditAlert("Client Defects require a Raised By / source.");
+  try {
+    await patchItem(state.editingItem.id, patch);
+    closeEdit();
+    toast("Item details updated");
+  } catch (error) {
+    showEditAlert(error.message || "Could not update item.");
+  }
+}
+
 function bindKeyboardDone() {
   const done = $("keyboardDone");
-  document.addEventListener("focusin", (event) => {
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) done.classList.remove("hidden");
-  });
+  document.addEventListener("focusin", (event) => { if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) done.classList.remove("hidden"); });
   document.addEventListener("focusout", () => setTimeout(() => done.classList.add("hidden"), 120));
-  done.onclick = () => {
-    if (document.activeElement) document.activeElement.blur();
-    done.classList.add("hidden");
-  };
+  done.onclick = () => { if (document.activeElement) document.activeElement.blur(); done.classList.add("hidden"); };
 }
 
 function bind() {
   $("type").onchange = () => {
-    const client = $("type").value === "client";
-    $("raisedByWrap").classList.toggle("hidden", !client);
-    $("photoRequirement").textContent = $("type").value === "incomplete" ? "Recommended" : "Required for this item type";
+    const itemType = $("type").value;
+    $("raisedByWrap").classList.toggle("hidden", itemType !== "client");
+    $("photoRequirement").textContent = itemType === "incomplete" ? "Incomplete Work: photo recommended" : itemType === "client" ? "Client Defect: photo required" : "Defect: photo required";
+    clearValidation();
   };
-  $("project").onchange = refreshProjectConfig;
-  $("trade").onchange = refreshSubcontractors;
-  $("cameraInput").onchange = (e) => handleFiles(e.target.files);
-  $("libraryInput").onchange = (e) => handleFiles(e.target.files);
+  $("project").onchange = () => { refreshProjectConfig(); $("building").value = ""; $("level").value = ""; $("unit").value = ""; $("room").value = ""; };
+  $("trade").onchange = () => { refreshSubcontractors(); $("subcontractor").value = ""; };
+  $("cameraInput").onchange = (event) => handleFiles(event.target.files, event.target);
+  $("libraryInput").onchange = (event) => handleFiles(event.target.files, event.target);
   $("draftFromNote").onclick = draftFromNote;
   $("saveBtn").onclick = () => save(false);
   $("issueBtn").onclick = () => save(true);
-  $("resetDemo").onclick = async () => {
-    await fetch("/api/reset-demo", { method: "POST" });
-    await bootstrap();
-    toast("Demo reset");
-  };
+  $("resetDemo").onclick = async () => { await fetch("/api/reset-demo", { method: "POST" }); await bootstrap(); toast("Demo reset"); };
+  $("editClose").onclick = closeEdit;
+  $("editCancel").onclick = closeEdit;
+  $("editSave").onclick = saveEdit;
+  $("editOverlay").onclick = (event) => { if (event.target.id === "editOverlay") closeEdit(); };
+  $("editType").onchange = () => $("editRaisedByWrap").classList.toggle("hidden", $("editType").value !== "client");
+  $("editProject").onchange = () => { refreshEditProjectConfig($("editProject").value); $("editBuilding").value = ""; $("editLevel").value = ""; $("editUnit").value = ""; $("editRoom").value = ""; };
+  $("editTrade").onchange = () => { refreshEditSubcontractors(); $("editSubcontractor").value = ""; };
 }
 
 bindKeyboardDone();
 bind();
-bootstrap().catch((e) => toast(e.message));
+bootstrap().catch((error) => toast(error.message));
