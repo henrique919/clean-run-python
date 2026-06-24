@@ -1,0 +1,14 @@
+[project]
+name = "cleanrun-iq-python-port"
+version = "0.1.0"
+description = "Python/FastAPI port of the CleanRun IQ Rork/Expo domain layer"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.111.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.7.0",
+  "python-dateutil>=2.9.0"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
