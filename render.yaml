@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: cleanrun-iq-python
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: CLEANRUN_DATA_DIR
+        value: /var/data
+    disk:
+      name: cleanrun-data
+      mountPath: /var/data
+      sizeGB: 1
