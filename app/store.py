@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta, timezone
+import os
+from datetime import date, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import Callable
@@ -16,6 +17,7 @@ from app.models import (
     Item,
     ItemCreate,
     ItemStatus,
+    ItemUpdate,
     ProjectConfig,
     RectificationEvidence,
     Settings,
@@ -25,9 +27,8 @@ from app.models import (
     now_iso,
 )
 from app.validation import validate_capture, validate_update
-from app.models import ItemUpdate
 
-DATA_DIR = Path(".cleanrun-data")
+DATA_DIR = Path(os.getenv("CLEANRUN_DATA_DIR", ".cleanrun-data"))
 DATA_FILE = DATA_DIR / "cleanrun.json"
 
 
@@ -151,8 +152,9 @@ class CleanRunStore:
         data = self._read()
         now = now_iso()
         code = self.next_code(data.items, payload.type)
+        payload_data = payload.model_dump(exclude={"status"})
         item = Item(
-            **payload.model_dump(),
+            **payload_data,
             code=code,
             status=ItemStatus.OPEN,
             created_at=now,
