@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {
+      "name": "CleanRun IQ",
+      "path": "expo",
+      "framework": "react-native"
+    }
+  ],
+  "$schema": "https://rork.com/schema/rork.json"
+}
