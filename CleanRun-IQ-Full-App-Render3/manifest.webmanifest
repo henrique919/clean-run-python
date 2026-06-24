@@ -1,0 +1,10 @@
+{
+  "name":"CleanRun IQ Field App",
+  "short_name":"CleanRun IQ",
+  "description":"Offline-capable construction QA, defect and handover field app.",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#F3F4F6",
+  "theme_color":"#121619",
+  "icons":[{"src":"/assets/icon-mark.png","sizes":"any","type":"image/png"}]
+}
