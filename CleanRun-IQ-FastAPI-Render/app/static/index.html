@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>CleanRun IQ</title>
+  <meta name="theme-color" content="#121619" />
+  <link rel="icon" type="image/png" href="/static/assets/brand/favicon.png" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <div class="brand-lockup">
+        <img class="brand-logo" src="/static/assets/brand/cleanrun-logo-horizontal.png" alt="CleanRun IQ" />
+        <span class="brand-tagline">Smarter Field. Cleaner Builds.</span>
+      </div>
+      <div class="header-controls">
+        <div class="site-context">
+          <span class="context-label">Active project</span>
+          <strong class="project-strip__value" id="activeProject">Loading project...</strong>
+        </div>
+        <button class="header-action" id="resetDemo" type="button">Reset demo</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="capture-intro">
+      <div>
+        <p class="kicker">Field capture</p>
+        <h1>Capture Item</h1>
+        <p>Photo first. Assign the trade. Close with proof.</p>
+      </div>
+      <div class="workflow-line" aria-label="CleanRun workflow">
+        <span>Capture</span>
+        <span>Assign</span>
+        <span>Close</span>
+      </div>
+    </section>
+
+    <section class="register-tools" aria-labelledby="registerToolsTitle">
+      <div class="tools-heading">
+        <div>
+          <p class="panel-code">Register tools</p>
+          <h2 id="registerToolsTitle">Site overview</h2>
+        </div>
+        <span class="result-count" id="listCount">0 shown</span>
+      </div>
+      <div id="statsBar" class="stats-grid" aria-label="Register summary"></div>
+      <div class="tool-row">
+        <label class="tool-field" for="searchInput">
+          <span>Search register</span>
+          <input id="searchInput" type="search" placeholder="Item, trade, subbie or location" />
+        </label>
+        <label class="tool-field" for="statusFilter">
+          <span>Status</span>
+          <select id="statusFilter">
+            <option value="all">All statuses</option>
+            <option value="open">Open</option>
+            <option value="issued">Issued</option>
+            <option value="in_progress">In progress</option>
+            <option value="ready_for_review">Ready for review</option>
+            <option value="under_inspection">Under inspection</option>
+            <option value="rejected">Rejected</option>
+            <option value="closed">Closed</option>
+            <option value="complete">Complete</option>
+          </select>
+        </label>
+      </div>
+      <nav class="report-row" aria-label="Reports">
+        <a href="/api/reports/open" target="_blank" rel="noreferrer">Open</a>
+        <a href="/api/reports/overdue" target="_blank" rel="noreferrer">Overdue</a>
+        <a href="/api/reports/client" target="_blank" rel="noreferrer">Client defects</a>
+        <a href="/api/reports/incomplete" target="_blank" rel="noreferrer">Incomplete works</a>
+        <a href="/api/reports/handover" target="_blank" rel="noreferrer">Handover</a>
+      </nav>
+    </section>
+
+    <section class="control-panel evidence-panel" aria-labelledby="photoTitle">
+      <div class="panel-heading">
+        <div>
+          <p class="panel-code">01 / Evidence</p>
+          <h2 id="photoTitle">Photo Evidence</h2>
+          <p id="photoRequirement">Defect: photo required</p>
+        </div>
+        <span class="field-tag required" id="photoCount">0 photos</span>
+      </div>
+      <p class="helper">Start with proof from site. Defects and client defects cannot be saved without original issue evidence.</p>
+      <div class="photo-actions">
+        <label class="photo-action photo-action--primary">
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+          <span class="photo-action__title">Take Photo</span>
+          <span class="photo-action__sub">Camera first</span>
+        </label>
+        <label class="photo-action photo-action--secondary">
+          <input id="libraryInput" type="file" accept="image/*" multiple hidden />
+          <span class="photo-action__title">Upload Photo</span>
+          <span class="photo-action__sub">From library</span>
+        </label>
+      </div>
+      <div class="thumb-row" id="thumbRow"></div>
+    </section>
+
+    <section class="assistant-panel" aria-labelledby="voiceTitle">
+      <div class="panel-heading compact">
+        <div>
+          <p class="panel-code">Optional</p>
+          <h2 id="voiceTitle">Optional Voice-to-Note</h2>
+          <p>Draft fields from a spoken/site note after capturing evidence.</p>
+        </div>
+      </div>
+      <textarea id="voiceNote" placeholder="Example: B3 Unit 201 bathroom cracked tile, tiler to action"></textarea>
+      <button class="btn btn-secondary full-width" id="draftFromNote" type="button">Draft form from note</button>
+    </section>
+
+    <section class="register-form" aria-label="Capture details">
+      <div class="form-group">
+        <div class="form-group__title">Task</div>
+        <label for="type">Item type</label>
+        <select id="type">
+          <option value="defect">Defect</option>
+          <option value="incomplete">Incomplete Work</option>
+          <option value="client">Client Defect</option>
+        </select>
+
+        <div id="raisedByWrap" class="hidden">
+          <label for="raisedBy">Raised by <span class="req">required</span></label>
+          <select id="raisedBy"></select>
+        </div>
+
+        <label for="priority">Priority</label>
+        <select id="priority">
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <div class="form-group__title">Location</div>
+        <label for="project">Project</label>
+        <select id="project"></select>
+        <label for="building">Building <span class="req">required</span></label>
+        <input id="building" list="buildingOptions" placeholder="Select or type building" />
+        <datalist id="buildingOptions"></datalist>
+        <label for="level">Level</label>
+        <input id="level" list="levelOptions" placeholder="Select or type level" />
+        <datalist id="levelOptions"></datalist>
+        <label for="unit">Unit / Area <span class="req">required</span></label>
+        <input id="unit" list="unitOptions" placeholder="Select or type unit / area" />
+        <datalist id="unitOptions"></datalist>
+        <label for="room">Room / Location</label>
+        <input id="room" list="roomOptions" placeholder="Select or type room" />
+        <datalist id="roomOptions"></datalist>
+      </div>
+
+      <div class="form-group">
+        <div class="form-group__title">Assign</div>
+        <label for="trade">Trade <span class="issue-req">required when issuing</span></label>
+        <select id="trade"></select>
+        <label for="subcontractor">Subcontractor <span class="issue-req">required when issuing</span></label>
+        <input id="subcontractor" list="subOptions" placeholder="Select or type subcontractor" />
+        <datalist id="subOptions"></datalist>
+        <label for="dueDate">Due date</label>
+        <input id="dueDate" type="date" />
+      </div>
+
+      <div class="form-group last">
+        <div class="form-group__title">Description</div>
+        <label for="description">Description <span class="req">required</span></label>
+        <textarea id="description" placeholder="Short, specific. e.g. Cracked tile under vanity, replace and regrout."></textarea>
+      </div>
+    </section>
+
+    <div id="validationAlert" class="inline-alert hidden" role="alert"></div>
+
+    <div class="action-bar">
+      <button class="btn btn-outline" id="saveBtn" type="button">Save</button>
+      <button class="btn btn-primary" id="issueBtn" type="button">Issue Now</button>
+    </div>
+
+    <section class="register-list">
+      <div class="list-heading">
+        <div>
+          <p class="panel-code">Live Register</p>
+          <h2>Items</h2>
+        </div>
+        <button class="report-link" id="clearFilters" type="button">Clear filters</button>
+      </div>
+      <div id="itemsList" class="items-list"></div>
+    </section>
+  </main>
+
+  <div id="editOverlay" class="drawer-overlay hidden" aria-hidden="true">
+    <aside class="edit-drawer" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+      <div class="drawer-header">
+        <div>
+          <p class="panel-code">Edit register item</p>
+          <h2 id="editTitle">Item details</h2>
+        </div>
+        <button class="icon-button" id="editClose" type="button" aria-label="Close edit panel">×</button>
+      </div>
+      <div id="editAlert" class="inline-alert hidden" role="alert"></div>
+      <div class="drawer-body">
+        <label for="editType">Item type</label>
+        <select id="editType">
+          <option value="defect">Defect</option>
+          <option value="incomplete">Incomplete Work</option>
+          <option value="client">Client Defect</option>
+        </select>
+
+        <div id="editRaisedByWrap" class="hidden">
+          <label for="editRaisedBy">Raised by</label>
+          <select id="editRaisedBy"></select>
+        </div>
+
+        <label for="editProject">Project</label>
+        <select id="editProject"></select>
+        <label for="editBuilding">Building</label>
+        <input id="editBuilding" list="editBuildingOptions" />
+        <datalist id="editBuildingOptions"></datalist>
+        <label for="editLevel">Level</label>
+        <input id="editLevel" list="editLevelOptions" />
+        <datalist id="editLevelOptions"></datalist>
+        <label for="editUnit">Unit / Area</label>
+        <input id="editUnit" list="editUnitOptions" />
+        <datalist id="editUnitOptions"></datalist>
+        <label for="editRoom">Room / Location</label>
+        <input id="editRoom" list="editRoomOptions" />
+        <datalist id="editRoomOptions"></datalist>
+        <label for="editTrade">Trade</label>
+        <select id="editTrade"></select>
+        <label for="editSubcontractor">Subcontractor</label>
+        <input id="editSubcontractor" list="editSubOptions" />
+        <datalist id="editSubOptions"></datalist>
+        <label for="editPriority">Priority</label>
+        <select id="editPriority">
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+        <label for="editDueDate">Due date</label>
+        <input id="editDueDate" type="date" />
+        <label for="editDescription">Description</label>
+        <textarea id="editDescription"></textarea>
+      </div>
+      <div class="drawer-actions">
+        <button class="btn btn-outline" id="editCancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="editSave" type="button">Save changes</button>
+      </div>
+    </aside>
+  </div>
+
+  <div id="keyboardDone" class="keyboard-done hidden">Done</div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
