@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, timedelta
 from pathlib import Path
 from threading import RLock
@@ -27,7 +28,7 @@ from app.models import (
 )
 from app.validation import validate_capture, validate_update
 
-DATA_DIR = Path(".cleanrun-data")
+DATA_DIR = Path(os.getenv("CLEANRUN_DATA_DIR", ".cleanrun-data"))
 DATA_FILE = DATA_DIR / "cleanrun.json"
 
 
