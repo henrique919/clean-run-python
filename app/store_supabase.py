@@ -14,7 +14,6 @@ def _enum_value(value: Any) -> Any:
 
 def _item_to_row(item: Item) -> dict[str, Any]:
     return {
-        "id": item.id,
         "code": item.code,
         "type": _enum_value(item.type),
         "status": _enum_value(item.status),
@@ -43,12 +42,7 @@ def _item_to_row(item: Item) -> dict[str, Any]:
 
 
 class SupabaseCleanRunStore(CleanRunStore):
-    """Supabase-backed store using a JSON payload for app-compatible items.
-
-    This intentionally keeps the same public methods as CleanRunStore so the
-    FastAPI routes and frontend do not need to change while the app moves from
-    local JSON storage to a hosted database.
-    """
+    """Supabase-backed store using item code plus a JSON payload."""
 
     def __init__(self) -> None:
         self.lock = RLock()
@@ -56,7 +50,7 @@ class SupabaseCleanRunStore(CleanRunStore):
         self._bootstrap_if_empty()
 
     def _bootstrap_if_empty(self) -> None:
-        response = self.client.table("items").select("id").limit(1).execute()
+        response = self.client.table("items").select("code").limit(1).execute()
         if not response.data:
             self._write(seed_data())
 
@@ -82,13 +76,6 @@ class SupabaseCleanRunStore(CleanRunStore):
 
     def _write(self, data: AppData) -> None:
         with self.lock:
-            current_response = self.client.table("items").select("id").execute()
-            current_ids = {row["id"] for row in (current_response.data or []) if row.get("id")}
-            next_ids = {item.id for item in data.items}
-
             for item in data.items:
                 row = _item_to_row(item)
-                self.client.table("items").upsert(row, on_conflict="id").execute()
-
-            for stale_id in current_ids - next_ids:
-                self.client.table("items").delete().eq("id", stale_id).execute()
+                self.client.table("items").upsert(row, on_conflict="code").execute()
