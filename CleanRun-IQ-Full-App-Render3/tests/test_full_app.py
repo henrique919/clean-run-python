@@ -110,6 +110,41 @@ class FullFieldAppTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot perform 'rectification' while item is open"):
             self.app.apply_action(guard_item, "rectification", {"photo": "data:image/png;base64,iVBORw0KGgo=", "by": "Trade"})
 
+        issued = self.app.create_item_from_request(
+            {
+                "id": "capture-repeat-001",
+                "type": "defect",
+                "project": "Jura Noosa",
+                "description": "Repeated Issue Now tap",
+                "trade": "Joinery",
+                "subcontractor": "Endeavour Cleaning",
+                "dueDate": self.app.day_iso(2),
+                "originalPhotos": ["data:image/png;base64,iVBORw0KGgo="],
+                "createdBy": "Site Manager",
+                "issueOnCreate": True,
+                "issueTo": "Endeavour Cleaning",
+            }
+        )
+        repeated = self.app.create_item_from_request(
+            {
+                "id": "capture-repeat-001",
+                "type": "defect",
+                "project": "Jura Noosa",
+                "description": "Repeated Issue Now tap",
+                "trade": "Joinery",
+                "subcontractor": "Endeavour Cleaning",
+                "dueDate": self.app.day_iso(2),
+                "originalPhotos": ["data:image/png;base64,iVBORw0KGgo="],
+                "createdBy": "Site Manager",
+                "issueOnCreate": True,
+                "issueTo": "Endeavour Cleaning",
+            }
+        )
+        self.assertIs(issued, repeated)
+        self.assertEqual(issued["status"], "issued")
+        self.assertEqual(len([i for i in self.app.STATE["items"] if i["id"] == "capture-repeat-001"]), 1)
+        self.assertEqual(len(issued["issueHistory"]), 1)
+
         report = self.app.report_html("handover")
         self.assertIn("Smarter Field. Cleaner Builds.", report)
         self.assertIn('/assets/banner.png', report)
@@ -161,7 +196,7 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1"):
             self.assertIn(marker, enhancements)
-        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow"):
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
         self.assertIn('"reports","Reports"', enhancements)
@@ -177,7 +212,7 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v8", worker)
+        self.assertIn("cleanrun-iq-shell-v9", worker)
         self.assertIn("indexedDB", enhancements)
 
     def test_supabase_photo_uploads_replace_raw_base64_for_create_edit_and_actions(self) -> None:
@@ -250,6 +285,14 @@ class FullFieldAppTests(unittest.TestCase):
 
     def test_supabase_plan_pdf_asset_upload_and_admin_profile_shape(self) -> None:
         previous_storage = os.environ.get("CLEANRUN_STORAGE")
+        previous_url = os.environ.get("SUPABASE_URL")
+        previous_service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+        os.environ.pop("CLEANRUN_STORAGE", None)
+        os.environ["SUPABASE_URL"] = "https://example.supabase.co"
+        os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "service-role"
+        self.assertTrue(self.app.use_supabase_storage())
+
         os.environ["CLEANRUN_STORAGE"] = "supabase"
 
         class FakeBucket:
@@ -290,6 +333,14 @@ class FullFieldAppTests(unittest.TestCase):
                 os.environ.pop("CLEANRUN_STORAGE", None)
             else:
                 os.environ["CLEANRUN_STORAGE"] = previous_storage
+            if previous_url is None:
+                os.environ.pop("SUPABASE_URL", None)
+            else:
+                os.environ["SUPABASE_URL"] = previous_url
+            if previous_service_key is None:
+                os.environ.pop("SUPABASE_SERVICE_ROLE_KEY", None)
+            else:
+                os.environ["SUPABASE_SERVICE_ROLE_KEY"] = previous_service_key
 
         settings = self.app.default_settings()
         profile = settings["subProfiles"]["Coastline Painting"]

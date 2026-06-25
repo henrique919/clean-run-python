@@ -308,7 +308,10 @@ STATE = load_state()
 
 
 def use_supabase_storage() -> bool:
-    return os.environ.get("CLEANRUN_STORAGE", "local").lower() == "supabase"
+    configured = os.environ.get("CLEANRUN_STORAGE")
+    if configured:
+        return configured.lower() == "supabase"
+    return bool(os.environ.get("SUPABASE_URL") and (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")))
 
 
 def _photo_looks_like_uploadable_base64(value: str) -> bool:
@@ -602,6 +605,51 @@ def create_item(payload: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def create_item_from_request(body: dict[str, Any]) -> dict[str, Any]:
+    payload = copy.deepcopy(body)
+    issue_on_create = bool(payload.pop("issueOnCreate", False))
+    issue_to = payload.pop("issueTo", None)
+    requested_id = payload.get("id")
+
+    if issue_on_create and (not payload.get("trade") or not (issue_to or payload.get("subcontractor"))):
+        raise ValueError("Issue Now requires a trade and subcontractor")
+
+    if requested_id:
+        for existing in STATE["items"]:
+            if existing.get("id") == requested_id:
+                if issue_on_create and existing.get("status") == "open":
+                    apply_action(
+                        existing,
+                        "issue",
+                        {
+                            "to": issue_to or existing.get("subcontractor"),
+                            "by": existing.get("createdBy") or STATE["settings"].get("preparedBy"),
+                        },
+                    )
+                return existing
+
+    item: dict[str, Any] | None = None
+    try:
+        item = create_item(payload)
+        if issue_on_create:
+            apply_action(
+                item,
+                "issue",
+                {
+                    "to": issue_to or item.get("subcontractor"),
+                    "by": item.get("createdBy") or STATE["settings"].get("preparedBy"),
+                },
+            )
+        return item
+    except Exception:
+        if item is not None:
+            try:
+                STATE["items"].remove(item)
+            except ValueError:
+                pass
+        raise
+
+
 ALLOWED_ACTIONS_BY_STATUS = {
     "open": {"issue", "comment", "reopen"},
     "issued": {"in-progress", "ready", "rectification", "issue", "comment", "reopen"},
@@ -818,7 +866,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/storage-status":
                 self.send_json({
                     "ok": True,
-                    "storageBackend": os.environ.get("CLEANRUN_STORAGE", "local"),
+                    "storageBackend": os.environ.get("CLEANRUN_STORAGE") or ("supabase-auto" if use_supabase_storage() else "local"),
                     "usingSupabaseStorage": use_supabase_storage(),
                     "storageBucket": os.environ.get("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence"),
                     "stateBackend": os.environ.get("CLEANRUN_STATE_BACKEND", "local"),
@@ -839,7 +887,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self.body()
             with LOCK:
-                if path == "/api/items": result = create_item(body)
+                if path == "/api/items": result = create_item_from_request(body)
                 elif path == "/api/parse": result = parse_transcript(str(body.get("transcript", "")))
                 elif path == "/api/reset":
                     global STATE

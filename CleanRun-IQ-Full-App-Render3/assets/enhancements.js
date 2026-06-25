@@ -13,6 +13,7 @@
   let lastChosenPhotoMeta=null;
   let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[]};
   let offlineQueue=[];
+  let captureSubmitting=false;
 
   const readJson=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key)||"")||fallback}catch{return fallback}};
   const openOfflineDb=()=>new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,1);request.onupgradeneeded=()=>request.result.createObjectStore("kv");request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
@@ -64,6 +65,11 @@
     button.disabled=true;
     if(label)button.innerHTML=label;
     return()=>{button.classList.remove("is-busy");button.disabled=false;button.innerHTML=old};
+  }
+  function setBusyForm(form,label){
+    const buttons=[...form.querySelectorAll("button[type='submit']")],snapshots=buttons.map(button=>({button,html:button.innerHTML,disabled:button.disabled}));
+    buttons.forEach(button=>{button.classList.add("is-busy");button.disabled=true;if(button===document.activeElement&&label)button.innerHTML=label});
+    return()=>snapshots.forEach(({button,html,disabled})=>{button.classList.remove("is-busy");button.disabled=disabled;button.innerHTML=html});
   }
   function rememberCaptureFields(data){
     const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,dueDate:data.dueDate,priority:data.priority,type:data.type};
@@ -224,35 +230,38 @@
     try{await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});await reload();showItem(id);toast("Item details and evidence updated")}catch(err){toast(err.message,true)}
   };
 
-  chooseImage=function(){return new Promise(resolve=>{const input=document.createElement("input");input.type="file";input.accept="image/*";input.onchange=async()=>{const records=await filesWithMeta(input.files||[]);lastChosenPhotoMeta=records[0]?.meta||null;resolve(records[0]?.src)};input.click()})};
-
-  itemAction=async function(id,act){
-    const i=state.items.find(x=>x.id===id),body={by:state.settings.preparedBy};
-    if(act==="issue"){body.to=i.subcontractor||prompt("Subcontractor name:","");body.reissue=i.status==="rejected"}
-    if(act==="reject"||act==="reopen")body.reason=prompt(act==="reject"?"Why is this being rejected?":"Reason for reopening:","");
-    if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
-    if(act==="close"){body.role=prompt("Signed off by role:","Site Manager")||"Site Manager";body.note=prompt("Closeout note (optional):","");if(i.type!=="incomplete"){body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta}body.confirmed=confirm(`I confirm this item is rectified and accepted by ${state.settings.preparedBy}.`)}
-    try{await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});await reload();showItem(id);toast("Item updated")}catch(err){toast(err.message,true)}
-  };
+  chooseImage=function(){return new Promise(resolve=>{
+    let settled=false;
+    const done=value=>{if(settled)return;settled=true;resolve(value||null)};
+    const input=document.createElement("input");input.type="file";input.accept="image/*";
+    input.onchange=async()=>{try{const records=await filesWithMeta(input.files||[]);lastChosenPhotoMeta=records[0]?.meta||null;done(records[0]?.src)}catch(err){toast(err.message,true);done(null)}};
+    input.oncancel=()=>done(null);
+    setTimeout(()=>window.addEventListener("focus",()=>setTimeout(()=>{if(!settled&&!input.files?.length)done(null)},350),{once:true}),0);
+    input.click();
+  })};
 
   saveCapture=async function(e){
     e.preventDefault();
+    if(captureSubmitting)return toast("Still saving this item. Please wait…",true);
+    captureSubmitting=true;
     const form=e.currentTarget,data=Object.fromEntries(new FormData(form)),mode=e.submitter?.value||"save";
-    const release=setBusyButton(e.submitter,mode==="issue"?"Issuing…":"Saving…");
-    data.id=offlineId();data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
+    const release=setBusyForm(form,mode==="issue"?"Issuing…":"Saving…");
+    form.dataset.captureRequestId=form.dataset.captureRequestId||offlineId();
+    data.id=form.dataset.captureRequestId;data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
     rememberCaptureFields(data);
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
-    if(data.type==="client"&&!data.raisedBy){release();return toast("A Client Defect requires a Raised By / source.",true)}
-    if(requireOriginalPhoto(data)){release();focusPhotoEvidence();return toast("Attach original photo evidence, or change Item Type to Incomplete Work.",true)}
-    if(mode==="issue"&&(!data.trade||!data.subcontractor)){release();return toast("Issue Now requires a trade and subcontractor.",true)}
+    const fail=message=>{captureSubmitting=false;release();toast(message,true)};
+    if(data.type==="client"&&!data.raisedBy)return fail("A Client Defect requires a Raised By / source.");
+    if(requireOriginalPhoto(data)){focusPhotoEvidence();return fail("Attach original photo evidence, or change Item Type to Incomplete Work.")}
+    if(mode==="issue"&&(!data.trade||!data.subcontractor))return fail("Issue Now requires a trade and subcontractor.");
     try{
       toast(capturePhotos.length?"Compressing and uploading evidence…":"Saving item…");
+      if(mode==="issue"){data.issueOnCreate=true;data.issueTo=data.subcontractor}
       const item=await api("/api/items",{method:"POST",body:JSON.stringify(data)});
-      if(mode==="issue")await api(`/api/items/${item.id}/actions/issue`,{method:"POST",body:JSON.stringify({to:data.subcontractor,by:data.createdBy})});
       capturePhotos=[];capturePhotoMeta=[];
       if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved · continue walk`)}
       else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline · queued to sync`:`${item.code} saved`)}
-    }catch(err){toast(err.message,true)}finally{release()}
+    }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
   };
 
   reviewView=function(){
@@ -265,8 +274,10 @@
     const release=setBusyButton(document.activeElement,"Working…");
     if(act==="issue"){body.to=i.subcontractor||prompt("Subcontractor name:","");body.reissue=i.status==="rejected"}
     if(act==="reject"||act==="reopen")body.reason=prompt(act==="reject"?"Why is this being rejected?":"Reason for reopening:","");
-    if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
-    if(act==="close"){body.role=prompt("Signed off by role:","Site Manager")||"Site Manager";body.note=prompt("Closeout note (optional):","");if(i.type!=="incomplete"){body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta}body.confirmed=confirm(`I confirm this item is rectified and accepted by ${state.settings.preparedBy}.`)}
+    if(act==="issue"&&!body.to){release();return toast("Choose a subcontractor before issuing.",true)}
+    if((act==="reject"||act==="reopen")&&!body.reason){release();return toast(`${act==="reject"?"Rejection":"Reopen"} reason is required.`,true)}
+    if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo&&!body.comment){release();return toast("Add a rectification photo or comment.",true)}body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
+    if(act==="close"){body.role=prompt("Signed off by role:","Site Manager")||"Site Manager";body.note=prompt("Closeout note (optional):","");if(i.type!=="incomplete"){body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo){release();return toast("Closeout photo is required.",true)}}body.confirmed=confirm(`I confirm this item is rectified and accepted by ${state.settings.preparedBy}.`);if(!body.confirmed){release();return toast("Closeout confirmation cancelled.",true)}}
     try{await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});await reload();showItem(id);document.querySelector(".dialog")?.scrollTo?.(0,0);toast("Item updated")}catch(err){toast(err.message,true)}finally{release()}
   };
 
@@ -281,7 +292,11 @@
   function optimistic(path,opt,body){
     const method=(opt.method||"GET").toUpperCase(),at=new Date().toISOString();
     if(method==="POST"&&path==="/api/items"){
-      const item={status:"open",createdAt:at,updatedAt:at,rectificationEvidence:[],closeoutEvidence:[],comments:[],issueHistory:[],inspectionHistory:[],auditEvents:[{at,action:"Created offline",by:body.createdBy}],sync:"queued",...body,code:`OFF-${String(Date.now()).slice(-4)}`};state.items.unshift(item);cacheState();return item;
+      const clean={...body},issueOnCreate=!!clean.issueOnCreate,issueTo=clean.issueTo||clean.subcontractor;delete clean.issueOnCreate;delete clean.issueTo;
+      const existing=state.items.find(x=>x.id===clean.id);if(existing)return existing;
+      const item={status:issueOnCreate?"issued":"open",createdAt:at,updatedAt:at,rectificationEvidence:[],closeoutEvidence:[],comments:[],issueHistory:[],inspectionHistory:[],auditEvents:[{at,action:"Created offline",by:clean.createdBy}],sync:"queued",...clean,code:`OFF-${String(Date.now()).slice(-4)}`};
+      if(issueOnCreate){item.issuedAt=at;item.issueHistory.push({at,to:issueTo,by:clean.createdBy,reissue:false});item.auditEvents.push({at,action:`Issue to ${issueTo} queued offline`,by:clean.createdBy})}
+      state.items.unshift(item);cacheState();return item;
     }
     const itemMatch=path.match(/^\/api\/items\/([^/]+)$/);if(itemMatch&&method==="PATCH"){const item=state.items.find(x=>x.id===decodeURIComponent(itemMatch[1]));Object.assign(item||{},body,{sync:"queued",updatedAt:at});cacheState();return item}
     const actionMatch=path.match(/^\/api\/items\/([^/]+)\/actions\/([^/]+)$/);if(actionMatch&&method==="POST"){
