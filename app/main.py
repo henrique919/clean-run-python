@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,10 +10,18 @@ from pydantic import BaseModel
 from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, RectificationEvidence, RAISED_BY_OPTIONS, TRADES
 from app.reporting import build_report_html, filter_items
 from app.store import CleanRunStore
+from app.store_supabase import SupabaseCleanRunStore
 from app.validation import ValidationError
 
+
+def build_store():
+    if os.getenv("CLEANRUN_STORAGE", "").lower() == "supabase":
+        return SupabaseCleanRunStore()
+    return CleanRunStore()
+
+
 app = FastAPI(title="CleanRun IQ Python", version="0.1.0")
-store = CleanRunStore()
+store = build_store()
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
