@@ -17,6 +17,7 @@ import base64
 import copy
 import html
 import json
+import mimetypes
 import os
 import re
 import tempfile
@@ -24,7 +25,6 @@ import threading
 import uuid
 import webbrowser
 import zlib
-from supabase_storage import upload_data_url_to_supabase
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from functools import lru_cache
@@ -302,56 +302,67 @@ def load_state() -> dict[str, Any]:
 
 STATE = load_state()
 
-def storage_enabled() -> bool:
-return os.environ.get("CLEANRUN_STORAGE", "local").lower() == "supabase"
 
-def guess_image_mime_and_extension(value: str) -> tuple[str, str]:
-if value.startswith("data:"):
-header = value.split(",", 1)[0]
-mime_type = header.split(";")[0].replace("data:", "") or "image/jpeg"
-elif value.startswith("/9j/") or value.startswith("9j/"):
-mime_type = "image/jpeg"
-elif value.startswith("iVBOR"):
-mime_type = "image/png"
-elif value.startswith("UklGR"):
-mime_type = "image/webp"
-else:
-mime_type = "image/jpeg"
+def use_supabase_storage() -> bool:
+    return os.environ.get("CLEANRUN_STORAGE", "local").lower() == "supabase"
 
-extension_map = {
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-}
 
-return mime_type, extension_map.get(mime_type, ".jpg")
+def _photo_looks_like_uploadable_base64(value: str) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
 
-def extract_base64_photo(value: str) -> str:
-if value.startswith("data:"):
-return value.split(",", 1)[1]
-return value
+    value = value.strip()
 
-def upload_photo_to_supabase_storage(photo: Any, folder: str = "evidence") -> Any:
-if not photo or not isinstance(photo, str):
-return photo
+    if value.startswith("data:image/"):
+        return True
 
-if photo.startswith("http://") or photo.startswith("https://") or photo.startswith("seed://"):
-    return photo
+    if value.startswith("http://") or value.startswith("https://") or value.startswith("seed://"):
+        return False
 
-if not storage_enabled():
-    return photo
+    return value.startswith(("/9j/", "9j/", "iVBOR", "UklGR"))
 
-try:
+
+def _split_photo_base64(photo: str) -> tuple[str, str]:
+    value = photo.strip()
+
+    if value.startswith("data:"):
+        header, encoded = value.split(",", 1)
+        mime_type = header.split(";")[0].replace("data:", "") or "image/jpeg"
+        return mime_type, encoded
+
+    if value.startswith("iVBOR"):
+        return "image/png", value
+
+    if value.startswith("UklGR"):
+        return "image/webp", value
+
+    return "image/jpeg", value
+
+
+def upload_data_url_to_supabase(data_url: str, folder: str = "evidence") -> str:
+    if not _photo_looks_like_uploadable_base64(data_url):
+        return data_url
+
+    if not use_supabase_storage():
+        return data_url
+
+    mime_type, encoded = _split_photo_base64(data_url)
+    extension = mimetypes.guess_extension(mime_type) or ".jpg"
+    if extension == ".jpe":
+        extension = ".jpg"
+
+    raw_bytes = base64.b64decode(encoded, validate=False)
+
+    max_bytes = int(os.environ.get("CLEANRUN_MAX_IMAGE_BYTES", "8000000"))
+    if len(raw_bytes) > max_bytes:
+        raise ValueError("uploaded image is too large")
+
     bucket = os.environ.get("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence")
-    mime_type, extension = guess_image_mime_and_extension(photo)
-    encoded = extract_base64_photo(photo)
-    raw_bytes = base64.b64decode(encoded)
-
     now_path = datetime.now(timezone.utc).strftime("%Y/%m/%d")
     file_path = f"{folder}/{now_path}/{uuid.uuid4().hex}{extension}"
 
-    get_supabase_client().storage.from_(bucket).upload(
+    client = get_supabase_client()
+    client.storage.from_(bucket).upload(
         path=file_path,
         file=raw_bytes,
         file_options={
@@ -359,42 +370,27 @@ try:
             "upsert": "false",
         },
     )
+    return client.storage.from_(bucket).get_public_url(file_path)
 
-    return get_supabase_client().storage.from_(bucket).get_public_url(file_path)
 
-except Exception as exc:
-    print("Supabase photo upload failed:", repr(exc), flush=True)
-    return photo
+def maybe_upload_photo(photo: Any, folder: str = "evidence") -> Any:
+    if not photo or not isinstance(photo, str):
+        return photo
+
+    if not _photo_looks_like_uploadable_base64(photo):
+        return photo
+
+    return upload_data_url_to_supabase(photo, folder=folder)
+
 
 def upload_photo_list(photos: Any, folder: str = "evidence") -> list[Any]:
-if not photos:
-return []
+    if not photos:
+        return []
 
-if not isinstance(photos, list):
-    return []
+    if not isinstance(photos, list):
+        return []
 
-return [
-    upload_photo_to_supabase_storage(photo, folder=folder)
-    for photo in photos
-  
-
-def get_item(item_id: str) -> dict[str, Any]:
-    for item in STATE["items"]:
-        if item["id"] == item_id:
-            return item
-    raise KeyError("Item not found")
-
-
-def audit(item: dict[str, Any], action: str, by: str | None = None, note: str | None = None) -> None:
-    at = now_iso()
-    event = {"at": at, "action": action}
-    if by:
-        event["by"] = by
-    if note:
-        event["note"] = note
-    item.setdefault("auditEvents", []).append(event)
-    item["updatedAt"] = at
-    item["sync"] = "synced"
+    return [maybe_upload_photo(photo, folder=folder) for photo in photos]
 
 
 def next_code(kind: str) -> str:
@@ -407,87 +403,9 @@ def next_code(kind: str) -> str:
     return f"{prefix}-{max(nums, default=0) + 1:03d}"
 
 
-ROOMS = ["kitchen", "living room", "living", "bathroom", "ensuite", "bedroom", "balcony", "laundry", "hallway", "corridor", "stairwell", "pantry"]
-TRADE_HINTS = {
-    "Painting": ["paint"], "Plastering": ["plaster", "render"],
-    "Tiling": ["tile", "tiler", "tiling", "grout"],
-    "Waterproofing": ["waterproof", "membrane", "leak", "seal"],
-    "Joinery": ["joinery", "cabinet", "bench"], "Doors / Hardware": ["door", "hinge", "lock"],
-    "Windows / Aluminium": ["window", "glaz", "glass", "aluminium", "aluminum"],
-    "Flooring": ["floor", "carpet", "vinyl"], "Electrical": ["electric", "power point", "gpo", "light", "switch"],
-    "Hydraulic": ["plumb", "hydraulic", "tap", "basin", "drain", "pipe"],
-    "Mechanical": ["mechanical", "hvac", "air con", "aircon", "duct"],
-    "Fire Services": ["fire", "sprinkler", "smoke"], "Cleaning": ["clean", "overspray"],
-    "Concrete": ["concrete", "slab"], "Caulking / Sealant": ["caulk", "sealant", "silicone"],
-}
-
-
-def parse_transcript(transcript: str) -> dict[str, Any]:
-    """Rule-for-rule Python equivalent of the original offline voice parser."""
-    original, text = transcript.strip(), transcript.strip().lower()
-    if not text:
-        return {}
-    result: dict[str, Any] = {"priority": "high", "description": original}
-    client_words = ["client", "superintendent", "consultant", "architect", "buyer", "owner raised", "client raised"]
-    incomplete_words = ["not finished", "unfinished", "incomplete", "missing", "not installed", "pending", "not yet", "outstanding work", "not complete", "yet to"]
-    defect_words = ["damaged", "defective", "cracked", "crack", "scratched", "broken", "chipped", "leak", "stain", "drummy", "lippage", "faulty"]
-    if any(word in text for word in client_words): result["type"] = "client"
-    elif any(word in text for word in incomplete_words): result["type"] = "incomplete"
-    elif any(word in text for word in defect_words): result["type"] = "defect"
-    numbers = {"ground": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-               "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-               "eleven": 11, "twelve": 12}
-    match = re.search(r"\b(block|tower|building)\s+([a-z0-9]+)", text)
-    if match:
-        value = numbers.get(match.group(2), match.group(2).upper())
-        result["building"] = f"{match.group(1).title()} {value}"
-    match = re.search(r"\b(?:level|floor|l)\s*([0-9]{1,2})", text)
-    if match: result["level"] = f"L{int(match.group(1)):02d}"
-    else:
-        match = re.search(r"\b(?:level|floor)\s+(ground|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)", text)
-        if match: result["level"] = f"L{numbers[match.group(1)]:02d}"
-    match = re.search(r"\b(?:unit|apartment|apt|lot)\s+([a-z0-9-]+)", text)
-    if match: result["unit"] = match.group(1).upper()
-    for room in ROOMS:
-        if room in text:
-            bed = re.search(r"bedroom\s*([0-9])", text)
-            result["room"] = f"Bedroom {bed.group(1)}" if room == "bedroom" and bed else room.title()
-            break
-    for trade, hints in TRADE_HINTS.items():
-        if any(hint in text for hint in hints):
-            result["trade"] = trade
-            break
-    for sub in STATE["settings"]["subcontractors"]:
-        tokens = [token for token in sub.lower().split() if len(token) > 3]
-        if sub.lower() in text or any(token in text for token in tokens):
-            result["subcontractor"] = sub
-            break
-    if any(word in text for word in ["urgent", "critical", "immediate", "safety", "stop work", "asap", "emergency"]):
-        result["priority"] = "urgent"
-    if "today" in text: result["dueDate"] = day_iso()
-    elif "tomorrow" in text: result["dueDate"] = day_iso(1)
-    elif "end of week" in text or "eow" in text:
-        result["dueDate"] = day_iso((4 - date.today().weekday()) % 7 or 7)
-    else:
-        match = re.search(r"\bin\s+([0-9]{1,2})\s+days?", text)
-        if match: result["dueDate"] = day_iso(int(match.group(1)))
-        else:
-            weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-            for index, weekday in enumerate(weekdays):
-                if weekday in text:
-                    result["dueDate"] = day_iso((index - date.today().weekday()) % 7 or 7)
-                    break
-    if result.get("type") == "client":
-        for needle, label in [("superintendent", "Superintendent"), ("consultant", "Consultant"), ("architect", "Architect"), ("buyer", "Buyer"), ("client", "Client PM")]:
-            if needle in text:
-                result["raisedBy"] = label
-                break
-    sentence = re.split(r"[.!?]", original, maxsplit=1)[0].strip()
-    result["title"] = sentence if len(sentence) <= 60 else sentence[:57].rstrip() + "…"
-    return result
-
-
 def create_item(payload: dict[str, Any]) -> dict[str, Any]:
+    payload = copy.deepcopy(payload)
+
     required = ("type", "project", "description", "dueDate")
     if any(not payload.get(field) for field in required):
         raise ValueError("type, project, description and dueDate are required")
@@ -495,10 +413,12 @@ def create_item(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("invalid item type")
     if payload["type"] in {"defect", "client"} and not payload.get("originalPhotos"):
         raise ValueError("defects and client defects require at least one original photo")
+
     payload["originalPhotos"] = upload_photo_list(
-      payload.get("originalPhotos", []),
-      folder=f"items/original/{payload.get('project', 'unknown')}", 
+        payload.get("originalPhotos", []),
+        folder=f"items/original/{payload.get('project', 'unknown')}",
     )
+
     at = now_iso()
     code = next_code(payload["type"])
     item = {
@@ -514,13 +434,16 @@ def create_item(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> None:
+    body = copy.deepcopy(body)
+
+    if body.get("photo"):
+        body["photo"] = maybe_upload_photo(
+            body.get("photo"),
+            folder=f"items/{item.get('id', 'unknown')}/{action}",
+        )
+
     by = body.get("by") or STATE["settings"].get("preparedBy") or "Site Manager"
     at = now_iso()
-  if body.get("photo"):
-      body["photo"] = upload_photo_to_supabase_storage(
-          body.get("photo"),
-          folder=f"items/{item.get('id', 'unknown')}/{action}",
-     )
     if action == "issue":
         target = body.get("to") or item.get("subcontractor")
         if not target or not item.get("trade"):
@@ -573,7 +496,6 @@ def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> Non
         item.setdefault("comments", []).append({"id": new_id(), "at": at, "text": text, "by": by}); audit(item, "Comment added", by, text)
     else:
         raise ValueError("unknown action")
-
 
 def is_overdue(item: dict[str, Any]) -> bool:
     return item.get("status") not in CLOSED and item.get("dueDate", "9999") < day_iso()
@@ -748,13 +670,7 @@ class Handler(BaseHTTPRequestHandler):
                     result = get_item(unquote(match.group(1)))
                     allowed = {"type", "project", "building", "level", "unit", "room", "trade", "subcontractor", "priority", "dueDate", "description", "raisedBy", "originalPhotos", "originalPhotoMeta"}
                     previous_photos = len(result.get("originalPhotos", []))
-                incoming = {k: v for k, v in body.items() if k in allowed}
-                if "originalPhotos" in incoming:
-                    incoming["originalPhotos"] = upload_photo_list(
-                        incoming.get("originalPhotos", []),
-                        folder=f"items/{result.get('id', 'unknown')}/original",
-                    )
-                result.update(incoming)
+                    result.update({k: v for k, v in body.items() if k in allowed})
                     added_photos = max(0, len(result.get("originalPhotos", [])) - previous_photos)
                     audit(result, f"Item details edited{f' · {added_photos} retrospective photo(s) added' if added_photos else ''}", body.get("by"))
                 elif pin_match:

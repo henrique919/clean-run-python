@@ -114,6 +114,20 @@ HELPER_BLOCK = textwrap.dedent(
 ).strip()
 
 
+NEXT_CODE_BLOCK = textwrap.dedent(
+    '''
+    def next_code(kind: str) -> str:
+        prefix = CODE_PREFIX[kind]
+        nums = []
+        for item in STATE["items"]:
+            match = re.fullmatch(rf"{prefix}-(\\d+)", item.get("code", ""))
+            if match:
+                nums.append(int(match.group(1)))
+        return f"{prefix}-{max(nums, default=0) + 1:03d}"
+    '''
+).strip()
+
+
 CREATE_ITEM_BLOCK = textwrap.dedent(
     '''
     def create_item(payload: dict[str, Any]) -> dict[str, Any]:
@@ -228,6 +242,8 @@ def main() -> None:
     if "\nimport mimetypes\n" not in text:
         text = text.replace("\nimport json\n", "\nimport json\nimport mimetypes\n", 1)
 
+    text = text.replace("\nfrom supabase_storage import upload_data_url_to_supabase\n", "\n")
+
     starts = [
         pos for pos in (
             text.find("\ndef storage_enabled()"),
@@ -240,7 +256,7 @@ def main() -> None:
 
     if starts and end != -1:
         start = min(starts)
-        replacement = "\n\n" + HELPER_BLOCK + "\n\n\n" + CREATE_ITEM_BLOCK + "\n\n\n" + APPLY_ACTION_BLOCK + "\n"
+        replacement = "\n\n" + HELPER_BLOCK + "\n\n\n" + NEXT_CODE_BLOCK + "\n\n\n" + CREATE_ITEM_BLOCK + "\n\n\n" + APPLY_ACTION_BLOCK + "\n"
         text = text[:start] + replacement + text[end:]
 
     text = re.sub(
