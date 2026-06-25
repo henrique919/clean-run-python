@@ -382,10 +382,15 @@
   function renderDesktopNav(){
     if(!matchMedia("(min-width:1024px)").matches)return;
     const items=[
-      ["home","Home","⌂"],["items","Items","▤"],["capture","Capture","+"],["review","Review","✓"],["plans","Plans","⌖"],
-      ["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]
+      ["home","Home",navIcon?.home||"⌂"],
+      ["items","Items",navIcon?.items||"▤"],
+      ["capture","Capture","+"],
+      ["review","Review","✓"],
+      ["plans","Plans","⌖"],
+      ["more","More",navIcon?.more||"•••"]
     ];
-    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+    const active=["reports","setup","settings","subcontractor"].includes(route)?"more":route;
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
   const originalRender=render;
   render=function(){

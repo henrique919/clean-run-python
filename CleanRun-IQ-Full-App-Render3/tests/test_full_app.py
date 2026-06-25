@@ -199,8 +199,8 @@ class FullFieldAppTests(unittest.TestCase):
         for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
-        self.assertIn('"reports","Reports"', enhancements)
-        self.assertIn('"subcontractor","Subcontractors"', enhancements)
+        self.assertIn('"more","More"', enhancements)
+        self.assertIn('["reports","setup","settings","subcontractor"].includes(route)?"more":route', enhancements)
         self.assertIn("@media(min-width:1024px)", styles)
         self.assertIn(".item-sub", styles)
         self.assertIn("graphiteDrift", styles)
@@ -212,7 +212,7 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v11", worker)
+        self.assertIn("cleanrun-iq-shell-v12", worker)
         self.assertIn("NETWORK_FIRST", worker)
         self.assertIn("indexedDB", enhancements)
 
