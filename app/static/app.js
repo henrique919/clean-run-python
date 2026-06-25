@@ -5,6 +5,8 @@ const state = {
   raisedByOptions: [],
   photos: [],
   editingItem: null,
+  actionItem: null,
+  actionMode: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -36,6 +38,10 @@ function toast(message) {
   el.classList.remove("hidden");
   setTimeout(() => el.classList.add("hidden"), 2600);
 }
+
+function todayIso() { return new Date().toISOString().slice(0, 10); }
+function isClosed(item) { return item.status === "closed" || item.status === "complete"; }
+function isOverdue(item) { return !isClosed(item) && item.due_date && item.due_date < todayIso(); }
 
 function showValidation(message, title = "Check required fields") {
   const el = $("validationAlert");
@@ -133,13 +139,8 @@ function subcontractorsForTrade(trade) {
   return subs.length ? subs : state.settings.subcontractors;
 }
 
-function refreshSubcontractors() {
-  setDatalist("subOptions", subcontractorsForTrade($("trade")?.value));
-}
-
-function refreshEditSubcontractors() {
-  setDatalist("editSubOptions", subcontractorsForTrade($("editTrade")?.value));
-}
+function refreshSubcontractors() { setDatalist("subOptions", subcontractorsForTrade($("trade")?.value)); }
+function refreshEditSubcontractors() { setDatalist("editSubOptions", subcontractorsForTrade($("editTrade")?.value)); }
 
 function dueDate(days = 7) {
   const d = new Date();
@@ -202,11 +203,16 @@ function fileToDataUrl(file) {
 }
 
 async function handleFiles(files, input) {
-  if (!files || files.length === 0) return;
+  if (!files || files.length === 0) return [];
   const next = await Promise.all([...files].map(fileToDataUrl));
+  if (input) input.value = "";
+  return next;
+}
+
+async function handleCaptureFiles(files, input) {
+  const next = await handleFiles(files, input);
   state.photos.push(...next);
   renderThumbs();
-  if (input) input.value = "";
   clearValidation();
 }
 
@@ -251,9 +257,7 @@ function clientValidate(issueNow) {
   const data = payload();
   if (!data.building) return "Select a building.";
   if (!data.unit) return "Select a unit / area.";
-  if ((data.type === "defect" || data.type === "client") && data.original_photos.length === 0) {
-    return data.type === "client" ? "A Client Defect requires at least one original photo." : "A Defect requires at least one original photo.";
-  }
+  if ((data.type === "defect" || data.type === "client") && data.original_photos.length === 0) return data.type === "client" ? "A Client Defect requires at least one original photo." : "A Defect requires at least one original photo.";
   if (data.type === "client" && !data.raised_by) return "Client Defects require a Raised By / source.";
   if (!data.description) return "Add a short description.";
   if (issueNow && !data.trade) return "Issue Now requires a trade.";
@@ -284,11 +288,7 @@ async function save(issueNow = false) {
   if (warning) return showValidation(warning);
   if ($("type").value === "incomplete" && state.photos.length === 0 && !confirm("Incomplete Work can be saved without a photo, but evidence is recommended. Save anyway?")) return;
   try {
-    const res = await fetch(`/api/items?issue_now=${issueNow}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload()),
-    });
+    const res = await fetch(`/api/items?issue_now=${issueNow}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload()) });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || "Could not save item");
@@ -298,221 +298,108 @@ async function save(issueNow = false) {
     renderItems();
     resetForm(true);
     toast(issueNow ? "Item issued" : "Item saved");
-  } catch (error) {
-    showValidation(error.message || "Could not save item.");
-  }
+  } catch (error) { showValidation(error.message || "Could not save item."); }
 }
 
 async function patchItem(id, patch) {
-  const res = await fetch(`/api/items/${id}?by=${encodeURIComponent(state.settings.prepared_by)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
+  const res = await fetch(`/api/items/${id}?by=${encodeURIComponent(state.settings.prepared_by)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Update failed");
   }
   const item = await res.json();
-  const index = state.items.findIndex((candidate) => candidate.id === id);
-  if (index >= 0) state.items[index] = item;
-  renderItems();
+  replaceItem(item);
   return item;
 }
 
+function replaceItem(item) {
+  const index = state.items.findIndex((candidate) => candidate.id === item.id);
+  if (index >= 0) state.items[index] = item;
+  renderItems();
+}
+
 async function action(id, endpoint, body = {}) {
-  const res = await fetch(`/api/items/${id}/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ by: state.settings.prepared_by, ...body }),
-  });
+  const res = await fetch(`/api/items/${id}/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ by: state.settings.prepared_by, ...body }) });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Action failed");
   }
   const item = await res.json();
-  const index = state.items.findIndex((candidate) => candidate.id === id);
-  if (index >= 0) state.items[index] = item;
-  renderItems();
+  replaceItem(item);
   return item;
 }
 
-function evidenceCounts(item) {
-  return {
-    original: item.original_photos?.length || 0,
-    rectification: item.rectification_evidence?.length || 0,
-    closeout: item.closeout_evidence?.length || 0,
-  };
-}
+function evidenceCounts(item) { return { original: item.original_photos?.length || 0, rectification: item.rectification_evidence?.length || 0, closeout: item.closeout_evidence?.length || 0 }; }
+function locationText(item) { return [item.building, item.level, item.unit, item.room].filter(Boolean).join(" / ") || "Unassigned location"; }
 
-function locationText(item) {
-  return [item.building, item.level, item.unit, item.room].filter(Boolean).join(" / ") || "Unassigned location";
-}
-
-function filteredItems() {
-  const query = ($("searchInput")?.value || "").trim().toLowerCase();
+function visibleItems() {
   const status = $("statusFilter")?.value || "all";
+  const query = ($("searchInput")?.value || "").trim().toLowerCase();
   return state.items.filter((item) => {
     if (status !== "all" && item.status !== status) return false;
     if (!query) return true;
-    return [item.code, item.type, item.status, item.description, item.project, item.building, item.level, item.unit, item.room, item.trade, item.subcontractor]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(query));
+    const haystack = [item.code, TYPE_LABELS[item.type], STATUS_LABELS[item.status], item.description, item.trade, item.subcontractor, locationText(item)].join(" ").toLowerCase();
+    return haystack.includes(query);
   });
 }
 
-function renderStats() {
-  const bar = $("statsBar");
-  if (!bar) return;
-  const terminal = new Set(["closed", "complete"]);
-  const today = new Date().toISOString().slice(0, 10);
-  const open = state.items.filter((item) => !terminal.has(item.status)).length;
-  const overdue = state.items.filter((item) => !terminal.has(item.status) && item.due_date && item.due_date < today).length;
-  const closed = state.items.filter((item) => terminal.has(item.status)).length;
-  const stats = [[state.items.length, "Total"], [open, "Open"], [overdue, "Overdue"], [closed, "Closed"]];
-  bar.innerHTML = stats.map(([value, label]) => `<div class="stat-card"><span class="stat-value">${value}</span><span class="stat-label">${label}</span></div>`).join("");
+function renderStats(items = state.items) {
+  const el = $("statsBar");
+  if (!el) return;
+  const outstanding = items.filter((i) => !isClosed(i)).length;
+  const overdue = items.filter(isOverdue).length;
+  const closed = items.filter(isClosed).length;
+  const issued = items.filter((i) => ["issued", "in_progress", "ready_for_review", "under_inspection"].includes(i.status)).length;
+  el.innerHTML = `<div class="stat-card"><span class="stat-value">${items.length}</span><span class="stat-label">Total</span></div><div class="stat-card"><span class="stat-value">${outstanding}</span><span class="stat-label">${overdue ? `${overdue} overdue` : "Open"}</span></div><div class="stat-card"><span class="stat-value">${issued}</span><span class="stat-label">With trade</span></div><div class="stat-card"><span class="stat-value">${closed}</span><span class="stat-label">Closed</span></div>`;
+}
+
+function nextActionFor(item) {
+  if (item.status === "open") return { label: item.trade && item.subcontractor ? "Issue" : "Edit to issue", run: () => item.trade && item.subcontractor ? issueItem(item) : openEdit(item) };
+  if (item.status === "issued") return { label: "Start work", run: () => quickAction(item, "in-progress", "Marked in progress") };
+  if (item.status === "in_progress" || item.status === "rejected") return { label: "Add rectification", run: () => openActionDrawer(item, "rectification") };
+  if (item.status === "ready_for_review") return { label: "Start inspection", run: () => quickAction(item, "inspection/start", "Inspection started") };
+  if (item.status === "under_inspection") return { label: "Close", run: () => openActionDrawer(item, "close") };
+  return { label: "Report", run: () => window.open("/api/reports/handover", "_blank") };
+}
+
+async function quickAction(item, endpoint, success) { try { await action(item.id, endpoint); toast(success); } catch (error) { toast(error.message || "Action failed"); } }
+async function issueItem(item) {
+  try {
+    const res = await fetch(`/api/items/${item.id}/issue`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: item.subcontractor, by: state.settings.prepared_by }) });
+    if (!res.ok) throw new Error("Issue failed");
+    replaceItem(await res.json());
+    toast("Item issued");
+  } catch (error) { toast(error.message || "Issue failed"); }
 }
 
 function renderItems() {
   const list = $("itemsList");
   if (!list) return;
-  const items = filteredItems();
-  renderStats();
+  const items = visibleItems();
+  renderStats(state.items);
   if ($("listCount")) $("listCount").textContent = `${items.length} shown`;
   list.textContent = "";
   if (items.length === 0) {
     const empty = document.createElement("div");
     empty.className = "item-card";
-    empty.innerHTML = `<div class="code">No matching items</div><div class="meta">Adjust the register filters or capture a new item.</div>`;
+    empty.innerHTML = `<div class="code">No matching items</div><div class="meta">Capture an item or clear your filters.</div>`;
     list.appendChild(empty);
     return;
   }
-  items.slice(0, 50).forEach((item) => {
+  items.slice(0, 30).forEach((item) => {
     const counts = evidenceCounts(item);
+    const next = nextActionFor(item);
     const div = document.createElement("div");
     div.className = `item-card status-${item.status}`;
-    div.innerHTML = `
-      <div class="item-top">
-        <div>
-          <div class="code">${text(item.code)}</div>
-          <div class="item-type">${text(TYPE_LABELS[item.type] || item.type)}</div>
-        </div>
-        <span class="status ${text(item.status)}">${text(STATUS_LABELS[item.status] || item.status)}</span>
-      </div>
-      <div class="desc">${text(item.description)}</div>
-      <div class="item-meta-grid">
-        <div><strong>Location</strong> · ${text(locationText(item))}</div>
-        <div><strong>Trade</strong> · ${text(item.trade || "No trade")}</div>
-        <div><strong>Subcontractor</strong> · ${text(item.subcontractor || "Unassigned")}</div>
-        <div><strong>Due</strong> · ${text(item.due_date)}</div>
-      </div>
-      <div class="evidence-counts">
-        <span class="ev-chip original">Original ${counts.original}</span>
-        <span class="ev-chip rectification">Rectification ${counts.rectification}</span>
-        <span class="ev-chip closeout">Closeout ${counts.closeout}</span>
-      </div>
-      <div class="card-actions">
-        <button type="button" data-edit>Edit</button>
-        <button type="button" data-issue>Issue</button>
-        <button type="button" data-progress>In Progress</button>
-        <button type="button" data-rectify>Add Rectification</button>
-        <button type="button" data-ready>Ready</button>
-        <button type="button" data-inspect>Inspect</button>
-        <button type="button" data-reject>Reject</button>
-        <button type="button" data-close>Close</button>
-        <button type="button" data-comment>Comment</button>
-        <button type="button" data-report>Report</button>
-      </div>`;
+    div.innerHTML = `<div class="item-top"><div><div class="code">${text(item.code)}</div><div class="item-type">${text(TYPE_LABELS[item.type] || item.type)}</div></div><span class="status ${text(item.status)}">${text(STATUS_LABELS[item.status] || item.status)}</span></div><div class="desc">${text(item.description)}</div><div class="item-meta-grid"><div><strong>Location</strong> · ${text(locationText(item))}</div><div><strong>Trade</strong> · ${text(item.trade || "No trade")}</div><div><strong>Subcontractor</strong> · ${text(item.subcontractor || "Unassigned")}</div><div><strong>Due</strong> · ${text(item.due_date || "Not set")}</div></div><div class="evidence-counts"><span class="ev-chip original">Original ${counts.original}</span><span class="ev-chip rectification">Rectification ${counts.rectification}</span><span class="ev-chip closeout">Closeout ${counts.closeout}</span></div><div class="card-actions"><button type="button" class="quiet-action" data-edit>Edit</button><button type="button" class="next-action" data-next>${text(next.label)}</button><button type="button" class="more-action" data-more>More</button></div>`;
     div.querySelector("[data-edit]").onclick = () => openEdit(item);
-    div.querySelector("[data-issue]").onclick = async () => {
-      if (!item.subcontractor) return toast("Add a subcontractor before issuing.");
-      try {
-        const res = await fetch(`/api/items/${item.id}/issue`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to: item.subcontractor, by: state.settings.prepared_by }),
-        });
-        if (!res.ok) throw new Error("Issue failed");
-        const updated = await res.json();
-        state.items[state.items.findIndex((candidate) => candidate.id === item.id)] = updated;
-        renderItems();
-        toast("Item issued");
-      } catch (error) { toast(error.message || "Issue failed"); }
-    };
-    div.querySelector("[data-progress]").onclick = () => action(item.id, "in-progress").then(() => toast("Marked in progress")).catch((e) => toast(e.message));
-    div.querySelector("[data-rectify]").onclick = () => addRectification(item);
-    div.querySelector("[data-ready]").onclick = () => action(item.id, "ready").then(() => toast("Marked ready for review")).catch((e) => toast(e.message));
-    div.querySelector("[data-inspect]").onclick = () => action(item.id, "inspection/start").then(() => toast("Inspection started")).catch((e) => toast(e.message));
-    div.querySelector("[data-reject]").onclick = () => rejectItem(item);
-    div.querySelector("[data-close]").onclick = () => closeItem(item);
-    div.querySelector("[data-comment]").onclick = () => addComment(item);
-    div.querySelector("[data-report]").onclick = () => window.open("/api/reports/handover", "_blank");
+    div.querySelector("[data-next]").onclick = next.run;
+    div.querySelector("[data-more]").onclick = () => openActionDrawer(item, "menu");
     list.appendChild(div);
   });
 }
 
-async function postItemUpdate(item, endpoint, body, successMessage) {
-  try {
-    const res = await fetch(`/api/items/${item.id}/${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.detail || "Action failed");
-    }
-    const updated = await res.json();
-    const index = state.items.findIndex((candidate) => candidate.id === item.id);
-    if (index >= 0) state.items[index] = updated;
-    renderItems();
-    toast(successMessage);
-  } catch (error) {
-    toast(error.message || "Action failed");
-  }
-}
-
-function addRectification(item) {
-  const comment = prompt("Rectification evidence", "Works completed and ready for review.");
-  if (comment === null || !comment.trim()) return;
-  postItemUpdate(item, "rectification", { by: state.settings.prepared_by, comment: comment.trim(), advance_to_ready: false }, "Rectification evidence added");
-}
-
-function rejectItem(item) {
-  const reason = prompt("Reason for rejection");
-  if (reason === null || !reason.trim()) return;
-  postItemUpdate(item, "inspection/reject", { by: state.settings.prepared_by, reason: reason.trim() }, "Item rejected");
-}
-
-function addComment(item) {
-  const comment = prompt("Add register comment");
-  if (comment === null || !comment.trim()) return;
-  postItemUpdate(item, "comments", { by: state.settings.prepared_by, text: comment.trim() }, "Comment added");
-}
-
-async function closeItem(item) {
-  const note = prompt("Closeout note", "Reviewed and accepted for closeout.");
-  if (note === null) return;
-  try {
-    const res = await fetch(`/api/items/${item.id}/closeout`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ by: state.settings.prepared_by, role: "Supervisor", note, confirmation: "Confirmed acceptable for closeout" }),
-    });
-    if (!res.ok) throw new Error("Closeout failed");
-    const updated = await res.json();
-    state.items[state.items.findIndex((candidate) => candidate.id === item.id)] = updated;
-    renderItems();
-    toast("Item closed");
-  } catch (error) { toast(error.message || "Closeout failed"); }
-}
-
 function openEdit(item) {
-  if (!$("editOverlay")) {
-    const description = prompt("Edit description", item.description);
-    if (description !== null) patchItem(item.id, { description }).then(() => toast("Item updated")).catch((e) => toast(e.message));
-    return;
-  }
   state.editingItem = item;
   clearEditAlert();
   $("editType").value = item.type;
@@ -534,31 +421,8 @@ function openEdit(item) {
   $("editOverlay").setAttribute("aria-hidden", "false");
 }
 
-function closeEdit() {
-  state.editingItem = null;
-  if (!$("editOverlay")) return;
-  $("editOverlay").classList.add("hidden");
-  $("editOverlay").setAttribute("aria-hidden", "true");
-}
-
-function editPayload() {
-  const type = $("editType").value;
-  return {
-    type,
-    project: $("editProject").value,
-    building: $("editBuilding").value.trim(),
-    level: $("editLevel").value.trim(),
-    unit: $("editUnit").value.trim(),
-    room: $("editRoom").value.trim(),
-    trade: $("editTrade").value,
-    subcontractor: $("editSubcontractor").value.trim(),
-    priority: $("editPriority").value,
-    due_date: $("editDueDate").value,
-    description: $("editDescription").value.trim(),
-    raised_by: type === "client" ? $("editRaisedBy").value : null,
-  };
-}
-
+function closeEdit() { state.editingItem = null; $("editOverlay")?.classList.add("hidden"); $("editOverlay")?.setAttribute("aria-hidden", "true"); }
+function editPayload() { const type = $("editType").value; return { type, project: $("editProject").value, building: $("editBuilding").value.trim(), level: $("editLevel").value.trim(), unit: $("editUnit").value.trim(), room: $("editRoom").value.trim(), trade: $("editTrade").value, subcontractor: $("editSubcontractor").value.trim(), priority: $("editPriority").value, due_date: $("editDueDate").value, description: $("editDescription").value.trim(), raised_by: type === "client" ? $("editRaisedBy").value : null }; }
 async function saveEdit() {
   if (!state.editingItem) return;
   clearEditAlert();
@@ -567,52 +431,114 @@ async function saveEdit() {
   if (!patch.unit) return showEditAlert("Unit / Area cannot be blank.");
   if (!patch.description) return showEditAlert("Description cannot be blank.");
   if (patch.type === "client" && !patch.raised_by) return showEditAlert("Client Defects require a Raised By / source.");
-  try {
-    await patchItem(state.editingItem.id, patch);
-    closeEdit();
-    toast("Item details updated");
-  } catch (error) {
-    showEditAlert(error.message || "Could not update item.");
+  try { await patchItem(state.editingItem.id, patch); closeEdit(); toast("Item details updated"); } catch (error) { showEditAlert(error.message || "Could not update item."); }
+}
+
+function openActionDrawer(item, mode = "menu") {
+  state.actionItem = item;
+  state.actionMode = mode;
+  $("actionTitle").textContent = item.code;
+  $("actionMeta").textContent = `${TYPE_LABELS[item.type] || item.type} · ${locationText(item)} · ${STATUS_LABELS[item.status] || item.status}`;
+  $("actionOverlay").classList.remove("hidden");
+  $("actionOverlay").setAttribute("aria-hidden", "false");
+  renderActionContent();
+}
+function closeActionDrawer() { state.actionItem = null; state.actionMode = null; $("actionOverlay")?.classList.add("hidden"); $("actionOverlay")?.setAttribute("aria-hidden", "true"); }
+function menuButton(label, description, handler, primary = false) { const btn = document.createElement("button"); btn.type = "button"; btn.className = primary ? "primary-choice" : ""; btn.innerHTML = `<span>${text(label)}</span><small>${text(description)}</small>`; btn.onclick = handler; return btn; }
+
+function renderActionContent() {
+  const item = state.actionItem;
+  const mode = state.actionMode;
+  const menu = $("actionMenu");
+  const form = $("actionForm");
+  const submit = $("actionSubmit");
+  menu.textContent = "";
+  form.textContent = "";
+  menu.classList.toggle("hidden", mode !== "menu");
+  form.classList.toggle("hidden", mode === "menu");
+  submit.classList.toggle("hidden", mode === "menu");
+  if (mode === "menu") {
+    const next = nextActionFor(item);
+    menu.appendChild(menuButton(next.label, "Recommended next step", next.run, true));
+    menu.appendChild(menuButton("Add Rectification", "Upload or record trade rectification evidence", () => openActionDrawer(item, "rectification")));
+    menu.appendChild(menuButton("Reject", "Send back after failed inspection", () => openActionDrawer(item, "reject")));
+    menu.appendChild(menuButton("Comment", "Add an audit note", () => openActionDrawer(item, "comment")));
+    menu.appendChild(menuButton("Close", "Close with supervisor proof", () => openActionDrawer(item, "close")));
+    menu.appendChild(menuButton("Report", "Open handover report", () => window.open("/api/reports/handover", "_blank")));
+    return;
   }
+  const titleMap = { rectification: "Add Rectification", reject: "Reject Item", comment: "Add Comment", close: "Close Item" };
+  $("actionKicker").textContent = titleMap[mode] || "Item action";
+  submit.textContent = mode === "reject" ? "Reject" : mode === "close" ? "Close item" : "Save";
+  if (mode === "rectification") form.innerHTML = `<p class="hint">Record what the subcontractor has done and attach evidence where available.</p><label for="actionPhoto">Rectification photo</label><input id="actionPhoto" type="file" accept="image/*" capture="environment" /><label for="actionComment">Comment</label><textarea id="actionComment" placeholder="Describe the rectification completed"></textarea><label class="check-row"><input id="actionAdvance" type="checkbox" /> Mark ready for review</label>`;
+  else if (mode === "reject") form.innerHTML = `<p class="hint">Capture the reason this item failed inspection.</p><label for="actionReason">Rejection reason</label><textarea id="actionReason" placeholder="Explain what still needs to be fixed"></textarea>`;
+  else if (mode === "comment") form.innerHTML = `<p class="hint">Add a note to the item audit trail.</p><label for="actionComment">Comment</label><textarea id="actionComment" placeholder="Add comment"></textarea>`;
+  else if (mode === "close") form.innerHTML = `<p class="hint">Close the item with supervisor confirmation. Add a photo where practical.</p><label for="actionPhoto">Closeout photo</label><input id="actionPhoto" type="file" accept="image/*" capture="environment" /><label for="actionNote">Closeout note</label><textarea id="actionNote">Reviewed and accepted for closeout.</textarea><label for="actionConfirmation">Confirmation</label><input id="actionConfirmation" value="Confirmed acceptable for closeout" />`;
 }
 
-function bindKeyboardDone() {
-  const done = $("keyboardDone");
-  if (!done) return;
-  document.addEventListener("focusin", (event) => { if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) done.classList.remove("hidden"); });
-  document.addEventListener("focusout", () => setTimeout(() => done.classList.add("hidden"), 120));
-  done.onclick = () => { if (document.activeElement) document.activeElement.blur(); done.classList.add("hidden"); };
+async function submitAction() {
+  const item = state.actionItem;
+  const mode = state.actionMode;
+  if (!item || !mode) return;
+  try {
+    let updated;
+    if (mode === "rectification") {
+      const photos = await handleFiles($("actionPhoto")?.files || []);
+      const comment = $("actionComment").value.trim();
+      const res = await fetch(`/api/items/${item.id}/rectification`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photo: photos[0] || null, comment, by: state.settings.prepared_by, advance_to_ready: $("actionAdvance")?.checked || false }) });
+      if (!res.ok) throw new Error("Rectification failed");
+      updated = await res.json();
+      toast("Rectification added");
+    } else if (mode === "reject") {
+      const reason = $("actionReason").value.trim();
+      if (!reason) return toast("Add a rejection reason");
+      updated = await action(item.id, "inspection/reject", { reason });
+      toast("Item rejected");
+    } else if (mode === "comment") {
+      const value = $("actionComment").value.trim();
+      if (!value) return toast("Add a comment");
+      const res = await fetch(`/api/items/${item.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: value, by: state.settings.prepared_by }) });
+      if (!res.ok) throw new Error("Comment failed");
+      updated = await res.json();
+      toast("Comment added");
+    } else if (mode === "close") {
+      const photos = await handleFiles($("actionPhoto")?.files || []);
+      const note = $("actionNote").value.trim();
+      const confirmation = $("actionConfirmation").value.trim();
+      const res = await fetch(`/api/items/${item.id}/closeout`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photo: photos[0] || null, by: state.settings.prepared_by, role: "Supervisor", note, confirmation }) });
+      if (!res.ok) throw new Error("Closeout failed");
+      updated = await res.json();
+      toast("Item closed");
+    }
+    if (updated) replaceItem(updated);
+    closeActionDrawer();
+  } catch (error) { toast(error.message || "Action failed"); }
 }
 
+function bindKeyboardDone() { const done = $("keyboardDone"); if (!done) return; document.addEventListener("focusin", (event) => { if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) done.classList.remove("hidden"); }); document.addEventListener("focusout", () => setTimeout(() => done.classList.add("hidden"), 120)); done.onclick = () => { if (document.activeElement) document.activeElement.blur(); done.classList.add("hidden"); }; }
 function bind() {
-  $("type").onchange = () => {
-    const itemType = $("type").value;
-    $("raisedByWrap").classList.toggle("hidden", itemType !== "client");
-    $("photoRequirement").textContent = itemType === "incomplete" ? "Incomplete Work: photo recommended" : itemType === "client" ? "Client Defect: photo required" : "Defect: photo required";
-    clearValidation();
-  };
+  $("type").onchange = () => { const itemType = $("type").value; $("raisedByWrap").classList.toggle("hidden", itemType !== "client"); $("photoRequirement").textContent = itemType === "incomplete" ? "Incomplete Work: photo recommended" : itemType === "client" ? "Client Defect: photo required" : "Defect: photo required"; clearValidation(); };
   $("project").onchange = () => { refreshProjectConfig(); $("building").value = ""; $("level").value = ""; $("unit").value = ""; $("room").value = ""; };
   $("trade").onchange = () => { refreshSubcontractors(); $("subcontractor").value = ""; };
-  $("cameraInput").onchange = (event) => handleFiles(event.target.files, event.target);
-  $("libraryInput").onchange = (event) => handleFiles(event.target.files, event.target);
+  $("cameraInput").onchange = (event) => handleCaptureFiles(event.target.files, event.target);
+  $("libraryInput").onchange = (event) => handleCaptureFiles(event.target.files, event.target);
   $("draftFromNote").onclick = draftFromNote;
   $("saveBtn").onclick = () => save(false);
   $("issueBtn").onclick = () => save(true);
   $("resetDemo").onclick = async () => { await fetch("/api/reset-demo", { method: "POST" }); await bootstrap(); toast("Demo reset"); };
-  if ($("editClose")) $("editClose").onclick = closeEdit;
-  if ($("editCancel")) $("editCancel").onclick = closeEdit;
-  if ($("editSave")) $("editSave").onclick = saveEdit;
-  if ($("editOverlay")) $("editOverlay").onclick = (event) => { if (event.target.id === "editOverlay") closeEdit(); };
-  if ($("editType")) $("editType").onchange = () => $("editRaisedByWrap").classList.toggle("hidden", $("editType").value !== "client");
-  if ($("editProject")) $("editProject").onchange = () => { refreshEditProjectConfig($("editProject").value); $("editBuilding").value = ""; $("editLevel").value = ""; $("editUnit").value = ""; $("editRoom").value = ""; };
-  if ($("editTrade")) $("editTrade").onchange = () => { refreshEditSubcontractors(); $("editSubcontractor").value = ""; };
-  if ($("searchInput")) $("searchInput").oninput = renderItems;
-  if ($("statusFilter")) $("statusFilter").onchange = renderItems;
-  if ($("clearFilters")) $("clearFilters").onclick = () => {
-    if ($("searchInput")) $("searchInput").value = "";
-    if ($("statusFilter")) $("statusFilter").value = "all";
-    renderItems();
-  };
+  $("searchInput")?.addEventListener("input", renderItems);
+  $("statusFilter")?.addEventListener("change", renderItems);
+  $("editClose").onclick = closeEdit;
+  $("editCancel").onclick = closeEdit;
+  $("editSave").onclick = saveEdit;
+  $("editOverlay").onclick = (event) => { if (event.target.id === "editOverlay") closeEdit(); };
+  $("editType").onchange = () => $("editRaisedByWrap").classList.toggle("hidden", $("editType").value !== "client");
+  $("editProject").onchange = () => { refreshEditProjectConfig($("editProject").value); $("editBuilding").value = ""; $("editLevel").value = ""; $("editUnit").value = ""; $("editRoom").value = ""; };
+  $("editTrade").onchange = () => { refreshEditSubcontractors(); $("editSubcontractor").value = ""; };
+  $("actionClose").onclick = closeActionDrawer;
+  $("actionCancel").onclick = closeActionDrawer;
+  $("actionSubmit").onclick = submitAction;
+  $("actionOverlay").onclick = (event) => { if (event.target.id === "actionOverlay") closeActionDrawer(); };
 }
 
 bindKeyboardDone();
