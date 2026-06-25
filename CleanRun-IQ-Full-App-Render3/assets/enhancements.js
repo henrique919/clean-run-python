@@ -325,11 +325,48 @@
 
   window.openHomeBucket=function(bucket){
     route="items";
-    if(bucket==="open")itemStatusFilter="Open";
+    if(bucket==="open")itemStatusFilter="Captured";
     if(bucket==="attention")itemStatusFilter="Overdue";
-    if(bucket==="ready")itemStatusFilter="Ready for Review";
+    if(bucket==="ready")itemStatusFilter="Ready";
     render();
     setTimeout(()=>{document.querySelectorAll("#statusFilters button").forEach(btn=>btn.classList.toggle("active",btn.dataset.value===itemStatusFilter));filterItems();scrollTo(0,0)},0);
+  };
+
+  statusMatch=function(i,s){
+    if(s==="All")return true;
+    if(s==="Captured")return i.status==="open"&&!overdue(i);
+    if(s==="Issued")return ["issued","in_progress"].includes(i.status)&&!overdue(i);
+    if(s==="Ready")return ["ready_for_review","under_inspection"].includes(i.status)&&!overdue(i);
+    if(s==="Rejected")return i.status==="rejected";
+    if(s==="Overdue")return overdue(i);
+    if(s==="Closed")return ["closed","complete"].includes(i.status);
+    return true;
+  };
+  const originalItemsView=itemsView;
+  itemsView=function(){
+    const html=originalItemsView();
+    const chips=["All","Captured","Issued","Ready","Rejected","Overdue","Closed"].map(v=>`<button class="filter-chip light ${v===itemStatusFilter?'active':''}" data-value="${v}" onclick="setFilter(this,'status')">${v}</button>`).join("");
+    return html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div></div><div class="screen-scroll">`);
+  };
+
+  function siteStatus(item){
+    if(overdue(item))return {label:"OVERDUE",tone:"overdue"};
+    if(["closed","complete"].includes(item.status))return {label:"CLOSED",tone:"closed"};
+    if(item.status==="rejected")return {label:"REJECTED / RE-ISSUE",tone:"rejected"};
+    if(["ready_for_review","under_inspection"].includes(item.status))return {label:"READY",tone:"ready"};
+    if(["issued","in_progress"].includes(item.status))return {label:"ISSUED",tone:"issued"};
+    return {label:"CAPTURED",tone:"captured"};
+  }
+  function cardPhoto(item){
+    const src=(item.originalPhotos||[])[0];
+    if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
+    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence">`;
+  }
+  itemCard=function(i){
+    const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`,location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ");
+    const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onclick="event.stopPropagation();itemAction('${i.id}','issue')">ISSUE</button>`:"";
+    const reissue=i.status==="rejected"?`<button class="cr-card-action" type="button" onclick="event.stopPropagation();itemAction('${i.id}','issue')">RE-ISSUE</button>`:"";
+    return `<article class="native-card native-item cr-item-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-top"><div class="cr-card-media">${cardPhoto(i)}</div><div class="cr-card-copy"><div class="cr-card-head"><span class="cr-card-code">${esc(i.code).toUpperCase()}</span><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-location">${esc(location||"NO LOCATION").toUpperCase()}</div><div class="cr-card-desc">${esc(i.description||"NO DESCRIPTION").toUpperCase()}</div><div class="cr-card-date">${dateText}</div></div></div><div class="cr-card-bottom"><span class="cr-card-trade">${esc(i.trade||"NO TRADE").toUpperCase()}</span><span class="cr-card-sub">${esc(i.subcontractor||"Unassigned")}</span><span class="cr-card-type">${esc(typeLabels[i.type]||i.type).toUpperCase()}</span></div><div class="cr-card-actions">${issueButton}${reissue}${urgent?'<span class="badge overdue">URGENT</span>':""}</div></article>`;
   };
 
   dashboardView=function(){
