@@ -748,7 +748,13 @@ class Handler(BaseHTTPRequestHandler):
                     result = get_item(unquote(match.group(1)))
                     allowed = {"type", "project", "building", "level", "unit", "room", "trade", "subcontractor", "priority", "dueDate", "description", "raisedBy", "originalPhotos", "originalPhotoMeta"}
                     previous_photos = len(result.get("originalPhotos", []))
-                    result.update({k: v for k, v in body.items() if k in allowed})
+                incoming = {k: v for k, v in body.items() if k in allowed}
+                if "originalPhotos" in incoming:
+                    incoming["originalPhotos"] = upload_photo_list(
+                        incoming.get("originalPhotos", []),
+                        folder=f"items/{result.get('id', 'unknown')}/original",
+                    )
+                result.update(incoming)
                     added_photos = max(0, len(result.get("originalPhotos", [])) - previous_photos)
                     audit(result, f"Item details edited{f' · {added_photos} retrospective photo(s) added' if added_photos else ''}", body.get("by"))
                 elif pin_match:
