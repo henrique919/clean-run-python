@@ -86,9 +86,27 @@ def default_settings() -> dict[str, Any]:
         "Premier Flooring": "Flooring", "Skyline Glazing": "Windows / Aluminium",
         "Sterling Tiling": "Tiling", "TrueLine Joinery": "Joinery",
     }
-    profiles = {name: {"name": name, "trade": trade, "contact": "Site Contact",
-                 "email": re.sub(r"[^a-z]+", "", name.lower()) + "@example.com",
-                 "phone": "0400 000 000"} for name, trade in subs.items()}
+    profiles = {
+        name: {
+            "name": name,
+            "companyName": name,
+            "trade": trade,
+            "tradeType": trade,
+            "contact": "Site Contact",
+            "email": re.sub(r"[^a-z]+", "", name.lower()) + "@example.com",
+            "mobile": "0400 000 000",
+            "phone": "0400 000 000",
+            "contacts": [
+                {
+                    "name": "Site Contact",
+                    "role": "Supervisor",
+                    "email": re.sub(r"[^a-z]+", "", name.lower()) + "@example.com",
+                    "mobile": "0400 000 000",
+                }
+            ],
+        }
+        for name, trade in subs.items()
+    }
     return {
         "projects": ["Jura Noosa", "Meta Street"],
         "projectConfigs": {
@@ -103,7 +121,7 @@ def default_settings() -> dict[str, Any]:
         },
         "subcontractors": sorted(subs), "subProfiles": profiles,
         "activeProject": "Jura Noosa", "company": "CleanRun Construction",
-        "preparedBy": "Site Manager",
+        "preparedBy": "Site Manager", "theme": "light",
     }
 
 
@@ -307,6 +325,12 @@ def _photo_looks_like_uploadable_base64(value: str) -> bool:
     return value.startswith(("/9j/", "9j/", "iVBOR", "UklGR"))
 
 
+def _data_url_mime(value: str) -> str | None:
+    if not isinstance(value, str) or not value.startswith("data:") or "," not in value:
+        return None
+    return value.split(",", 1)[0].split(";")[0].replace("data:", "") or None
+
+
 def _split_photo_base64(photo: str) -> tuple[str, str]:
     value = photo.strip()
 
@@ -322,6 +346,49 @@ def _split_photo_base64(photo: str) -> tuple[str, str]:
         return "image/webp", value
 
     return "image/jpeg", value
+
+
+def upload_data_url_asset_to_supabase(data_url: str, folder: str, max_bytes: int | None = None) -> str:
+    """Upload a browser data URL to Supabase Storage and return its public URL."""
+    if not isinstance(data_url, str) or not data_url.startswith("data:") or "," not in data_url:
+        return data_url
+
+    if not use_supabase_storage():
+        return data_url
+
+    header, encoded = data_url.split(",", 1)
+    mime_type = header.split(";")[0].replace("data:", "") or "application/octet-stream"
+    extension = mimetypes.guess_extension(mime_type) or ".bin"
+    if extension == ".jpe":
+        extension = ".jpg"
+
+    try:
+        raw_bytes = base64.b64decode(re.sub(r"\s+", "", encoded), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("invalid file payload") from exc
+
+    if max_bytes is None:
+        max_bytes = int(os.environ.get("CLEANRUN_MAX_FILE_BYTES", "50000000"))
+    if len(raw_bytes) > max_bytes:
+        raise ValueError("uploaded file is too large")
+
+    bucket = os.environ.get("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence")
+    now_path = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    file_path = f"{folder}/{now_path}/{uuid.uuid4().hex}{extension}"
+
+    try:
+        client = get_supabase_client()
+        client.storage.from_(bucket).upload(
+            path=file_path,
+            file=raw_bytes,
+            file_options={
+                "content-type": mime_type,
+                "upsert": "false",
+            },
+        )
+        return client.storage.from_(bucket).get_public_url(file_path)
+    except Exception as exc:
+        raise RuntimeError(f"Supabase file upload failed: {exc}") from exc
 
 
 def upload_data_url_to_supabase(data_url: str, folder: str = "evidence") -> str:
@@ -382,6 +449,17 @@ def upload_photo_list(photos: Any, folder: str = "evidence") -> list[Any]:
         return []
 
     return [maybe_upload_photo(photo, folder=folder) for photo in photos]
+
+
+def maybe_upload_plan_asset(value: Any, folder: str = "plans") -> Any:
+    if not isinstance(value, str):
+        return value
+
+    mime_type = _data_url_mime(value)
+    if mime_type not in {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"}:
+        return value
+
+    return upload_data_url_asset_to_supabase(value, folder=folder)
 
 def get_item(item_id: str) -> dict[str, Any]:
     for item in STATE["items"]:
@@ -749,9 +827,15 @@ class Handler(BaseHTTPRequestHandler):
                     global STATE
                     STATE = default_state(); result = STATE
                 elif path == "/api/settings":
-                    allowed = {"company", "preparedBy", "activeProject", "projects", "projectConfigs", "subcontractors", "subProfiles"}
+                    allowed = {"company", "preparedBy", "activeProject", "projects", "projectConfigs", "subcontractors", "subProfiles", "theme"}
                     STATE["settings"].update({k: v for k, v in body.items() if k in allowed}); result = STATE["settings"]
                 elif path == "/api/plans":
+                    body = copy.deepcopy(body)
+                    if body.get("image"):
+                        body["image"] = maybe_upload_plan_asset(
+                            body.get("image"),
+                            folder=f"plans/{body.get('project') or STATE['settings'].get('activeProject', 'unknown')}",
+                        )
                     result = {"id": new_id(), "pins": [], "createdAt": now_iso(), **body}; STATE["plans"].insert(0, result)
                 elif re.fullmatch(r"/api/plans/[^/]+/pins", path):
                     plan_id = path.split("/")[3]; plan = next(p for p in STATE["plans"] if p["id"] == plan_id)

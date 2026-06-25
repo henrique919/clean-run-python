@@ -141,8 +141,13 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1"):
             self.assertIn(marker, enhancements)
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database"):
+            self.assertIn(marker, enhancements)
         self.assertIn("@media(min-width:1024px)", styles)
         self.assertIn(".item-sub", styles)
+        self.assertIn(".offline-pill{position:fixed;z-index:60;right:14px;top:14px", styles)
+        self.assertIn('html[data-theme="dark"]', styles)
+        self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
         self.assertIn("cleanrun-iq-shell-v5", worker)
         self.assertIn("indexedDB", enhancements)
@@ -210,6 +215,57 @@ class FullFieldAppTests(unittest.TestCase):
                 os.environ.pop("CLEANRUN_STORAGE", None)
             else:
                 os.environ["CLEANRUN_STORAGE"] = previous_storage
+
+    def test_supabase_plan_pdf_asset_upload_and_admin_profile_shape(self) -> None:
+        previous_storage = os.environ.get("CLEANRUN_STORAGE")
+        os.environ["CLEANRUN_STORAGE"] = "supabase"
+
+        class FakeBucket:
+            def __init__(self) -> None:
+                self.uploads = []
+
+            def upload(self, path, file, file_options=None):
+                self.uploads.append({"path": path, "file": file, "file_options": file_options or {}})
+                return {"path": path}
+
+            def get_public_url(self, path):
+                return f"https://example.supabase.co/storage/v1/object/public/cleanrun-evidence/{path}"
+
+        class FakeStorage:
+            def __init__(self, bucket) -> None:
+                self.bucket = bucket
+
+            def from_(self, name):
+                return self.bucket
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.bucket = FakeBucket()
+                self.storage = FakeStorage(self.bucket)
+
+        fake = FakeClient()
+        original_get_client = self.app.get_supabase_client
+        self.app.get_supabase_client = lambda: fake
+
+        try:
+            url = self.app.maybe_upload_plan_asset("data:application/pdf;base64,JVBERi0xLjQ=", folder="plans/Jura Noosa")
+            self.assertTrue(url.startswith("https://example.supabase.co/"))
+            self.assertIn("plans/Jura Noosa/", fake.bucket.uploads[0]["path"])
+            self.assertEqual(fake.bucket.uploads[0]["file_options"]["content-type"], "application/pdf")
+        finally:
+            self.app.get_supabase_client = original_get_client
+            if previous_storage is None:
+                os.environ.pop("CLEANRUN_STORAGE", None)
+            else:
+                os.environ["CLEANRUN_STORAGE"] = previous_storage
+
+        settings = self.app.default_settings()
+        profile = settings["subProfiles"]["Coastline Painting"]
+        self.assertIn("companyName", profile)
+        self.assertIn("tradeType", profile)
+        self.assertIn("mobile", profile)
+        self.assertIsInstance(profile["contacts"], list)
+        self.assertEqual(settings["theme"], "light")
 
 
 if __name__ == "__main__":
