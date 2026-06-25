@@ -602,8 +602,25 @@ def create_item(payload: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+ALLOWED_ACTIONS_BY_STATUS = {
+    "open": {"issue", "comment", "reopen"},
+    "issued": {"in-progress", "ready", "rectification", "issue", "comment", "reopen"},
+    "in_progress": {"ready", "rectification", "issue", "comment", "reopen"},
+    "ready_for_review": {"inspect", "reject", "comment", "reopen"},
+    "under_inspection": {"close", "reject", "comment", "reopen"},
+    "rejected": {"issue", "in-progress", "rectification", "comment", "reopen"},
+    "closed": {"reopen", "comment"},
+    "complete": {"reopen", "comment"},
+}
+
+
 def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> None:
     body = copy.deepcopy(body)
+
+    current_status = item.get("status", "open")
+    allowed = ALLOWED_ACTIONS_BY_STATUS.get(current_status, {"comment"})
+    if action not in allowed:
+        raise ValueError(f"cannot perform '{action}' while item is {current_status.replace('_', ' ')}")
 
     if body.get("photo"):
         body["photo"] = maybe_upload_photo(

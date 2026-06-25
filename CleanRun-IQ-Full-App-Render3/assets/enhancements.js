@@ -5,6 +5,7 @@
   const QUEUE_KEY="cleanrun-offline-queue-v1";
   const DB_NAME="cleanrun-iq-offline";
   const THEME_KEY="cleanrun-theme";
+  const LAST_CAPTURE_KEY="cleanrun-last-capture-fields";
   let capturePhotoMeta=[];
   let editPhotos=[];
   let editPhotoMeta=[];
@@ -63,6 +64,16 @@
     button.disabled=true;
     if(label)button.innerHTML=label;
     return()=>{button.classList.remove("is-busy");button.disabled=false;button.innerHTML=old};
+  }
+  function rememberCaptureFields(data){
+    const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,dueDate:data.dueDate,priority:data.priority,type:data.type};
+    try{localStorage.setItem(LAST_CAPTURE_KEY,JSON.stringify(keep))}catch{}
+  }
+  function applyCaptureDefaults(){
+    let keep={};try{keep=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{}}catch{}
+    const form=$("#app form");if(!form)return;
+    for(const [key,value] of Object.entries(keep)){if(value&&form.elements[key])form.elements[key].value=value}
+    photoHint?.();toggleRaised?.();
   }
   function preferredTheme(){
     return localStorage.getItem(THEME_KEY)||state?.settings?.theme||"light";
@@ -177,7 +188,7 @@
     const html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
       .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.");
-    setTimeout(renderCapturePreviews,0);
+    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews()},0);
     return html;
   };
 
@@ -229,6 +240,7 @@
     const form=e.currentTarget,data=Object.fromEntries(new FormData(form)),mode=e.submitter?.value||"save";
     const release=setBusyButton(e.submitter,mode==="issue"?"Issuing…":"Saving…");
     data.id=offlineId();data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
+    rememberCaptureFields(data);
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
     if(data.type==="client"&&!data.raisedBy){release();return toast("A Client Defect requires a Raised By / source.",true)}
     if(requireOriginalPhoto(data)){release();focusPhotoEvidence();return toast("Attach original photo evidence, or change Item Type to Incomplete Work.",true)}
@@ -241,6 +253,11 @@
       if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved · continue walk`)}
       else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline · queued to sync`:`${item.code} saved`)}
     }catch(err){toast(err.message,true)}finally{release()}
+  };
+
+  reviewView=function(){
+    const items=state.items.filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status));
+    return `${subHeader("Review Queue")}<div class="screen-scroll"><section class="native-card review-hero"><div class="spread"><div><h2>${items.length} ready for supervisor review</h2><p class="meta">Compare original issue proof against rectification evidence, then close or reject.</p></div><button class="btn alt small" onclick="go('items')">All items</button></div></section>${items.length?items.map(i=>{const original=(i.originalPhotos||[]).find(p=>!String(p).startsWith("seed://")),rect=(i.rectificationEvidence||[]).find(e=>e.photo)?.photo;return `<article class="native-card review-card"><div class="review-grid"><div><h3>Original Issue</h3>${original?`<img src="${original}" alt="Original issue">`:`<div class="thumb">${seedThumb(i.originalPhotos?.[0])}</div>`}<p>${esc(i.description||"No description")}</p><small class="meta">${esc(loc(i))}</small></div><div><h3>Rectification Evidence</h3>${rect?`<img src="${rect}" alt="Rectification evidence">`:`<div class="empty">No rectification photo</div>`}<p>${esc(i.rectificationEvidence?.at(-1)?.comment||"No subcontractor comment")}</p><small class="meta">${esc(i.subcontractor||"Unassigned")} · Due ${esc(i.dueDate)}</small></div></div><div class="actions review-actions"><button class="btn" onclick="itemAction('${i.id}','${i.status==="ready_for_review"?"inspect":"close"}')">${i.status==="ready_for_review"?"Start Inspection":"Close"}</button><button class="btn danger" onclick="itemAction('${i.id}','reject')">Reject</button><button class="btn alt" onclick="showItem('${i.id}')">Open Detail</button></div></article>`}).join(""):`<div class="native-card empty"><b>No items ready for review</b><br><span class="meta">When subcontractors mark work ready, it will appear here.</span></div>`}</div>`;
   };
 
   itemAction=async function(id,act){
@@ -317,23 +334,43 @@
 
   function updateOfflinePill(force){
     let pill=$("#offlinePill");if(!pill){pill=document.createElement("div");pill.id="offlinePill";pill.className="offline-pill";document.body.appendChild(pill)}
-    const count=pendingQueue().length;if(force==="syncing"){pill.className="offline-pill syncing";pill.textContent="↻ Syncing field changes…";return}
+    pill.onclick=flushQueue;
+    const count=pendingQueue().length;if(force==="syncing"){pill.hidden=false;pill.className="offline-pill syncing";pill.textContent="↻ Syncing field changes…";return}
     const offline=!navigator.onLine;
     pill.hidden=!offline&&!count;
     pill.className=`offline-pill${offline?" offline":count?" waiting":""}`;
     pill.textContent=offline?`Offline · ${count} queued`:count?`Online · ${count} waiting to sync`:"Online · synced";
   }
 
+  moreView=function(){
+    const s=state.settings;
+    return `<header class="screen-header more-header"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><div style="color:#ffffffb3;margin-top:10px;font-size:13px">Field capture, review & closeout companion</div></header><div class="screen-scroll"><div class="native-card spread"><span style="font-size:22px;color:#16a34a">Sync</span><span style="flex:1"><b>Online</b><small class="meta" style="display:block">All field data synced</small></span><span class="badge"><b>${state.items.length}</b><br>items</span></div>${menuGroup("Closeout workflow",[["Review","Review Queue","Inspect ready work and close/reject","review"],["Plans","Plans","PDF plans & pinned issue locations","plans"]])}${menuGroup("Reporting",[["Report","Reports & Handover","Evidence-chain & closeout reports","reports"]])}${menuGroup("Field roles",[["Subs","Subcontractor Mode","Assigned items & rectification upload","subcontractor"]])}${menuGroup("Admin",[["Setup","Project Setup","Buildings, levels, units & rooms","setup"],["Admin","Settings & Admin","Company, subcontractors, demo data","settings"]])}<div class="meta" style="text-align:center">CleanRun IQ Field App - ${esc(s.company)}</div></div>`;
+  };
+
+  function renderMobileNav(){
+    if(matchMedia("(min-width:1024px)").matches)return;
+    const ready=(state?.items||[]).filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).length;
+    const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review",ready?`Review ${ready}`:"Review","✓"],["more","More",navIcon?.more||"•••"]];
+    const active=["reports","settings","setup","subcontractor","plans"].includes(route)?"more":route;
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+  }
+
   function renderDesktopNav(){
     if(!matchMedia("(min-width:1024px)").matches)return;
     const items=[
-      ["home","Home","⌂"],["items","Items","▤"],["capture","Capture","+"],["plans","Plans","⌖"],
+      ["home","Home","⌂"],["items","Items","▤"],["capture","Capture","+"],["review","Review","✓"],["plans","Plans","⌖"],
       ["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]
     ];
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
   const originalRender=render;
-  render=function(){document.body.dataset.route=route;applyTheme();originalRender();renderDesktopNav();if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");renderCapturePreviews()}updateOfflinePill()};
+  render=function(){
+    document.body.dataset.route=route;applyTheme();
+    if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();updateOfflinePill();return}
+    originalRender();renderMobileNav();renderDesktopNav();
+    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");renderCapturePreviews()}
+    updateOfflinePill();
+  };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
   async function initialiseOfflineStore(){offlineQueue=await dbGet(QUEUE_KEY)||[];updateOfflinePill();setTimeout(flushQueue,500)}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("/service-worker.js").catch(()=>{});

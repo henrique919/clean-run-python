@@ -96,6 +96,20 @@ class FullFieldAppTests(unittest.TestCase):
                 }
             )
 
+        guard_item = self.app.create_item(
+            {
+                "type": "defect",
+                "project": "Jura Noosa",
+                "description": "Workflow guard",
+                "trade": "Tiling",
+                "subcontractor": "Sterling Tiling",
+                "dueDate": self.app.day_iso(2),
+                "originalPhotos": ["data:image/png;base64,iVBORw0KGgo="],
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "cannot perform 'rectification' while item is open"):
+            self.app.apply_action(guard_item, "rectification", {"photo": "data:image/png;base64,iVBORw0KGgo=", "by": "Trade"})
+
         report = self.app.report_html("handover")
         self.assertIn("Smarter Field. Cleaner Builds.", report)
         self.assertIn('/assets/banner.png', report)
@@ -125,12 +139,16 @@ class FullFieldAppTests(unittest.TestCase):
                 "type": "defect",
                 "project": "Jura Noosa",
                 "description": "Retrospective evidence and report gallery test",
+                "trade": "Painting",
+                "subcontractor": "Coastline Painting",
                 "dueDate": self.app.day_iso(2),
                 "originalPhotos": [photo, photo],
                 "originalPhotoMeta": [meta, meta],
                 "createdBy": "Site Manager",
             }
         )
+        self.app.apply_action(item, "issue", {"to": "Coastline Painting", "by": "Site Manager"})
+        self.app.apply_action(item, "in-progress", {"by": "Coastline Painting"})
         self.app.apply_action(item, "rectification", {"photo": photo, "photoMeta": meta, "comment": "Repaired", "by": "Trade"})
         report = self.app.report_html("open")
         self.assertIn('class="photo-grid"', report)
@@ -143,7 +161,7 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1"):
             self.assertIn(marker, enhancements)
-        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work"):
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
         self.assertIn('"reports","Reports"', enhancements)
@@ -155,10 +173,11 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn(".offline-pill{position:fixed;z-index:60;right:14px;top:14px", styles)
         self.assertIn(".offline-pill.waiting{opacity:.15", styles)
         self.assertIn(".photo-required-pulse", styles)
+        self.assertIn(".review-grid", styles)
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v7", worker)
+        self.assertIn("cleanrun-iq-shell-v8", worker)
         self.assertIn("indexedDB", enhancements)
 
     def test_supabase_photo_uploads_replace_raw_base64_for_create_edit_and_actions(self) -> None:
@@ -200,6 +219,8 @@ class FullFieldAppTests(unittest.TestCase):
                     "type": "defect",
                     "project": "Jura Noosa",
                     "description": "Supabase evidence test",
+                    "trade": "Electrical",
+                    "subcontractor": "Northline Electrical",
                     "dueDate": self.app.day_iso(2),
                     "originalPhotos": [photo],
                     "createdBy": "Site Manager",
@@ -209,6 +230,8 @@ class FullFieldAppTests(unittest.TestCase):
             self.assertIn(f"items/{item['id']}/original/", fake.bucket.uploads[0]["path"])
             self.assertIsInstance(fake.bucket.uploads[0]["file"], bytes)
 
+            self.app.apply_action(item, "issue", {"to": "Northline Electrical", "by": "Site Manager"})
+            self.app.apply_action(item, "in-progress", {"by": "Northline Electrical"})
             self.app.apply_action(item, "rectification", {"photo": photo, "comment": "Done", "by": "Trade"})
             self.assertTrue(item["rectificationEvidence"][0]["photo"].startswith("https://example.supabase.co/"))
             self.assertIn(f"items/{item['id']}/rectification/", fake.bucket.uploads[1]["path"])
