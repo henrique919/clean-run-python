@@ -1,18 +1,20 @@
-const CACHE = "cleanrun-iq-shell-v14";
+const CACHE = "cleanrun-iq-shell-v15";
 const SHELL = [
   "/",
   "/index.html",
   "/assets/icon-mark.png",
   "/assets/chevrons.svg",
-  "/assets/enhancements.css",
-  "/assets/enhancements.js",
+  "/assets/enhancements.css?v=cards15",
+  "/assets/enhancements.js?v=cards15",
   "/manifest.webmanifest",
 ];
 const NETWORK_FIRST = new Set([
   "/",
   "/index.html",
   "/assets/enhancements.css",
+  "/assets/enhancements.css?v=cards15",
   "/assets/enhancements.js",
+  "/assets/enhancements.js?v=cards15",
   "/service-worker.js",
   "/manifest.webmanifest",
 ]);
