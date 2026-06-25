@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse, HTMLResponse
@@ -57,8 +58,14 @@ class RectificationPayload(BaseModel):
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> FileResponse:
-    return FileResponse("app/static/index.html")
+def index() -> HTMLResponse:
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    if "/static/photo-compression.js" not in html:
+        html = html.replace(
+            '<script src="/static/app.js"></script>',
+            '<script src="/static/app.js"></script>\n  <script src="/static/photo-compression.js"></script>',
+        )
+    return HTMLResponse(html)
 
 
 @app.get("/health")
