@@ -1,4 +1,4 @@
-const CACHE = "cleanrun-iq-shell-v13";
+const CACHE = "cleanrun-iq-shell-v14";
 const SHELL = [
   "/",
   "/index.html",
@@ -27,6 +27,8 @@ self.addEventListener("activate", event => {
       .keys()
       .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then(clients => Promise.all(clients.map(client => client.navigate(client.url))))
   );
 });
 

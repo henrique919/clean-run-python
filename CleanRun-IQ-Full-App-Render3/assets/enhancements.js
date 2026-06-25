@@ -1,6 +1,7 @@
 (function(){
   "use strict";
 
+  window.CLEANRUN_FRONTEND_BUILD="cards-v14";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
   const DB_NAME="cleanrun-iq-offline";
