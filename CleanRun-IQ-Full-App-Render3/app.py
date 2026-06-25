@@ -516,6 +516,11 @@ def create_item(payload: dict[str, Any]) -> dict[str, Any]:
 def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> None:
     by = body.get("by") or STATE["settings"].get("preparedBy") or "Site Manager"
     at = now_iso()
+  if body.get("photo"):
+      body["photo"] = upload_photo_to_supabase_storage(
+          body.get("photo"),
+          folder=f"items/{item.get('id', 'unknown')}/{action}",
+     )
     if action == "issue":
         target = body.get("to") or item.get("subcontractor")
         if not target or not item.get("trade"):
