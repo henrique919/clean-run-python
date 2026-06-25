@@ -73,6 +73,27 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/storage-status")
+def storage_status():
+    data = store.snapshot()
+    latest = data.items[0] if data.items else None
+    latest_photo = None
+    if latest and latest.original_photos:
+        latest_photo = latest.original_photos[0]
+    return {
+        "requested_storage": os.getenv("CLEANRUN_STORAGE", "local"),
+        "active_store": store.__class__.__name__,
+        "supabase_url_configured": bool(os.getenv("SUPABASE_URL")),
+        "supabase_key_configured": bool(os.getenv("SUPABASE_KEY")),
+        "storage_bucket": os.getenv("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence"),
+        "item_count": len(data.items),
+        "latest_item_code": latest.code if latest else None,
+        "latest_item_description": latest.description if latest else None,
+        "latest_photo_type": "storage_url" if latest_photo and str(latest_photo).startswith("http") else "base64_or_empty" if latest_photo else "none",
+        "latest_photo_preview": str(latest_photo)[:80] if latest_photo else None,
+    }
+
+
 @app.get("/api/bootstrap")
 def bootstrap():
     data = store.snapshot()
