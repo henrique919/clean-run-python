@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import FastAPI, HTTPException, Query, Response
@@ -13,10 +14,15 @@ from app.store import CleanRunStore
 from app.store_supabase import SupabaseCleanRunStore
 from app.validation import ValidationError
 
+logger = logging.getLogger(__name__)
+
 
 def build_store():
     if os.getenv("CLEANRUN_STORAGE", "").lower() == "supabase":
-        return SupabaseCleanRunStore()
+        try:
+            return SupabaseCleanRunStore()
+        except Exception:
+            logger.exception("Supabase storage unavailable. Falling back to local JSON storage.")
     return CleanRunStore()
 
 
