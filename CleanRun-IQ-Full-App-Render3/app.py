@@ -302,6 +302,81 @@ def load_state() -> dict[str, Any]:
 
 STATE = load_state()
 
+def storage_enabled() -> bool:
+return os.environ.get("CLEANRUN_STORAGE", "local").lower() == "supabase"
+
+def guess_image_mime_and_extension(value: str) -> tuple[str, str]:
+if value.startswith("data:"):
+header = value.split(",", 1)[0]
+mime_type = header.split(";")[0].replace("data:", "") or "image/jpeg"
+elif value.startswith("/9j/") or value.startswith("9j/"):
+mime_type = "image/jpeg"
+elif value.startswith("iVBOR"):
+mime_type = "image/png"
+elif value.startswith("UklGR"):
+mime_type = "image/webp"
+else:
+mime_type = "image/jpeg"
+
+extension_map = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+return mime_type, extension_map.get(mime_type, ".jpg")
+
+def extract_base64_photo(value: str) -> str:
+if value.startswith("data:"):
+return value.split(",", 1)[1]
+return value
+
+def upload_photo_to_supabase_storage(photo: Any, folder: str = "evidence") -> Any:
+if not photo or not isinstance(photo, str):
+return photo
+
+if photo.startswith("http://") or photo.startswith("https://") or photo.startswith("seed://"):
+    return photo
+
+if not storage_enabled():
+    return photo
+
+try:
+    bucket = os.environ.get("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence")
+    mime_type, extension = guess_image_mime_and_extension(photo)
+    encoded = extract_base64_photo(photo)
+    raw_bytes = base64.b64decode(encoded)
+
+    now_path = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    file_path = f"{folder}/{now_path}/{uuid.uuid4().hex}{extension}"
+
+    get_supabase_client().storage.from_(bucket).upload(
+        path=file_path,
+        file=raw_bytes,
+        file_options={
+            "content-type": mime_type,
+            "upsert": "false",
+        },
+    )
+
+    return get_supabase_client().storage.from_(bucket).get_public_url(file_path)
+
+except Exception as exc:
+    print("Supabase photo upload failed:", repr(exc), flush=True)
+    return photo
+
+def upload_photo_list(photos: Any, folder: str = "evidence") -> list[Any]:
+if not photos:
+return []
+
+if not isinstance(photos, list):
+    return []
+
+return [
+    upload_photo_to_supabase_storage(photo, folder=folder)
+    for photo in photos
+  
 
 def get_item(item_id: str) -> dict[str, Any]:
     for item in STATE["items"]:
