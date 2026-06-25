@@ -152,7 +152,7 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("Print / Save PDF", report)
 
         page = (ROOT / "index.html").read_text(encoding="utf-8")
-        self.assertIn('const navs=["home","items","capture","plans","more"]', page)
+        self.assertIn('const navs=["home","items","capture","review","more"]', page)
         self.assertIn("loading-shell", page)
         self.assertIn("Loading closeout record", page)
         for feature in ("Take Photo", "Upload Photo", "Voice-to-Note", "Subcontractor Mode", "Project Setup", "Reports & Handover"):
@@ -164,8 +164,8 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("siteStatus", page)
         self.assertIn("cr-item-card", page)
         self.assertIn("Captured','Issued','Ready", page)
-        self.assertIn("enhancements.css?v=cards19", page)
-        self.assertIn("enhancements.js?v=cards19", page)
+        self.assertIn("enhancements.css?v=cards20", page)
+        self.assertIn("enhancements.js?v=cards20", page)
         self.assertIn("location.href='/api/reports/${id}'", page)
         self.assertIn("[hidden]{display:none!important}", page)
         self.assertNotIn("#FF6A00", page.upper())
@@ -201,11 +201,11 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1"):
             self.assertIn(marker, enhancements)
-        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "openDashboardSearch", "Closeout control room", "Subcontractor performance", "Trade pressure", "Today's schedule", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode", "siteStatus", "CAPTURED", "REJECTED / RE-ISSUE", "cr-issue-cta", "Captured\",\"Issued\",\"Ready", "cards19", "cardAction"):
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "openDashboardSearch", "Closeout control room", "Subcontractor performance", "Trade pressure", "Today's schedule", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode", "siteStatus", "CAPTURED", "REJECTED / RE-ISSUE", "cr-issue-cta", "Captured\",\"Issued\",\"Ready", "cards20", "cardAction", "reviewCloseout", "reviewReject", "signature-pad", "cardActionLocks"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
-        self.assertIn('"more","More"', enhancements)
-        self.assertIn('["reports","setup","settings","subcontractor"].includes(route)?"more":route', enhancements)
+        self.assertIn('"reports","Reports"', enhancements)
+        self.assertIn('"subcontractor","Subcontractors"', enhancements)
         self.assertIn("@media(min-width:1024px)", styles)
         self.assertIn(".item-sub", styles)
         self.assertIn("graphiteDrift", styles)
@@ -214,6 +214,8 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn(".offline-pill.waiting{opacity:.15", styles)
         self.assertIn(".photo-required-pulse", styles)
         self.assertIn(".review-grid", styles)
+        self.assertIn(".review-compare", styles)
+        self.assertIn(".review-decision-row", styles)
         self.assertIn("border-left:6px solid", styles)
         self.assertIn(".cr-card-band", styles)
         self.assertIn("background:#DDE1E5", styles)
@@ -227,7 +229,7 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v19", worker)
+        self.assertIn("cleanrun-iq-shell-v20", worker)
         self.assertIn("client.navigate", worker)
         self.assertIn("NETWORK_FIRST", worker)
         self.assertIn("indexedDB", enhancements)

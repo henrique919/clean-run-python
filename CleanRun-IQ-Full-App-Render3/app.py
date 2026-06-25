@@ -744,6 +744,8 @@ def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> Non
     elif action == "in-progress":
         item["status"] = "in_progress"; item.setdefault("inProgressAt", at); audit(item, "Marked in progress", by)
     elif action == "ready":
+        if not any(e.get("photo") for e in item.get("rectificationEvidence", [])):
+            raise ValueError("ready for review requires a rectification photo")
         item.update(status="ready_for_review", readyForReviewAt=at); audit(item, "Marked ready for review", by, body.get("note"))
     elif action == "inspect":
         item.update(status="under_inspection", underInspectionAt=at)
@@ -752,7 +754,7 @@ def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> Non
         reason = str(body.get("reason", "")).strip()
         if not reason: raise ValueError("a rejection reason is required")
         item.update(status="rejected", rejectionReason=reason)
-        item.setdefault("inspectionHistory", []).append({"at": at, "by": by, "action": "rejected", "reason": reason}); audit(item, "Rejected on inspection", by, reason)
+        item.setdefault("inspectionHistory", []).append({"at": at, "by": by, "action": "rejected", "reason": reason, "photo": body.get("photo"), "photoMeta": body.get("photoMeta")}); audit(item, "Rejected on inspection", by, reason)
     elif action == "rectification":
         if not body.get("photo") and not str(body.get("comment", "")).strip():
             raise ValueError("attach a photo or add a comment")
