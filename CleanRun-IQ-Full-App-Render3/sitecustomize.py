@@ -1,19 +1,35 @@
 """CleanRun IQ Render startup patch.
 
-This runs before app.py is executed when Render starts `python app.py`.
-It repairs the manually-pasted photo-storage block in app.py, which otherwise
-can leave indentation errors and stop the service from booting.
+This module is installed into site-packages and runs before Render executes
+`python app.py`. It repairs the broken manually-pasted photo-storage block in
+app.py, then lets Python continue loading the real app.py.
 """
 
 from pathlib import Path
 import re
+import sys
 import textwrap
 
 
+def find_app_path() -> Path | None:
+    candidates: list[Path] = []
+
+    if sys.argv and sys.argv[0]:
+        candidates.append(Path(sys.argv[0]).resolve())
+
+    candidates.append(Path.cwd() / "app.py")
+    candidates.append(Path.cwd() / "CleanRun-IQ-Full-App-Render3" / "app.py")
+
+    for candidate in candidates:
+        if candidate.name == "app.py" and candidate.exists():
+            return candidate
+
+    return None
+
+
 def main() -> None:
-    root = Path(__file__).resolve().parent
-    app_path = root / "app.py"
-    if not app_path.exists():
+    app_path = find_app_path()
+    if app_path is None:
         return
 
     text = app_path.read_text(encoding="utf-8")
