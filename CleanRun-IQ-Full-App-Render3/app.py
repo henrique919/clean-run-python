@@ -232,6 +232,7 @@ def validate_state(state: dict[str, Any]) -> dict[str, Any]:
     for item in state["items"]:
         item.setdefault("originalPhotoMeta", [])
 
+    state.setdefault("settings", {}).setdefault("theme", "light")
     return state
 
 

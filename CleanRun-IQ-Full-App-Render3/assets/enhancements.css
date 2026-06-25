@@ -47,6 +47,10 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 }
 .photo-caption{font-size:10px;color:#667085;line-height:1.35}
 .photo-tools{display:flex;gap:5px}.photo-tools button{padding:6px 8px;font-size:11px;flex:1}
+.photo-count{display:inline-flex;align-items:center;border:1px solid #D0D5DD;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:800;color:#52606D;background:#fff}
+.needs-photo{border-color:#B42318!important;box-shadow:0 0 0 1px #B4231822}
+.photo-required-pulse{animation:photoPulse 1.6s ease-in-out 1}
+@keyframes photoPulse{0%,100%{box-shadow:0 0 0 0 #B4231800}35%{box-shadow:0 0 0 6px #B4231826}}
 .btn.is-busy,.dashboard-stat:active,.dashboard-jump:active{filter:brightness(.82);transform:translateY(1px)}
 .btn.is-busy::after{content:"";display:inline-block;width:12px;height:12px;margin-left:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -77,6 +81,8 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .photo-workbench input[type="range"]{width:130px}
 
 .offline-pill{position:fixed;z-index:60;right:14px;top:14px;bottom:auto;border:1px solid #B9C0C8;border-radius:999px;background:#fff;color:#121619;padding:7px 11px;font-size:11px;font-weight:800;box-shadow:0 4px 16px #0002}
+.offline-pill.waiting{opacity:.15;transition:opacity .2s ease}
+.offline-pill.waiting:hover,.offline-pill.waiting:focus-within{opacity:.95}
 .offline-pill.offline{background:#FFF4D6;border-color:#D9A321;color:#6B4300}
 .offline-pill.syncing{background:#E1F7E9;border-color:var(--action-green);color:#0C7733}
 

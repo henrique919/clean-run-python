@@ -1,4 +1,4 @@
-const CACHE="cleanrun-iq-shell-v6";
+const CACHE="cleanrun-iq-shell-v7";
 const SHELL=["/","/index.html","/assets/icon-mark.png","/assets/chevrons.svg","/assets/enhancements.css","/assets/enhancements.js","/manifest.webmanifest"];
 
 self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));

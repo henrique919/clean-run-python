@@ -4,6 +4,7 @@
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
   const DB_NAME="cleanrun-iq-offline";
+  const THEME_KEY="cleanrun-theme";
   let capturePhotoMeta=[];
   let editPhotos=[];
   let editPhotoMeta=[];
@@ -63,6 +64,13 @@
     if(label)button.innerHTML=label;
     return()=>{button.classList.remove("is-busy");button.disabled=false;button.innerHTML=old};
   }
+  function preferredTheme(){
+    return localStorage.getItem(THEME_KEY)||state?.settings?.theme||"light";
+  }
+  function applyTheme(){
+    document.documentElement.dataset.theme=preferredTheme();
+  }
+  applyTheme();
 
   function geoLabel(meta){
     if(!meta||meta.latitude==null)return "Location unavailable";
@@ -99,6 +107,9 @@
   function renderCapturePreviews(){
     const host=$("#capturePreviews");
     if(host)host.innerHTML=capturePhotos.map((src,n)=>previewFigure(src,capturePhotoMeta[n],n,"capture")).join("");
+    const count=$("#photoCount");
+    if(count)count.textContent=capturePhotos.length?`${capturePhotos.length} photo${capturePhotos.length===1?"":"s"} attached`:"No photos attached yet";
+    document.querySelector("[data-photo-card]")?.classList.toggle("needs-photo",capturePhotos.length===0);
   }
 
   function renderEditPreviews(){
@@ -162,7 +173,23 @@
   };
 
   const originalCaptureView=captureView;
-  captureView=function(){const html=originalCaptureView();setTimeout(renderCapturePreviews,0);return html};
+  captureView=function(){
+    const html=originalCaptureView()
+      .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
+      .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.");
+    setTimeout(renderCapturePreviews,0);
+    return html;
+  };
+
+  function requireOriginalPhoto(data){
+    return ["defect","client"].includes(data.type)&&!capturePhotos.length;
+  }
+  function focusPhotoEvidence(){
+    const card=document.querySelector("[data-photo-card]")||$("#capturePreviews")?.closest("section");
+    card?.scrollIntoView({behavior:"smooth",block:"center"});
+    card?.classList.add("photo-required-pulse");
+    setTimeout(()=>card?.classList.remove("photo-required-pulse"),1800);
+  }
 
   saveCapture=async function(e){
     e.preventDefault();const form=e.currentTarget,data=Object.fromEntries(new FormData(form)),mode=e.submitter?.value||"save";
@@ -204,6 +231,7 @@
     data.id=offlineId();data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
     if(data.type==="client"&&!data.raisedBy){release();return toast("A Client Defect requires a Raised By / source.",true)}
+    if(requireOriginalPhoto(data)){release();focusPhotoEvidence();return toast("Attach original photo evidence, or change Item Type to Incomplete Work.",true)}
     if(mode==="issue"&&(!data.trade||!data.subcontractor)){release();return toast("Issue Now requires a trade and subcontractor.",true)}
     try{
       toast(capturePhotos.length?"Compressing and uploading evidence…":"Saving item…");
@@ -284,13 +312,16 @@
   window.editSubcontractorProfile=function(name){const p=subProfile(name);$("#modalTitle").textContent=`Subcontractor · ${p.companyName}`;$("#modalBody").innerHTML=`<form class="field-list" onsubmit="saveSubcontractorProfile(event,'${esc(name)}')"><div class="fields admin-form-grid"><label>Company Name<input name="companyName" value="${esc(p.companyName)}" required></label><label>Trade Type<select name="tradeType"><option value=""></option>${options(trades,p.tradeType)}</select></label><label>Primary Contact<input name="contact" value="${esc(p.contact||p.contacts[0]?.name||"")}"></label><label>Email<input type="email" name="email" value="${esc(p.email||p.contacts[0]?.email||"")}"></label><label>Mobile<input name="mobile" value="${esc(p.mobile||p.phone||p.contacts[0]?.mobile||"")}"></label></div><section class="edit-evidence"><div class="spread"><div><b>Additional contacts</b><div class="meta">Add supervisors, PMs, after-hours contacts or accounts contacts.</div></div><button class="btn alt" type="button" onclick="addContactRow()">+ Add contact</button></div><div id="subContacts" class="contact-grid">${contactRows(p)}</div></section><button class="btn">Save subcontractor</button></form>`;$("#modal").hidden=false};
   window.saveSubcontractorProfile=async function(e,name){e.preventDefault();const form=e.currentTarget,data=Object.fromEntries(new FormData(form)),s=structuredClone(state.settings),contacts=[];form.querySelectorAll(".contact-row").forEach(row=>{const inputs=row.querySelectorAll("input"),contact={name:inputs[0].value.trim(),role:inputs[1].value.trim(),email:inputs[2].value.trim(),mobile:inputs[3].value.trim()};if(contact.name||contact.email||contact.mobile)contacts.push(contact)});const oldName=name,newName=data.companyName.trim();s.subProfiles=s.subProfiles||{};s.subcontractors=s.subcontractors.map(n=>n===oldName?newName:n);if(!s.subcontractors.includes(newName))s.subcontractors.push(newName);s.subcontractors=[...new Set(s.subcontractors)].sort();if(newName!==oldName)delete s.subProfiles[oldName];s.subProfiles[newName]={name:newName,companyName:newName,trade:data.tradeType,tradeType:data.tradeType,contact:data.contact,email:data.email,mobile:data.mobile,phone:data.mobile,contacts};await api("/api/settings",{method:"POST",body:JSON.stringify({subcontractors:s.subcontractors,subProfiles:s.subProfiles})});await reload();closeModal();route="settings";render();toast("Subcontractor profile saved")};
   addSubcontractor=async function(){const name=prompt("Company Name:","");if(!name)return;const s=structuredClone(state.settings);s.subProfiles=s.subProfiles||{};if(!s.subcontractors.includes(name))s.subcontractors.push(name);s.subcontractors.sort();s.subProfiles[name]={name,companyName:name,trade:"",tradeType:"",contact:"",email:"",mobile:"",contacts:[]};await api("/api/settings",{method:"POST",body:JSON.stringify({subcontractors:s.subcontractors,subProfiles:s.subProfiles})});await reload();editSubcontractorProfile(name)};
-  window.toggleDesktopTheme=async function(){const next=(state.settings.theme||"light")==="dark"?"light":"dark";document.documentElement.dataset.theme=next;await api("/api/settings",{method:"POST",body:JSON.stringify({theme:next})});await reload();route="settings";render()};
+  window.toggleDesktopTheme=async function(){const next=preferredTheme()==="dark"?"light":"dark";localStorage.setItem(THEME_KEY,next);state.settings.theme=next;document.documentElement.dataset.theme=next;await api("/api/settings",{method:"POST",body:JSON.stringify({theme:next})});await reload();route="settings";render()};
   settingsView=function(){const s=state.settings,theme=s.theme||"light";return `${subHeader("Settings & Admin")}<form class="settings-scroll" onsubmit="saveSettings(event)"><section class="form-card"><h2>Company & branding</h2><div class="field-list"><label>Company name<input name="company" value="${esc(s.company)}"></label><label>Prepared by<input name="preparedBy" value="${esc(s.preparedBy)}"></label></div><p class="meta">Used on report headers and audit events.</p><button class="btn" style="margin-top:10px">Save</button></section><section class="form-card"><h2>Desktop appearance</h2><p class="meta">Dark mode starts on desktop/admin screens first.</p><button class="btn alt" type="button" onclick="toggleDesktopTheme()">Night mode: ${theme==="dark"?"On":"Off"}</button></section><section class="form-card"><h2>Projects</h2>${s.projects.map(p=>`<div class="spread" style="padding:10px 0;border-bottom:1px solid var(--line)"><b>${esc(p)}</b>${p===s.activeProject?'<span class="badge complete">Active</span>':""}</div>`).join("")}<div class="actions" style="margin-top:12px"><input id="newProject" placeholder="Add a project…"><button class="btn" type="button" onclick="addProject()">+</button></div></section><section class="form-card subcontractor-admin"><div class="spread"><div><h2>Subcontractor database (${s.subcontractors.length})</h2><p class="meta">Company, trade, contact, email, mobile and multiple contacts.</p></div><button class="btn alt" type="button" onclick="addSubcontractor()">+ Add</button></div>${s.subcontractors.map(n=>{const p=subProfile(n);return `<button type="button" class="sub-profile-card" onclick="editSubcontractorProfile('${esc(n)}')"><b>${esc(p.companyName)}</b><span>${esc(p.tradeType||"No trade type")} · ${esc(p.contact||p.contacts[0]?.name||"No contact")}</span><small>${esc(p.email||p.contacts[0]?.email||"")} ${esc(p.mobile||p.phone||p.contacts[0]?.mobile||"")}</small></button>`}).join("")}</section><section class="form-card"><h2>Demo data</h2><button class="btn danger" type="button" onclick="resetDemo()">↻ Reset to demo data</button></section><div class="meta" style="text-align:center">CleanRun IQ Field App</div></form>`};
 
   function updateOfflinePill(force){
     let pill=$("#offlinePill");if(!pill){pill=document.createElement("div");pill.id="offlinePill";pill.className="offline-pill";document.body.appendChild(pill)}
     const count=pendingQueue().length;if(force==="syncing"){pill.className="offline-pill syncing";pill.textContent="↻ Syncing field changes…";return}
-    const offline=!navigator.onLine;pill.className=`offline-pill${offline?" offline":""}`;pill.textContent=offline?`Offline · ${count} queued`:count?`Online · ${count} waiting to sync`:"Online · synced";
+    const offline=!navigator.onLine;
+    pill.hidden=!offline&&!count;
+    pill.className=`offline-pill${offline?" offline":count?" waiting":""}`;
+    pill.textContent=offline?`Offline · ${count} queued`:count?`Online · ${count} waiting to sync`:"Online · synced";
   }
 
   function renderDesktopNav(){
@@ -302,7 +333,7 @@
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
   const originalRender=render;
-  render=function(){document.body.dataset.route=route;if(typeof state!=="undefined"&&state)document.documentElement.dataset.theme=state.settings?.theme||"light";originalRender();renderDesktopNav();if(route==="capture")renderCapturePreviews();updateOfflinePill()};
+  render=function(){document.body.dataset.route=route;applyTheme();originalRender();renderDesktopNav();if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");renderCapturePreviews()}updateOfflinePill()};
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
   async function initialiseOfflineStore(){offlineQueue=await dbGet(QUEUE_KEY)||[];updateOfflinePill();setTimeout(flushQueue,500)}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("/service-worker.js").catch(()=>{});

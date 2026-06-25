@@ -143,7 +143,7 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1"):
             self.assertIn(marker, enhancements)
-        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database"):
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
         self.assertIn('"reports","Reports"', enhancements)
@@ -153,10 +153,12 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("graphiteDrift", styles)
         self.assertIn("border-left:6px solid #121619", styles)
         self.assertIn(".offline-pill{position:fixed;z-index:60;right:14px;top:14px", styles)
+        self.assertIn(".offline-pill.waiting{opacity:.15", styles)
+        self.assertIn(".photo-required-pulse", styles)
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v6", worker)
+        self.assertIn("cleanrun-iq-shell-v7", worker)
         self.assertIn("indexedDB", enhancements)
 
     def test_supabase_photo_uploads_replace_raw_base64_for_create_edit_and_actions(self) -> None:
