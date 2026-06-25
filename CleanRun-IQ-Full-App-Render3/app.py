@@ -495,7 +495,10 @@ def create_item(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("invalid item type")
     if payload["type"] in {"defect", "client"} and not payload.get("originalPhotos"):
         raise ValueError("defects and client defects require at least one original photo")
-      payload["originalPhotos"] = upload_photo_list( payload.get("originalPhotos", []), folder=f"items/original/{payload.get('project', 'unknown')}", )
+    payload["originalPhotos"] = upload_photo_list(
+      payload.get("originalPhotos", []),
+      folder=f"items/original/{payload.get('project', 'unknown')}", 
+    )
     at = now_iso()
     code = next_code(payload["type"])
     item = {
