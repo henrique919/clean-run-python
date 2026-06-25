@@ -240,6 +240,9 @@ def save_state(state: dict[str, Any]) -> None:
     """Persist CleanRun state to Supabase when enabled, otherwise local JSON."""
     with LOCK:
         if use_supabase_state():
+            if "use_supabase_storage" in globals() and use_supabase_storage() and "migrate_inline_state_assets" in globals():
+                migrate_inline_state_assets(state)
+
             table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
             state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
 
@@ -464,6 +467,56 @@ def maybe_upload_plan_asset(value: Any, folder: str = "plans") -> Any:
         return value
 
     return upload_data_url_asset_to_supabase(value, folder=folder)
+
+
+def migrate_inline_state_assets(state: dict[str, Any]) -> int:
+    """Move any legacy inline data-url photos/PDFs out of the state blob."""
+    changed = 0
+
+    for item in state.get("items", []):
+        item_id = item.get("id", "unknown")
+        original = item.get("originalPhotos") or []
+        if isinstance(original, list):
+            migrated = upload_photo_list(original, folder=f"items/{item_id}/original")
+            changed += sum(1 for before, after in zip(original, migrated) if before != after)
+            item["originalPhotos"] = migrated
+
+        for evidence_type, folder_name in (
+            ("rectificationEvidence", "rectification"),
+            ("closeoutEvidence", "closeout"),
+        ):
+            for evidence in item.get(evidence_type, []) or []:
+                if isinstance(evidence, dict) and _photo_looks_like_uploadable_base64(str(evidence.get("photo", ""))):
+                    before = evidence.get("photo")
+                    evidence["photo"] = maybe_upload_photo(before, folder=f"items/{item_id}/{folder_name}")
+                    if evidence["photo"] != before:
+                        changed += 1
+
+    for plan in state.get("plans", []) or []:
+        if isinstance(plan, dict) and isinstance(plan.get("image"), str):
+            before = plan["image"]
+            plan["image"] = maybe_upload_plan_asset(before, folder=f"plans/{plan.get('project') or state.get('settings', {}).get('activeProject', 'unknown')}")
+            if plan["image"] != before:
+                changed += 1
+
+    return changed
+
+
+def start_storage_migration() -> None:
+    if not use_supabase_storage() or not use_supabase_state():
+        return
+
+    def job() -> None:
+        try:
+            with LOCK:
+                changed = migrate_inline_state_assets(STATE)
+                if changed:
+                    save_state(STATE)
+                    print(f"CleanRun IQ migrated {changed} inline asset(s) to Supabase Storage")
+        except Exception as exc:
+            print(f"CleanRun IQ storage migration failed: {exc}")
+
+    threading.Thread(target=job, name="cleanrun-storage-migration", daemon=True).start()
 
 def get_item(item_id: str) -> dict[str, Any]:
     for item in STATE["items"]:
@@ -965,6 +1018,7 @@ def main() -> None:
     display_host = "127.0.0.1" if host == "0.0.0.0" else host
     url = f"http://{display_host}:{port}"
     print(f"CleanRun IQ running at {url} (Ctrl+C to stop)")
+    start_storage_migration()
     if os.environ.get("CLEANRUN_OPEN_BROWSER") == "1": threading.Timer(.5, webbrowser.open, args=(url,)).start()
     try: server.serve_forever()
     except KeyboardInterrupt: print("\nStopped.")

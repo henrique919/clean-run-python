@@ -388,6 +388,16 @@
   };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
   async function initialiseOfflineStore(){offlineQueue=await dbGet(QUEUE_KEY)||[];updateOfflinePill();setTimeout(flushQueue,500)}
-  if("serviceWorker" in navigator)navigator.serviceWorker.register("/service-worker.js").catch(()=>{});
+  if("serviceWorker" in navigator){
+    let refreshing=false;
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{if(refreshing)return;refreshing=true;location.reload()});
+    navigator.serviceWorker.register("/service-worker.js").then(reg=>{
+      if(reg.waiting)reg.waiting.postMessage("SKIP_WAITING");
+      reg.addEventListener("updatefound",()=>{
+        const worker=reg.installing;
+        worker?.addEventListener("statechange",()=>{if(worker.state==="installed"&&navigator.serviceWorker.controller)worker.postMessage("SKIP_WAITING")});
+      });
+    }).catch(()=>{});
+  }
   ensureWorkbench();updateOfflinePill();setTimeout(()=>{if(typeof state!=="undefined"&&state)render()},0);initialiseOfflineStore();
 })();

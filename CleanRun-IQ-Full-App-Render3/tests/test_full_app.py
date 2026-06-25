@@ -196,7 +196,7 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1"):
             self.assertIn(marker, enhancements)
-        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel"):
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
         self.assertIn('"reports","Reports"', enhancements)
@@ -212,7 +212,8 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v9", worker)
+        self.assertIn("cleanrun-iq-shell-v10", worker)
+        self.assertIn("NETWORK_FIRST", worker)
         self.assertIn("indexedDB", enhancements)
 
     def test_supabase_photo_uploads_replace_raw_base64_for_create_edit_and_actions(self) -> None:
@@ -327,6 +328,23 @@ class FullFieldAppTests(unittest.TestCase):
             self.assertTrue(url.startswith("https://example.supabase.co/"))
             self.assertIn("plans/Jura Noosa/", fake.bucket.uploads[0]["path"])
             self.assertEqual(fake.bucket.uploads[0]["file_options"]["content-type"], "application/pdf")
+
+            state = {
+                "settings": {"activeProject": "Jura Noosa"},
+                "items": [
+                    {
+                        "id": "inline-migration",
+                        "originalPhotos": ["data:image/png;base64,iVBORw0KGgo="],
+                        "rectificationEvidence": [{"photo": "data:image/png;base64,iVBORw0KGgo="}],
+                        "closeoutEvidence": [{"photo": "data:image/png;base64,iVBORw0KGgo="}],
+                    }
+                ],
+                "plans": [{"project": "Jura Noosa", "image": "data:application/pdf;base64,JVBERi0xLjQ="}],
+            }
+            changed = self.app.migrate_inline_state_assets(state)
+            self.assertEqual(changed, 4)
+            self.assertNotIn("data:", str(state))
+            self.assertGreaterEqual(len(fake.bucket.uploads), 5)
         finally:
             self.app.get_supabase_client = original_get_client
             if previous_storage is None:
