@@ -1,4 +1,4 @@
-const CACHE = "cleanrun-iq-shell-v10";
+const CACHE = "cleanrun-iq-shell-v11";
 const SHELL = [
   "/",
   "/index.html",
