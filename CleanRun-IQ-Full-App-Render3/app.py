@@ -27,6 +27,7 @@ import zlib
 from supabase_storage import upload_data_url_to_supabase
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -198,90 +199,106 @@ def validate_state(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 def use_supabase_state() -> bool:
-return os.environ.get("CLEANRUN_STATE_BACKEND", "local").lower() == "supabase"
+    return os.environ.get("CLEANRUN_STATE_BACKEND", "local").lower() == "supabase"
+
+
+@lru_cache
+def get_supabase_client():
+    from supabase import create_client
+
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")
+
+    if not url:
+        raise RuntimeError("Missing SUPABASE_URL")
+
+    if not key:
+        raise RuntimeError("Missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY")
+
+    return create_client(url, key)
+
 
 def validate_state(state: dict[str, Any]) -> dict[str, Any]:
-if (
-not isinstance(state, dict)
-or state.get("version") != STATE_VERSION
-or not all(key in state for key in ("items", "settings", "plans"))
-):
-raise ValueError("incomplete state")
+    if (
+        not isinstance(state, dict)
+        or state.get("version") != STATE_VERSION
+        or not all(key in state for key in ("items", "settings", "plans"))
+    ):
+        raise ValueError("incomplete state")
 
-for item in state["items"]:
-    item.setdefault("originalPhotoMeta", [])
+    for item in state["items"]:
+        item.setdefault("originalPhotoMeta", [])
 
-return state
+    return state
+
 
 def save_state(state: dict[str, Any]) -> None:
-"""Persist CleanRun state to Supabase when enabled, otherwise local JSON."""
-with LOCK:
-if use_supabase_state():
-from supabase_client import get_supabase
+    """Persist CleanRun state to Supabase when enabled, otherwise local JSON."""
+    with LOCK:
+        if use_supabase_state():
+            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
+            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
 
-        table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
-        state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
+            get_supabase_client().table(table).upsert(
+                {
+                    "id": state_id,
+                    "payload": state,
+                    "updated_at": now_iso(),
+                },
+                on_conflict="id",
+            ).execute()
+            return
 
-        get_supabase().table(table).upsert(
-            {
-                "id": state_id,
-                "payload": state,
-                "updated_at": now_iso(),
-            },
-            on_conflict="id",
-        ).execute()
-        return
-
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(
-        prefix="cleanrun-",
-        suffix=".json",
-        dir=DATA_FILE.parent,
-    )
-
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(state, stream, ensure_ascii=False, indent=2)
-        os.replace(name, DATA_FILE)
-    finally:
-        if os.path.exists(name):
-            os.unlink(name)
-
-def load_state() -> dict[str, Any]:
-with LOCK:
-if use_supabase_state():
-from supabase_client import get_supabase
-
-        table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
-        state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
-
-        response = (
-            get_supabase()
-            .table(table)
-            .select("payload")
-            .eq("id", state_id)
-            .limit(1)
-            .execute()
+        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(
+            prefix="cleanrun-",
+            suffix=".json",
+            dir=DATA_FILE.parent,
         )
 
-        rows = response.data or []
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(state, stream, ensure_ascii=False, indent=2)
+            os.replace(name, DATA_FILE)
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
 
-        if rows:
-            return validate_state(rows[0]["payload"])
 
-        state = default_state()
-        save_state(state)
-        return state
+def load_state() -> dict[str, Any]:
+    with LOCK:
+        if use_supabase_state():
+            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
+            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
 
-    try:
-        with DATA_FILE.open(encoding="utf-8") as stream:
-            state = json.load(stream)
+            response = (
+                get_supabase_client()
+                .table(table)
+                .select("payload")
+                .eq("id", state_id)
+                .limit(1)
+                .execute()
+            )
 
-        return validate_state(state)
+            rows = response.data or []
 
-    except (OSError, ValueError, json.JSONDecodeError):
-        state = default_state()
-        save_state(state)
+            if rows:
+                return validate_state(rows[0]["payload"])
+
+            state = default_state()
+            save_state(state)
+            return state
+
+        try:
+            with DATA_FILE.open(encoding="utf-8") as stream:
+                state = json.load(stream)
+
+            return validate_state(state)
+
+        except (OSError, ValueError, json.JSONDecodeError):
+            state = default_state()
+            save_state(state)
+            return state
 
 STATE = load_state()
 
