@@ -181,12 +181,44 @@ def default_state() -> dict[str, Any]:
     }
     return {"version": STATE_VERSION, "items": items, "settings": default_settings(), "plans": [plan]}
 
+def use_supabase_state() -> bool:
+    return os.environ.get("CLEANRUN_STATE_BACKEND", "local").lower() == "supabase"
+  
+def validate_state(state: dict[str, Any]) -> dict[str, Any]:
+    if (
+        not isinstance(state, dict)
+        or state.get("version") != STATE_VERSION
+        or not all(key in state for key in ("items", "settings", "plans"))
+    ):
+        raise ValueError("incomplete state")
+
+    for item in state["items"]:
+        item.setdefault("originalPhotoMeta", [])
+
+    return state
 
 def save_state(state: dict[str, Any]) -> None:
-    """Write atomically so interruption cannot corrupt the user's field data."""
+    """Persist CleanRun state to Supabase when enabled, otherwise local JSON."""
     with LOCK:
-        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if use_supabase_state():
+            from supabase_client import get_supabase
+
+            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
+            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
+
+            get_supabase().table(table).upsert(
+                {
+                    "id": state_id,
+                    "payload": state,
+                    "updated_at": now_iso(),
+                },
+                on_conflict="id",
+            ).execute()
+            return
+          
+DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
         fd, name = tempfile.mkstemp(prefix="cleanrun-", suffix=".json", dir=DATA_FILE.parent)
+
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 json.dump(state, stream, ensure_ascii=False, indent=2)
@@ -194,23 +226,61 @@ def save_state(state: dict[str, Any]) -> None:
         finally:
             if os.path.exists(name):
                 os.unlink(name)
-
-
+              
 def load_state() -> dict[str, Any]:
     with LOCK:
+        if use_supabase_state():
+            from supabase_client import get_supabase
+
+            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
+            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
+
+            response = (
+                get_supabase()
+                .table(table)
+                .select("payload")
+                .eq("id", state_id)
+                .limit(1)
+                .execute(
+                  
+                )
+def load_state() -> dict[str, Any]:
+    with LOCK:
+        if use_supabase_state():
+            from supabase_client import get_supabase
+
+            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
+            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
+
+            response = (
+                get_supabase()
+                .table(table)
+                .select("payload")
+                .eq("id", state_id)
+                .limit(1)
+                .execute()
+
+                )
+
+            rows = response.data or []
+
+            if rows:
+                return validate_state(rows[0]["payload"])
+
+            state = default_state()
+            save_state(state)
+            return state
+          
         try:
             with DATA_FILE.open(encoding="utf-8") as stream:
                 state = json.load(stream)
-            if state.get("version") != STATE_VERSION or not all(key in state for key in ("items", "settings", "plans")):
-                raise ValueError("incomplete state")
-            for item in state["items"]:
-                item.setdefault("originalPhotoMeta", [])
-            return state
+
+            return validate_state(state)
+
         except (OSError, ValueError, json.JSONDecodeError):
             state = default_state()
             save_state(state)
             return state
-
 
 STATE = load_state()
 
