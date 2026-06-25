@@ -6,3 +6,4 @@ venv/
 .DS_Store
 .cleanrun-data/
 .pytest_cache/
+.env
