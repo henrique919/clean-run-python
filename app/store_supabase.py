@@ -5,6 +5,7 @@ from typing import Any
 
 from app.models import AppData, Item, SyncState
 from app.store import CleanRunStore, seed_data, seed_settings
+from app.storage import normalize_photo
 from app.supabase_client import get_supabase_client
 
 
@@ -12,7 +13,27 @@ def _enum_value(value: Any) -> Any:
     return getattr(value, "value", value)
 
 
+def _with_storage_photos(item: Item) -> Item:
+    original_photos = [normalize_photo(photo, folder="original") for photo in item.original_photos]
+    rectification_evidence = [
+        evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder="rectification")})
+        for evidence in item.rectification_evidence
+    ]
+    closeout_evidence = [
+        evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder="closeout")})
+        for evidence in item.closeout_evidence
+    ]
+    return item.model_copy(
+        update={
+            "original_photos": original_photos,
+            "rectification_evidence": rectification_evidence,
+            "closeout_evidence": closeout_evidence,
+        }
+    )
+
+
 def _item_to_row(item: Item) -> dict[str, Any]:
+    item = _with_storage_photos(item)
     return {
         "code": item.code,
         "type": _enum_value(item.type),
