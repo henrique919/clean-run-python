@@ -184,4 +184,4 @@ def patch_app_py() -> None:
 
 patch_app_py()
 
-setup(name="cleanrun-render-build-patch", version="0.0.1", py_modules=[])
+setup(name="cleanrun-render-build-patch", version="0.0.2", py_modules=["sitecustomize"])
