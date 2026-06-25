@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards20";
-  document.documentElement.dataset.cleanrunBuild="cards20";
+  window.CLEANRUN_FRONTEND_BUILD="cards21";
+  document.documentElement.dataset.cleanrunBuild="cards21";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -363,6 +363,56 @@
     setTimeout(()=>{document.querySelectorAll("#statusFilters button").forEach(btn=>btn.classList.toggle("active",btn.dataset.value===itemStatusFilter));const search=$("#search");if(search)search.value=query||"";filterItems();scrollTo(0,0)},0);
   };
 
+  function commandHomeBar(){
+    return `<form class="command-home native-card" onsubmit="return submitHomeCommand(event)"><label for="homeCommand">Command search</label><div class="command-line"><input id="homeCommand" autocomplete="off" placeholder="Issue DEF-022 to AquaSeal  ·  Find all open items Block A L02"><button class="btn" type="submit">RUN</button></div><small><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd> from anywhere</small></form>`;
+  }
+  function cleanCommandText(value){return String(value||"").trim().replace(/\s+/g," ")}
+  function commandKey(value){return String(value||"").replace(/[^a-z0-9]/gi,"").toUpperCase()}
+  function commandCode(value){const raw=String(value||"").trim().toUpperCase();return raw.includes("-")?raw:raw.replace(/^([A-Z]+)(\d+)$/,"$1-$2")}
+  function commandFindItem(code){const key=commandKey(code);return (state.items||[]).find(item=>commandKey(item.code)===key)}
+  function commandFindSubcontractor(name){const wanted=commandKey(name),subs=state.settings?.subcontractors||[];return subs.find(sub=>commandKey(sub)===wanted)||subs.find(sub=>commandKey(sub).includes(wanted)||wanted.includes(commandKey(sub)))||cleanCommandText(name)}
+  function commandStatus(value){const key=String(value||"").toLowerCase();if(["open","captured"].includes(key))return "Captured";if(key==="issued")return "Issued";if(key==="ready")return "Ready";if(key==="closed")return "Closed";if(key==="overdue")return "Overdue";if(key==="rejected")return "Rejected";return "All"}
+  function commandPreviewText(value){
+    const q=cleanCommandText(value);
+    if(!q)return "Run field commands or search the closeout register.";
+    const issue=q.match(/^issue\s+([a-z]{2,5}-?\d{1,5})\s+to\s+(.+)$/i);
+    if(issue)return `Issue ${commandCode(issue[1])} to ${cleanCommandText(issue[2])}`;
+    const find=q.match(/^(?:find|show|search)\s+(?:all\s+)?(?:(open|captured|issued|ready|closed|overdue|rejected)\s+)?(?:items?|defects?|works?)?\s*(.*)$/i);
+    if(find)return `Find ${commandStatus(find[1])} items${find[2]?` matching “${find[2]}”`:""}`;
+    if(/^capture|new defect|new item/i.test(q))return "Open capture.";
+    if(/^review/i.test(q))return "Open review queue.";
+    return `Search items for “${q}”`;
+  }
+  window.commandPreview=function(input){const target=$("#commandPreview");if(target)target.textContent=commandPreviewText(input.value)};
+  window.openCommandPalette=function(prefill=""){
+    $("#modalTitle").textContent="Command Palette";
+    $("#modalBody").innerHTML=`<form class="command-palette" onsubmit="return submitCommandPalette(event)"><input id="commandInput" autocomplete="off" value="${esc(prefill)}" placeholder="Issue DEF-022 to AquaSeal"><div id="commandPreview" class="command-result">${esc(commandPreviewText(prefill))}</div><div class="command-hints"><span>Issue DEF-022 to AquaSeal</span><span>Find all open items Block A L02</span><span>Review ready items</span></div><button class="btn" type="submit">RUN COMMAND</button></form>`;
+    $("#modal").hidden=false;
+    setTimeout(()=>{const input=$("#commandInput");if(input){input.focus();input.select();input.addEventListener("input",()=>commandPreview(input))}},0);
+  };
+  window.submitCommandPalette=function(event){event.preventDefault();const input=$("#commandInput");runCommand(input?.value||"").catch(err=>toast(err.message,true));return false};
+  window.submitHomeCommand=function(event){event.preventDefault();const input=event.currentTarget.querySelector("input");runCommand(input?.value||"").catch(err=>toast(err.message,true));if(input)input.value="";return false};
+  window.runCommand=async function(raw){
+    const q=cleanCommandText(raw);if(!q)return toast("Type a command or search term.",true);
+    const issue=q.match(/^issue\s+([a-z]{2,5}-?\d{1,5})\s+to\s+(.+)$/i);
+    if(issue){
+      const item=commandFindItem(issue[1]);if(!item)return toast(`Could not find ${commandCode(issue[1])}.`,true);
+      if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);
+      const to=commandFindSubcontractor(issue[2]),body={to,by:state.settings.preparedBy,reissue:item.status==="rejected"};
+      await api(`/api/items/${item.id}/actions/issue`,{method:"POST",body:JSON.stringify(body)});
+      item.status="issued";item.subcontractor=to;item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to,by:body.by,reissue:!!body.reissue});
+      closeModal();toast(`${item.code} issued to ${to}`);await reload();openDashboardSearch(item.code,"Issued");return;
+    }
+    const find=q.match(/^(?:find|show|search)\s+(?:all\s+)?(?:(open|captured|issued|ready|closed|overdue|rejected)\s+)?(?:items?|defects?|works?)?\s*(.*)$/i);
+    if(find){closeModal();openDashboardSearch(cleanCommandText(find[2]),commandStatus(find[1]));return}
+    if(/^capture|new defect|new item/i.test(q)){closeModal();go("capture");return}
+    if(/^review/i.test(q)){closeModal();go("review");return}
+    closeModal();openDashboardSearch(q,"All");
+  };
+  document.addEventListener("keydown",event=>{
+    if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();openCommandPalette()}
+  });
+
   statusMatch=function(i,s){
     if(s==="All")return true;
     if(s==="Captured")return i.status==="open"&&!overdue(i);
@@ -394,7 +444,7 @@
     return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence">`;
   }
   const cardActionLocks=new Set();
-  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
+  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
   itemCard=function(i){
     const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`,location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ");
     const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onclick="return cardAction(event,'${i.id}','issue')">Issue ›</button>`:"";
@@ -422,6 +472,11 @@
     const schedule=todayDue.length?todayDue.slice(0,4).map(i=>`<button class="schedule-item" onclick="showItem('${i.id}')"><b>${esc(i.code)} · ${esc(i.trade||"No trade")}</b><small>${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")} · ${esc(i.subcontractor||"Unassigned")}</small></button>`).join(""):`<div class="schedule-item"><b>No items due today</b><small>Good breathing room — keep capture moving.</small></div>`;
     const next=active.sort((a,b)=>(overdue(a)?0:a.status==="ready_for_review"?1:a.status==="open"?2:3)-(overdue(b)?0:b.status==="ready_for_review"?1:b.status==="open"?2:3)||a.dueDate.localeCompare(b.dueDate)).slice(0,4);
     return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" onclick="go('items')">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button><section class="native-card dashboard-hero"><div class="spread"><div><h2>Closeout control room</h2><p class="meta">Live subcontractor, trade and schedule performance for ${esc(p)}.</p></div><button class="btn alt small" onclick="openHomeBucket('all')">All items</button></div><div class="gamify-strip"><span><b>${closeoutPct}%</b> closeout rate</span><span><b>${activityPct}%</b> activity today</span><span><b>${topSub?esc(topSub.name):"—"}</b> most open defects</span></div></section><div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><section class="dashboard-board"><div class="dashboard-panel"><h3>Subcontractor performance</h3>${subPerf.length?subPerf.map(perfRow).join(""):`<p class="meta">No subcontractor assignments yet.</p>`}</div><div class="dashboard-panel"><h3>Trade pressure</h3>${tradePerf.length?tradePerf.map(perfRow).join(""):`<p class="meta">No trade data yet.</p>`}</div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Today's schedule</h3><div class="dashboard-schedule">${schedule}</div></div><div class="dashboard-panel"><h3>Quick focus</h3><button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(topTrade?.name||"")}'))"><span><strong>${topTrade?esc(topTrade.name):"No trade pressure"}</strong><small>Highest open trade workload</small></span><span class="dashboard-score">${topTrade?topTrade.open:0}</span></button><button class="dashboard-row" onclick="go('reports')"><span><strong>${closed.length}/${assigned.length||items.length} closed</strong><small>Closeout progress across assigned work</small></span><span class="dashboard-score">${closeoutPct}%</span></button></div></section><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list">${next.map(itemCard).join("")||`<div class="native-card empty">✓<br><b>All clear on ${esc(p)}</b><br>Nothing open right now.</div>`}</div></div>`;
+  };
+
+  const commandDashboardView=dashboardView;
+  dashboardView=function(){
+    return commandDashboardView().replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
   };
 
   function subProfile(name){const profile=state.settings.subProfiles?.[name]||{},contacts=Array.isArray(profile.contacts)&&profile.contacts.length?profile.contacts:[{name:profile.contact||"",role:"Primary",email:profile.email||"",mobile:profile.mobile||profile.phone||""}];return {...profile,name,companyName:profile.companyName||profile.name||name,tradeType:profile.tradeType||profile.trade||"",contacts}}
