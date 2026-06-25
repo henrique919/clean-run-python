@@ -82,21 +82,32 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 
 @media(min-width:1024px){
   body{background:#E8EBEE}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#12161908 1px,transparent 1px),linear-gradient(#12161908 1px,transparent 1px);background-size:72px 72px}
   .app{max-width:none;margin:0;box-shadow:none;background:#F4F6F9}
   .page{min-height:100vh;margin:0 0 0 232px;padding:0 0 42px}
-  .bottom-nav{inset:0 auto 0 0;transform:none;width:232px;height:100vh;display:flex;flex-direction:column;gap:8px;padding:92px 16px 22px;background:#121619;border:0}
+  .bottom-nav{inset:0 auto 0 0;transform:none;width:232px;height:100vh;display:flex;flex-direction:column;gap:8px;padding:92px 16px 22px;background:#121619;border:0;overflow:hidden}
+  .bottom-nav::before,.screen-header::before,.back-header::before{pointer-events:none}
+  .bottom-nav{background-color:#121619;background-image:linear-gradient(90deg,#ffffff09 1px,transparent 1px),linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(135deg,transparent 0 36%,#00000026 36% 44%,transparent 44% 100%);background-size:68px 68px,68px 68px,420px 420px;animation:graphiteDrift 18s ease-in-out infinite alternate}
+  @keyframes graphiteDrift{to{background-position:14px 8px,-10px 16px,28px -20px}}
   .bottom-nav::before{content:"CleanRun IQ";position:absolute;left:18px;top:24px;height:42px;padding-left:48px;display:flex;align-items:center;background:url('/assets/chevrons.svg') left center/34px 30px no-repeat;color:#fff;font:800 19px var(--font-heading);letter-spacing:-.5px}
   .bottom-nav::after{content:"ADMIN DESKTOP";position:absolute;left:66px;top:58px;color:#8B929C;font:700 9px var(--font-heading);letter-spacing:.12em}
-  .bottom-nav button{width:100%;min-height:49px;flex-direction:row;justify-content:flex-start;gap:12px;padding:10px 13px;border-radius:10px;color:#B9C0C8;font-size:14px;text-align:left}
-  .bottom-nav button.active{background:#FFFFFF12;color:#fff}
+  .bottom-nav button{width:100%;min-height:47px;flex-direction:row;justify-content:flex-start;gap:12px;padding:10px 13px;border-radius:8px;color:#B9C0C8;font-size:14px;text-align:left;border-left:3px solid transparent}
+  .bottom-nav button.active{background:#FFFFFF12;color:#fff;border-left-color:var(--brand-green)}
+  .bottom-nav button:hover{background:#ffffff0d;color:#fff;transform:translateX(2px)}
   .bottom-nav .capture-tab .tab-icon{width:31px;height:31px;margin:0;border:0;border-radius:9px;box-shadow:none;font-size:22px}
   .tab-icon{width:31px;text-align:center}
+  .screen-header,.back-header{background-color:#121619!important;background-image:linear-gradient(90deg,#ffffff08 1px,transparent 1px),linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(135deg,transparent 0 42%,#0000001f 42% 48%,transparent 48% 100%);background-size:72px 72px,72px 72px,440px 440px}
   .screen-header{position:sticky;top:0;z-index:9;padding:20px max(28px,calc((100vw - 232px - 1220px)/2));border-radius:0!important}
   .screen-scroll,.settings-scroll{max-width:1220px;margin:0 auto;padding:24px 28px}
   .filter-stack{max-width:none;padding:12px max(28px,calc((100vw - 232px - 1220px)/2));position:sticky;top:86px;z-index:8}
   .native-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
   .screen-scroll>.list{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
-  .native-item{padding:16px}.thumb{width:78px;height:78px;flex-basis:78px}
+  .native-card,.form-card,.report,.menu,.dialog{border-radius:10px;box-shadow:none;border-color:#C9CED5}
+  .native-item{padding:16px;border-left:6px solid #121619;position:relative}.native-item .badge{border-radius:6px}.thumb{width:78px;height:78px;flex-basis:78px;border-radius:8px}
+  .native-item.urgent,.native-card:has(.badge.overdue){border-left-color:#B42318}
+  .sections .native-card{border-left:5px solid #6B7280}.sections .native-card:first-child{border-left-color:#121619}.sections .native-card:nth-child(2){border-left-color:#20C55E}.sections h2,.form-card h2,.section-head h2{letter-spacing:.02em;text-transform:none}
+  .form-group h3,.menu-group-title{color:#121619;letter-spacing:.14em;border-bottom:1px solid var(--line);padding-bottom:7px}
+  .badge{border-radius:6px;text-transform:uppercase;letter-spacing:.05em}
   .item-description{font-size:14px;line-height:21px}.item-location{font-size:13.5px}
   .dialog{width:min(1180px,96vw);max-width:none}.dialog-body{padding:24px}.sections{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.sections>section:first-child,.sections>section:last-child{grid-column:1/-1}
   .photo-preview img,.evidence img{width:220px;height:160px}.photo-preview figure,.edit-photo-grid figure{width:220px}.photo-preview figure img,.edit-photo-grid figure img{width:220px;height:160px}

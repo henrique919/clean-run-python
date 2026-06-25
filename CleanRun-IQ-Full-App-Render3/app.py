@@ -773,7 +773,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", 0))
-        max_bytes = int(os.environ.get("CLEANRUN_MAX_REQUEST_BYTES", "20000000"))
+        max_bytes = int(os.environ.get("CLEANRUN_MAX_REQUEST_BYTES", "50000000"))
         if length > max_bytes: raise ValueError("request is too large")
         return json.loads(self.rfile.read(length) or b"{}")
 
@@ -810,7 +810,7 @@ class Handler(BaseHTTPRequestHandler):
                     "hasSupabaseUrl": bool(os.environ.get("SUPABASE_URL")),
                     "hasServiceRoleKey": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")),
                     "maxImageBytes": int(os.environ.get("CLEANRUN_MAX_IMAGE_BYTES", "8000000")),
-                    "maxRequestBytes": int(os.environ.get("CLEANRUN_MAX_REQUEST_BYTES", "20000000")),
+                    "maxRequestBytes": int(os.environ.get("CLEANRUN_MAX_REQUEST_BYTES", "50000000")),
                 })
             else: self.send_json({"error": "Not found"}, 404)
         except (KeyError, ValueError) as exc: self.send_json({"error": str(exc)}, 404)

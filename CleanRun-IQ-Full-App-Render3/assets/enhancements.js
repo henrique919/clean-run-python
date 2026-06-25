@@ -293,8 +293,16 @@
     const offline=!navigator.onLine;pill.className=`offline-pill${offline?" offline":""}`;pill.textContent=offline?`Offline · ${count} queued`:count?`Online · ${count} waiting to sync`:"Online · synced";
   }
 
+  function renderDesktopNav(){
+    if(!matchMedia("(min-width:1024px)").matches)return;
+    const items=[
+      ["home","Home","⌂"],["items","Items","▤"],["capture","Capture","+"],["plans","Plans","⌖"],
+      ["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]
+    ];
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+  }
   const originalRender=render;
-  render=function(){document.body.dataset.route=route;if(typeof state!=="undefined"&&state)document.documentElement.dataset.theme=state.settings?.theme||"light";originalRender();if(route==="capture")renderCapturePreviews();updateOfflinePill()};
+  render=function(){document.body.dataset.route=route;if(typeof state!=="undefined"&&state)document.documentElement.dataset.theme=state.settings?.theme||"light";originalRender();renderDesktopNav();if(route==="capture")renderCapturePreviews();updateOfflinePill()};
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
   async function initialiseOfflineStore(){offlineQueue=await dbGet(QUEUE_KEY)||[];updateOfflinePill();setTimeout(flushQueue,500)}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("/service-worker.js").catch(()=>{});

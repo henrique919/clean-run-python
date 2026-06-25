@@ -104,6 +104,8 @@ class FullFieldAppTests(unittest.TestCase):
 
         page = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('const navs=["home","items","capture","plans","more"]', page)
+        self.assertIn("loading-shell", page)
+        self.assertIn("Loading closeout record", page)
         for feature in ("Take Photo", "Upload Photo", "Voice-to-Note", "Subcontractor Mode", "Project Setup", "Reports & Handover"):
             self.assertIn(feature, page)
         self.assertIn("application/pdf,.pdf", page)
@@ -143,13 +145,18 @@ class FullFieldAppTests(unittest.TestCase):
             self.assertIn(marker, enhancements)
         for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "toggleDesktopTheme", "Subcontractor database"):
             self.assertIn(marker, enhancements)
+        self.assertIn("renderDesktopNav", enhancements)
+        self.assertIn('"reports","Reports"', enhancements)
+        self.assertIn('"subcontractor","Subcontractors"', enhancements)
         self.assertIn("@media(min-width:1024px)", styles)
         self.assertIn(".item-sub", styles)
+        self.assertIn("graphiteDrift", styles)
+        self.assertIn("border-left:6px solid #121619", styles)
         self.assertIn(".offline-pill{position:fixed;z-index:60;right:14px;top:14px", styles)
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v5", worker)
+        self.assertIn("cleanrun-iq-shell-v6", worker)
         self.assertIn("indexedDB", enhancements)
 
     def test_supabase_photo_uploads_replace_raw_base64_for_create_edit_and_actions(self) -> None:
