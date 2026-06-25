@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards21";
-  document.documentElement.dataset.cleanrunBuild="cards21";
+  window.CLEANRUN_FRONTEND_BUILD="cards22";
+  document.documentElement.dataset.cleanrunBuild="cards22";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -476,7 +476,8 @@
 
   const commandDashboardView=dashboardView;
   dashboardView=function(){
-    return commandDashboardView().replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
+    const html=commandDashboardView();
+    return html.includes("command-home")?html:html.replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
   };
 
   function subProfile(name){const profile=state.settings.subProfiles?.[name]||{},contacts=Array.isArray(profile.contacts)&&profile.contacts.length?profile.contacts:[{name:profile.contact||"",role:"Primary",email:profile.email||"",mobile:profile.mobile||profile.phone||""}];return {...profile,name,companyName:profile.companyName||profile.name||name,tradeType:profile.tradeType||profile.trade||"",contacts}}
