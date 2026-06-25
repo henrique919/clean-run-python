@@ -14,6 +14,7 @@ Assumptions made during translation:
 from __future__ import annotations
 
 import base64
+import binascii
 import copy
 import html
 import json
@@ -184,22 +185,6 @@ def default_state() -> dict[str, Any]:
 
 def use_supabase_state() -> bool:
     return os.environ.get("CLEANRUN_STATE_BACKEND", "local").lower() == "supabase"
-  
-def validate_state(state: dict[str, Any]) -> dict[str, Any]:
-    if (
-        not isinstance(state, dict)
-        or state.get("version") != STATE_VERSION
-        or not all(key in state for key in ("items", "settings", "plans"))
-    ):
-        raise ValueError("incomplete state")
-
-    for item in state["items"]:
-        item.setdefault("originalPhotoMeta", [])
-
-    return state
-
-def use_supabase_state() -> bool:
-    return os.environ.get("CLEANRUN_STATE_BACKEND", "local").lower() == "supabase"
 
 
 @lru_cache
@@ -351,7 +336,10 @@ def upload_data_url_to_supabase(data_url: str, folder: str = "evidence") -> str:
     if extension == ".jpe":
         extension = ".jpg"
 
-    raw_bytes = base64.b64decode(encoded, validate=False)
+    try:
+        raw_bytes = base64.b64decode(re.sub(r"\s+", "", encoded), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("invalid image payload") from exc
 
     max_bytes = int(os.environ.get("CLEANRUN_MAX_IMAGE_BYTES", "8000000"))
     if len(raw_bytes) > max_bytes:
@@ -361,16 +349,19 @@ def upload_data_url_to_supabase(data_url: str, folder: str = "evidence") -> str:
     now_path = datetime.now(timezone.utc).strftime("%Y/%m/%d")
     file_path = f"{folder}/{now_path}/{uuid.uuid4().hex}{extension}"
 
-    client = get_supabase_client()
-    client.storage.from_(bucket).upload(
-        path=file_path,
-        file=raw_bytes,
-        file_options={
-            "content-type": mime_type,
-            "upsert": "false",
-        },
-    )
-    return client.storage.from_(bucket).get_public_url(file_path)
+    try:
+        client = get_supabase_client()
+        client.storage.from_(bucket).upload(
+            path=file_path,
+            file=raw_bytes,
+            file_options={
+                "content-type": mime_type,
+                "upsert": "false",
+            },
+        )
+        return client.storage.from_(bucket).get_public_url(file_path)
+    except Exception as exc:
+        raise RuntimeError(f"Supabase photo upload failed: {exc}") from exc
 
 
 def maybe_upload_photo(photo: Any, folder: str = "evidence") -> Any:
@@ -512,15 +503,16 @@ def create_item(payload: dict[str, Any]) -> dict[str, Any]:
     if payload["type"] in {"defect", "client"} and not payload.get("originalPhotos"):
         raise ValueError("defects and client defects require at least one original photo")
 
+    item_id = payload.get("id") or new_id()
     payload["originalPhotos"] = upload_photo_list(
         payload.get("originalPhotos", []),
-        folder=f"items/original/{payload.get('project', 'unknown')}",
+        folder=f"items/{item_id}/original",
     )
 
     at = now_iso()
     code = next_code(payload["type"])
     item = {
-        "id": new_id(), "code": code, "status": payload.get("status", "open"),
+        "id": item_id, "code": code, "status": payload.get("status", "open"),
         "createdAt": at, "updatedAt": at, "rectificationEvidence": [],
         "closeoutEvidence": [], "comments": [], "issueHistory": [],
         "inspectionHistory": [], "auditEvents": [], "sync": "synced",
@@ -703,7 +695,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", 0))
-        if length > 20_000_000: raise ValueError("request is too large")
+        max_bytes = int(os.environ.get("CLEANRUN_MAX_REQUEST_BYTES", "20000000"))
+        if length > max_bytes: raise ValueError("request is too large")
         return json.loads(self.rfile.read(length) or b"{}")
 
     def do_GET(self) -> None:  # noqa: N802
@@ -726,6 +719,21 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/api/reports/"):
                 self.send_bytes(report_html(path.split("/")[-1]).encode(), "text/html; charset=utf-8")
             elif path == "/api/health": self.send_json({"ok": True})
+            elif path == "/api/storage-status":
+                self.send_json({
+                    "ok": True,
+                    "storageBackend": os.environ.get("CLEANRUN_STORAGE", "local"),
+                    "usingSupabaseStorage": use_supabase_storage(),
+                    "storageBucket": os.environ.get("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence"),
+                    "stateBackend": os.environ.get("CLEANRUN_STATE_BACKEND", "local"),
+                    "usingSupabaseState": use_supabase_state(),
+                    "stateTable": os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state"),
+                    "stateId": os.environ.get("CLEANRUN_STATE_ID", "production"),
+                    "hasSupabaseUrl": bool(os.environ.get("SUPABASE_URL")),
+                    "hasServiceRoleKey": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")),
+                    "maxImageBytes": int(os.environ.get("CLEANRUN_MAX_IMAGE_BYTES", "8000000")),
+                    "maxRequestBytes": int(os.environ.get("CLEANRUN_MAX_REQUEST_BYTES", "20000000")),
+                })
             else: self.send_json({"error": "Not found"}, 404)
         except (KeyError, ValueError) as exc: self.send_json({"error": str(exc)}, 404)
         except Exception as exc: self.send_json({"error": f"Server error: {exc}"}, 500)
@@ -768,7 +776,13 @@ class Handler(BaseHTTPRequestHandler):
                     result = get_item(unquote(match.group(1)))
                     allowed = {"type", "project", "building", "level", "unit", "room", "trade", "subcontractor", "priority", "dueDate", "description", "raisedBy", "originalPhotos", "originalPhotoMeta"}
                     previous_photos = len(result.get("originalPhotos", []))
-                    result.update({k: v for k, v in body.items() if k in allowed})
+                    update = {k: v for k, v in body.items() if k in allowed}
+                    if "originalPhotos" in update:
+                        update["originalPhotos"] = upload_photo_list(
+                            update.get("originalPhotos", []),
+                            folder=f"items/{result.get('id', 'unknown')}/original",
+                        )
+                    result.update(update)
                     added_photos = max(0, len(result.get("originalPhotos", [])) - previous_photos)
                     audit(result, f"Item details edited{f' · {added_photos} retrospective photo(s) added' if added_photos else ''}", body.get("by"))
                 elif pin_match:

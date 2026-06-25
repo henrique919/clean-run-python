@@ -17,6 +17,14 @@ services:
         value: cleanrun-evidence
       - key: CLEANRUN_MAX_IMAGE_BYTES
         value: 8000000
+      - key: CLEANRUN_MAX_REQUEST_BYTES
+        value: 20000000
+      - key: CLEANRUN_STATE_BACKEND
+        value: local
+      - key: CLEANRUN_STATE_TABLE
+        value: cleanrun_state
+      - key: CLEANRUN_STATE_ID
+        value: production
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY

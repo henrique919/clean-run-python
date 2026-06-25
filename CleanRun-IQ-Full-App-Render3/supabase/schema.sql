@@ -73,9 +73,16 @@ create table if not exists audit_events (
   created_at timestamptz default now()
 );
 
+create table if not exists cleanrun_state (
+  id text primary key,
+  payload jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 alter table projects enable row level security;
 alter table subcontractors enable row level security;
 alter table items enable row level security;
 alter table evidence enable row level security;
 alter table comments enable row level security;
 alter table audit_events enable row level security;
+alter table cleanrun_state enable row level security;

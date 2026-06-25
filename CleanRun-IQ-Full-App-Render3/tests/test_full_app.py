@@ -147,6 +147,70 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("cleanrun-iq-shell-v5", worker)
         self.assertIn("indexedDB", enhancements)
 
+    def test_supabase_photo_uploads_replace_raw_base64_for_create_edit_and_actions(self) -> None:
+        photo = "data:image/png;base64,iVBORw0KGgo="
+        previous_storage = os.environ.get("CLEANRUN_STORAGE")
+        os.environ["CLEANRUN_STORAGE"] = "supabase"
+
+        class FakeBucket:
+            def __init__(self) -> None:
+                self.uploads = []
+
+            def upload(self, path, file, file_options=None):
+                self.uploads.append({"path": path, "file": file, "file_options": file_options or {}})
+                return {"path": path}
+
+            def get_public_url(self, path):
+                return f"https://example.supabase.co/storage/v1/object/public/cleanrun-evidence/{path}"
+
+        class FakeStorage:
+            def __init__(self, bucket) -> None:
+                self.bucket = bucket
+
+            def from_(self, name):
+                self.bucket.name = name
+                return self.bucket
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.bucket = FakeBucket()
+                self.storage = FakeStorage(self.bucket)
+
+        fake = FakeClient()
+        original_get_client = self.app.get_supabase_client
+        self.app.get_supabase_client = lambda: fake
+
+        try:
+            item = self.app.create_item(
+                {
+                    "type": "defect",
+                    "project": "Jura Noosa",
+                    "description": "Supabase evidence test",
+                    "dueDate": self.app.day_iso(2),
+                    "originalPhotos": [photo],
+                    "createdBy": "Site Manager",
+                }
+            )
+            self.assertTrue(item["originalPhotos"][0].startswith("https://example.supabase.co/"))
+            self.assertIn(f"items/{item['id']}/original/", fake.bucket.uploads[0]["path"])
+            self.assertIsInstance(fake.bucket.uploads[0]["file"], bytes)
+
+            self.app.apply_action(item, "rectification", {"photo": photo, "comment": "Done", "by": "Trade"})
+            self.assertTrue(item["rectificationEvidence"][0]["photo"].startswith("https://example.supabase.co/"))
+            self.assertIn(f"items/{item['id']}/rectification/", fake.bucket.uploads[1]["path"])
+
+            replacement = self.app.upload_photo_list(item["originalPhotos"] + [photo], folder=f"items/{item['id']}/original")
+            item["originalPhotos"] = replacement
+            self.assertEqual(len(item["originalPhotos"]), 2)
+            self.assertTrue(item["originalPhotos"][1].startswith("https://example.supabase.co/"))
+            self.assertNotIn("data:image", "".join(item["originalPhotos"]))
+        finally:
+            self.app.get_supabase_client = original_get_client
+            if previous_storage is None:
+                os.environ.pop("CLEANRUN_STORAGE", None)
+            else:
+                os.environ["CLEANRUN_STORAGE"] = previous_storage
+
 
 if __name__ == "__main__":
     unittest.main()
