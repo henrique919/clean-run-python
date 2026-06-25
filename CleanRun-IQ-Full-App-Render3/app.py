@@ -197,90 +197,91 @@ def validate_state(state: dict[str, Any]) -> dict[str, Any]:
 
     return state
 
+def use_supabase_state() -> bool:
+return os.environ.get("CLEANRUN_STATE_BACKEND", "local").lower() == "supabase"
+
+def validate_state(state: dict[str, Any]) -> dict[str, Any]:
+if (
+not isinstance(state, dict)
+or state.get("version") != STATE_VERSION
+or not all(key in state for key in ("items", "settings", "plans"))
+):
+raise ValueError("incomplete state")
+
+for item in state["items"]:
+    item.setdefault("originalPhotoMeta", [])
+
+return state
+
 def save_state(state: dict[str, Any]) -> None:
-    """Persist CleanRun state to Supabase when enabled, otherwise local JSON."""
-    with LOCK:
-        if use_supabase_state():
-            from supabase_client import get_supabase
+"""Persist CleanRun state to Supabase when enabled, otherwise local JSON."""
+with LOCK:
+if use_supabase_state():
+from supabase_client import get_supabase
 
-            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
-            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
+        table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
+        state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
 
-            get_supabase().table(table).upsert(
-                {
-                    "id": state_id,
-                    "payload": state,
-                    "updated_at": now_iso(),
-                },
-                on_conflict="id",
-            ).execute()
-            return
-          
-DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-        fd, name = tempfile.mkstemp(prefix="cleanrun-", suffix=".json", dir=DATA_FILE.parent)
+        get_supabase().table(table).upsert(
+            {
+                "id": state_id,
+                "payload": state,
+                "updated_at": now_iso(),
+            },
+            on_conflict="id",
+        ).execute()
+        return
 
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(state, stream, ensure_ascii=False, indent=2)
-            os.replace(name, DATA_FILE)
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
-              
+    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(
+        prefix="cleanrun-",
+        suffix=".json",
+        dir=DATA_FILE.parent,
+    )
+
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(state, stream, ensure_ascii=False, indent=2)
+        os.replace(name, DATA_FILE)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
 def load_state() -> dict[str, Any]:
-    with LOCK:
-        if use_supabase_state():
-            from supabase_client import get_supabase
+with LOCK:
+if use_supabase_state():
+from supabase_client import get_supabase
 
-            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
-            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
+        table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
+        state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
 
-            response = (
-                get_supabase()
-                .table(table)
-                .select("payload")
-                .eq("id", state_id)
-                .limit(1)
-                .execute(
-                  
-                )
-def load_state() -> dict[str, Any]:
-    with LOCK:
-        if use_supabase_state():
-            from supabase_client import get_supabase
+        response = (
+            get_supabase()
+            .table(table)
+            .select("payload")
+            .eq("id", state_id)
+            .limit(1)
+            .execute()
+        )
 
-            table = os.environ.get("CLEANRUN_STATE_TABLE", "cleanrun_state")
-            state_id = os.environ.get("CLEANRUN_STATE_ID", "production")
+        rows = response.data or []
 
-            response = (
-                get_supabase()
-                .table(table)
-                .select("payload")
-                .eq("id", state_id)
-                .limit(1)
-                .execute()
+        if rows:
+            return validate_state(rows[0]["payload"])
 
-                )
+        state = default_state()
+        save_state(state)
+        return state
 
-            rows = response.data or []
+    try:
+        with DATA_FILE.open(encoding="utf-8") as stream:
+            state = json.load(stream)
 
-            if rows:
-                return validate_state(rows[0]["payload"])
+        return validate_state(state)
 
-            state = default_state()
-            save_state(state)
-            return state
-          
-        try:
-            with DATA_FILE.open(encoding="utf-8") as stream:
-                state = json.load(stream)
-
-            return validate_state(state)
-
-        except (OSError, ValueError, json.JSONDecodeError):
-            state = default_state()
-            save_state(state)
-            return state
+    except (OSError, ValueError, json.JSONDecodeError):
+        state = default_state()
+        save_state(state)
 
 STATE = load_state()
 
