@@ -1,7 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards-v14";
+  window.CLEANRUN_FRONTEND_BUILD="cards19";
+  document.documentElement.dataset.cleanrunBuild="cards19";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
   const DB_NAME="cleanrun-iq-offline";
@@ -475,5 +476,6 @@
       });
     }).catch(()=>{});
   }
-  ensureWorkbench();updateOfflinePill();setTimeout(()=>{if(typeof state!=="undefined"&&state)render()},0);initialiseOfflineStore();
+  function rerenderLatestHome(){if(typeof state!=="undefined"&&state&&route==="home")render()}
+  ensureWorkbench();updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
 })();
