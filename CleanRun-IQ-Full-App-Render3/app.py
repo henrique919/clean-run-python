@@ -392,6 +392,24 @@ def upload_photo_list(photos: Any, folder: str = "evidence") -> list[Any]:
 
     return [maybe_upload_photo(photo, folder=folder) for photo in photos]
 
+def get_item(item_id: str) -> dict[str, Any]:
+    for item in STATE["items"]:
+        if item["id"] == item_id:
+            return item
+    raise KeyError("Item not found")
+
+
+def audit(item: dict[str, Any], action: str, by: str | None = None, note: str | None = None) -> None:
+    at = now_iso()
+    event = {"at": at, "action": action}
+    if by:
+        event["by"] = by
+    if note:
+        event["note"] = note
+    item.setdefault("auditEvents", []).append(event)
+    item["updatedAt"] = at
+    item["sync"] = "synced"
+
 
 def next_code(kind: str) -> str:
     prefix = CODE_PREFIX[kind]
@@ -401,6 +419,86 @@ def next_code(kind: str) -> str:
         if match:
             nums.append(int(match.group(1)))
     return f"{prefix}-{max(nums, default=0) + 1:03d}"
+
+
+ROOMS = ["kitchen", "living room", "living", "bathroom", "ensuite", "bedroom", "balcony", "laundry", "hallway", "corridor", "stairwell", "pantry"]
+TRADE_HINTS = {
+    "Painting": ["paint"], "Plastering": ["plaster", "render"],
+    "Tiling": ["tile", "tiler", "tiling", "grout"],
+    "Waterproofing": ["waterproof", "membrane", "leak", "seal"],
+    "Joinery": ["joinery", "cabinet", "bench"], "Doors / Hardware": ["door", "hinge", "lock"],
+    "Windows / Aluminium": ["window", "glaz", "glass", "aluminium", "aluminum"],
+    "Flooring": ["floor", "carpet", "vinyl"], "Electrical": ["electric", "power point", "gpo", "light", "switch"],
+    "Hydraulic": ["plumb", "hydraulic", "tap", "basin", "drain", "pipe"],
+    "Mechanical": ["mechanical", "hvac", "air con", "aircon", "duct"],
+    "Fire Services": ["fire", "sprinkler", "smoke"], "Cleaning": ["clean", "overspray"],
+    "Concrete": ["concrete", "slab"], "Caulking / Sealant": ["caulk", "sealant", "silicone"],
+}
+
+
+def parse_transcript(transcript: str) -> dict[str, Any]:
+    """Rule-for-rule Python equivalent of the original offline voice parser."""
+    original, text = transcript.strip(), transcript.strip().lower()
+    if not text:
+        return {}
+    result: dict[str, Any] = {"priority": "high", "description": original}
+    client_words = ["client", "superintendent", "consultant", "architect", "buyer", "owner raised", "client raised"]
+    incomplete_words = ["not finished", "unfinished", "incomplete", "missing", "not installed", "pending", "not yet", "outstanding work", "not complete", "yet to"]
+    defect_words = ["damaged", "defective", "cracked", "crack", "scratched", "broken", "chipped", "leak", "stain", "drummy", "lippage", "faulty"]
+    if any(word in text for word in client_words): result["type"] = "client"
+    elif any(word in text for word in incomplete_words): result["type"] = "incomplete"
+    elif any(word in text for word in defect_words): result["type"] = "defect"
+    numbers = {"ground": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+               "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+               "eleven": 11, "twelve": 12}
+    match = re.search(r"\b(block|tower|building)\s+([a-z0-9]+)", text)
+    if match:
+        value = numbers.get(match.group(2), match.group(2).upper())
+        result["building"] = f"{match.group(1).title()} {value}"
+    match = re.search(r"\b(?:level|floor|l)\s*([0-9]{1,2})", text)
+    if match: result["level"] = f"L{int(match.group(1)):02d}"
+    else:
+        match = re.search(r"\b(?:level|floor)\s+(ground|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)", text)
+        if match: result["level"] = f"L{numbers[match.group(1)]:02d}"
+    match = re.search(r"\b(?:unit|apartment|apt|lot)\s+([a-z0-9-]+)", text)
+    if match: result["unit"] = match.group(1).upper()
+    for room in ROOMS:
+        if room in text:
+            bed = re.search(r"bedroom\s*([0-9])", text)
+            result["room"] = f"Bedroom {bed.group(1)}" if room == "bedroom" and bed else room.title()
+            break
+    for trade, hints in TRADE_HINTS.items():
+        if any(hint in text for hint in hints):
+            result["trade"] = trade
+            break
+    for sub in STATE["settings"]["subcontractors"]:
+        tokens = [token for token in sub.lower().split() if len(token) > 3]
+        if sub.lower() in text or any(token in text for token in tokens):
+            result["subcontractor"] = sub
+            break
+    if any(word in text for word in ["urgent", "critical", "immediate", "safety", "stop work", "asap", "emergency"]):
+        result["priority"] = "urgent"
+    if "today" in text: result["dueDate"] = day_iso()
+    elif "tomorrow" in text: result["dueDate"] = day_iso(1)
+    elif "end of week" in text or "eow" in text:
+        result["dueDate"] = day_iso((4 - date.today().weekday()) % 7 or 7)
+    else:
+        match = re.search(r"\bin\s+([0-9]{1,2})\s+days?", text)
+        if match: result["dueDate"] = day_iso(int(match.group(1)))
+        else:
+            weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+            for index, weekday in enumerate(weekdays):
+                if weekday in text:
+                    result["dueDate"] = day_iso((index - date.today().weekday()) % 7 or 7)
+                    break
+    if result.get("type") == "client":
+        for needle, label in [("superintendent", "Superintendent"), ("consultant", "Consultant"), ("architect", "Architect"), ("buyer", "Buyer"), ("client", "Client PM")]:
+            if needle in text:
+                result["raisedBy"] = label
+                break
+    sentence = re.split(r"[.!?]", original, maxsplit=1)[0].strip()
+    result["title"] = sentence if len(sentence) <= 60 else sentence[:57].rstrip() + "…"
+    return result
 
 
 def create_item(payload: dict[str, Any]) -> dict[str, Any]:

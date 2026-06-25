@@ -244,20 +244,30 @@ def main() -> None:
 
     text = text.replace("\nfrom supabase_storage import upload_data_url_to_supabase\n", "\n")
 
-    starts = [
-        pos for pos in (
-            text.find("\ndef storage_enabled()"),
-            text.find("\ndef use_supabase_storage()"),
-            text.find("\ndef create_item(payload: dict[str, Any]) -> dict[str, Any]:"),
-        )
-        if pos != -1
-    ]
-    end = text.find("\ndef is_overdue(item: dict[str, Any]) -> bool:")
+    helper_start = text.find("\ndef use_supabase_storage()")
+    legacy_helper_start = text.find("\ndef storage_enabled()")
+    core_start = text.find("\ndef get_item(item_id: str) -> dict[str, Any]:")
+    if helper_start == -1:
+        helper_start = legacy_helper_start
 
-    if starts and end != -1:
-        start = min(starts)
-        replacement = "\n\n" + HELPER_BLOCK + "\n\n\n" + NEXT_CODE_BLOCK + "\n\n\n" + CREATE_ITEM_BLOCK + "\n\n\n" + APPLY_ACTION_BLOCK + "\n"
-        text = text[:start] + replacement + text[end:]
+    if helper_start != -1 and core_start != -1 and helper_start < core_start:
+        text = text[:helper_start] + "\n\n" + HELPER_BLOCK + "\n" + text[core_start:]
+
+    text = re.sub(
+        r'\ndef create_item\(payload: dict\[str, Any\]\) -> dict\[str, Any\]:.*?(?=\ndef apply_action\()',
+        "\n" + CREATE_ITEM_BLOCK + "\n\n",
+        text,
+        count=1,
+        flags=re.DOTALL,
+    )
+
+    text = re.sub(
+        r'\ndef apply_action\(item: dict\[str, Any\], action: str, body: dict\[str, Any\]\) -> None:.*?\n(?=\ndef is_overdue\()',
+        "\n" + APPLY_ACTION_BLOCK + "\n",
+        text,
+        count=1,
+        flags=re.DOTALL,
+    )
 
     text = re.sub(
         r'(?m)^ {20}previous_photos = len\(result\.get\("originalPhotos", \[\]\)\)\n.*?^ {20}added_photos =',
