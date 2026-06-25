@@ -24,6 +24,7 @@ import threading
 import uuid
 import webbrowser
 import zlib
+from supabase_storage import upload_data_url_to_supabase
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
