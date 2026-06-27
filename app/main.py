@@ -24,7 +24,12 @@ def build_store():
 
             return SupabaseCleanRunStore()
         except Exception:
-            logger.exception("Supabase storage unavailable. Falling back to local JSON storage.")
+            logger.exception("Supabase storage unavailable.")
+            strict = os.getenv("CLEANRUN_REQUIRE_SUPABASE", "").lower() in {"1", "true", "yes"}
+            production = os.getenv("CLEANRUN_ENV", "development").lower() == "production"
+            if strict or production:
+                raise
+            logger.warning("Falling back to local JSON storage because CLEANRUN_REQUIRE_SUPABASE is not enabled.")
     return CleanRunStore()
 
 
@@ -98,7 +103,9 @@ def storage_status():
         "requested_storage": os.getenv("CLEANRUN_STORAGE", "local"),
         "active_store": store.__class__.__name__,
         "supabase_url_configured": bool(os.getenv("SUPABASE_URL")),
-        "supabase_key_configured": bool(os.getenv("SUPABASE_KEY")),
+        "supabase_publishable_key_configured": bool(os.getenv("SUPABASE_PUBLISHABLE_KEY")),
+        "service_role_key_present": bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY")),
+        "requires_supabase": os.getenv("CLEANRUN_REQUIRE_SUPABASE", "").lower() in {"1", "true", "yes"},
         "storage_bucket": os.getenv("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence"),
         "item_count": len(data.items),
         "latest_item_code": latest.code if latest else None,

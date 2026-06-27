@@ -16,8 +16,9 @@ This scaffold implements:
 - Original, rectification and closeout evidence chains
 - Item edit support
 - Keyboard dismiss helper for mobile web
-- Local JSON storage layer with optional Supabase-backed storage
+- Local JSON storage layer for development plus strict Supabase-backed production storage
 - Handover report HTML with closed evidence and outstanding/rejected section
+- Supabase CLI migrations, RLS policies, private storage bucket rules, and generated TypeScript type target
 
 ## Run locally
 
@@ -43,10 +44,37 @@ app/store.py         JSON persistence layer
 app/validation.py    Capture/update validation
 app/reporting.py     HTML report builder
 app/static/          Mobile-first browser UI
+supabase/            Supabase CLI config, migrations, seed, storage/RLS policies, generated type target
 ```
 
-## Notes
+## Supabase local-first workflow
 
-This version is local-first by default. Set `CLEANRUN_STORAGE=supabase` with Supabase credentials to use the Supabase-backed store and object storage for uploaded photos.
+Install the Supabase CLI, then run:
+
+```bash
+supabase start
+supabase db reset
+supabase gen types typescript --local > supabase/types/database.types.ts
+```
+
+Production database deploy:
+
+```bash
+supabase link --project-ref <project-ref>
+supabase db push
+supabase gen types typescript --project-id <project-ref> > supabase/types/database.types.ts
+```
+
+Production environment:
+
+```text
+CLEANRUN_ENV=production
+CLEANRUN_STORAGE=supabase
+CLEANRUN_REQUIRE_SUPABASE=true
+SUPABASE_URL=<project-url>
+SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+```
+
+Never configure `SUPABASE_SERVICE_ROLE_KEY` in the web app process. If privileged work is needed later, place it behind Supabase Edge Functions or security-definer database functions.
 
 See `CODE_HEALTH.md` before deploying so the Render service targets the active FastAPI app surface.

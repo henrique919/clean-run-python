@@ -9,9 +9,17 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
-      - key: CLEANRUN_DATA_DIR
-        value: /var/data
-    disk:
-      name: cleanrun-data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: CLEANRUN_ENV
+        value: production
+      - key: CLEANRUN_STORAGE
+        value: supabase
+      - key: CLEANRUN_REQUIRE_SUPABASE
+        value: "true"
+      - key: CLEANRUN_STORAGE_BUCKET
+        value: cleanrun-evidence
+      - key: CLEANRUN_MAX_IMAGE_BYTES
+        value: "8000000"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
