@@ -9,10 +9,9 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, RectificationEvidence, RAISED_BY_OPTIONS, TRADES
+from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, TRADES
 from app.reporting import build_report_html, filter_items
 from app.store import CleanRunStore
-from app.store_supabase import SupabaseCleanRunStore
 from app.validation import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -21,6 +20,8 @@ logger = logging.getLogger(__name__)
 def build_store():
     if os.getenv("CLEANRUN_STORAGE", "").lower() == "supabase":
         try:
+            from app.store_supabase import SupabaseCleanRunStore
+
             return SupabaseCleanRunStore()
         except Exception:
             logger.exception("Supabase storage unavailable. Falling back to local JSON storage.")
@@ -57,6 +58,14 @@ class RectificationPayload(BaseModel):
     advance_to_ready: bool = False
 
 
+class SettingsPayload(BaseModel):
+    active_project: str | None = None
+    company: str | None = None
+    prepared_by: str | None = None
+    projects: list[str] | None = None
+    project_configs: dict[str, ProjectConfig] | None = None
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     html = Path("app/static/index.html").read_text(encoding="utf-8")
@@ -71,6 +80,11 @@ def index() -> HTMLResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/health")
+def api_health() -> dict[str, bool]:
+    return {"ok": True}
 
 
 @app.get("/api/storage-status")
@@ -103,6 +117,15 @@ def bootstrap():
         "trades": TRADES,
         "raised_by_options": RAISED_BY_OPTIONS,
     }
+
+
+@app.patch("/api/settings")
+def update_settings(payload: SettingsPayload):
+    data = store.snapshot()
+    current = data.settings
+    updates = payload.model_dump(exclude_unset=True)
+    settings = Settings.model_validate({**current.model_dump(), **updates})
+    return store.update_settings(settings)
 
 
 @app.get("/api/items")

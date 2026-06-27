@@ -40,7 +40,8 @@ create table if not exists items (
   inspected_at timestamptz,
   closed_at timestamptz,
   created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  payload jsonb
 );
 
 create table if not exists evidence (
@@ -73,9 +74,19 @@ create table if not exists audit_events (
   created_at timestamptz default now()
 );
 
+create table if not exists app_settings (
+  id text primary key default 'default',
+  payload jsonb not null,
+  updated_at timestamptz default now()
+);
+
+create index if not exists items_payload_idx
+on items using gin (payload);
+
 alter table projects enable row level security;
 alter table subcontractors enable row level security;
 alter table items enable row level security;
 alter table evidence enable row level security;
 alter table comments enable row level security;
 alter table audit_events enable row level security;
+alter table app_settings enable row level security;

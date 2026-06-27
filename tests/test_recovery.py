@@ -4,7 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, RectificationEvidence
+from pydantic import ValidationError
+
+from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ProjectConfig, RectificationEvidence
 from app.reporting import build_report_html
 from app.store import CleanRunStore
 
@@ -62,6 +64,43 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn(item.code, report)
         self.assertIn("Closed / Complete Evidence", report)
 
+    def test_settings_preferred_items_view_persists(self) -> None:
+        settings = self.store.snapshot().settings
+        updated_configs = dict(settings.project_configs)
+        updated_configs[settings.active_project] = updated_configs[settings.active_project].model_copy(
+            update={"preferred_items_view": "subcontractor"}
+        )
+
+        self.store.update_settings(settings.model_copy(update={"project_configs": updated_configs}))
+        saved = self.store.snapshot().settings
+
+        self.assertEqual(saved.project_configs[saved.active_project].preferred_items_view, "subcontractor")
+
+    def test_project_config_rejects_unknown_items_view(self) -> None:
+        with self.assertRaises(ValidationError):
+            ProjectConfig(name="Bad View", preferred_items_view="surprise")
+
+    def test_report_renders_uploaded_evidence_images(self) -> None:
+        item = self.create_item()
+        data_url = "data:image/png;base64,iVBORw0KGgo="
+        item = self.store.add_rectification(
+            item.id,
+            RectificationEvidence(photo=data_url, comment="Fixed", by="Sterling Tiling"),
+            advance_to_ready=True,
+        )
+        item = self.store.start_inspection(item.id, by="Supervisor")
+        self.store.close_with_evidence(
+            item.id,
+            CloseoutEvidence(photo=data_url, by="Supervisor", note="Accepted", confirmation="Confirmed"),
+        )
+
+        report = build_report_html(self.store.snapshot().items, self.store.snapshot().settings, "handover")
+
+        self.assertIn('src="data:image/png;base64,iVBORw0KGgo="', report)
+        self.assertIn("Original photo / issue evidence", report)
+        self.assertIn("Rectification photo / trade evidence", report)
+        self.assertIn("Closeout / signed-off evidence", report)
+
     def test_restored_ui_contains_register_tools_and_lifecycle_actions(self) -> None:
         root = Path(__file__).resolve().parents[1]
         html = (root / "app/static/index.html").read_text(encoding="utf-8")
@@ -72,6 +111,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', html)
         for action in ("data-rectify", "data-reject", "data-close", "data-comment"):
             self.assertIn(action, script)
+        self.assertEqual(script.count("function renderItems()"), 1)
         self.assertIn(".action-bar", styles)
         self.assertIn("position: sticky", styles)
 

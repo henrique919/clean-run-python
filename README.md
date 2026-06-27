@@ -16,7 +16,7 @@ This scaffold implements:
 - Original, rectification and closeout evidence chains
 - Item edit support
 - Keyboard dismiss helper for mobile web
-- Local JSON storage layer
+- Local JSON storage layer with optional Supabase-backed storage
 - Handover report HTML with closed evidence and outstanding/rejected section
 
 ## Run locally
@@ -47,4 +47,6 @@ app/static/          Mobile-first browser UI
 
 ## Notes
 
-This is intentionally local-first for the Python version. A later production pass should replace the JSON store with Postgres/Supabase and object storage for photos.
+This version is local-first by default. Set `CLEANRUN_STORAGE=supabase` with Supabase credentials to use the Supabase-backed store and object storage for uploaded photos.
+
+See `CODE_HEALTH.md` before deploying so the Render service targets the active FastAPI app surface.

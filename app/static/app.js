@@ -7,6 +7,7 @@ const state = {
   editingItem: null,
   actionItem: null,
   actionMode: null,
+  itemView: "standard",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +24,19 @@ const STATUS_LABELS = {
   complete: "Complete",
 };
 
+const ITEM_VIEW_OPTIONS = [
+  ["standard", "Standard list"],
+  ["building", "By building"],
+  ["level", "By level"],
+  ["unit", "By unit / area"],
+  ["room", "By room / location"],
+  ["trade", "By trade"],
+  ["subcontractor", "By subcontractor"],
+  ["status", "By status"],
+];
+
+const LIFECYCLE_ACTION_SELECTORS = ["data-rectify", "data-reject", "data-close", "data-comment"];
+
 function text(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -37,6 +51,29 @@ function toast(message) {
   el.textContent = message;
   el.classList.remove("hidden");
   setTimeout(() => el.classList.add("hidden"), 2600);
+}
+
+function showAppError(message) {
+  const el = $("appError");
+  if (!el) return toast(message);
+  el.innerHTML = `<strong>Could not load CleanRun IQ</strong><span>${text(message)} Check your connection, then try again.</span><button type="button" id="retryBootstrap">Retry</button>`;
+  el.classList.remove("hidden");
+  $("retryBootstrap").onclick = () => {
+    el.classList.add("hidden");
+    bootstrap().catch((error) => showAppError(error.message || "The app could not initialise."));
+  };
+}
+
+function projectName() {
+  return $("project")?.value || state.settings?.active_project || "";
+}
+
+function selectedProjectConfig(project = projectName()) {
+  return state.settings?.project_configs?.[project];
+}
+
+function projectDefaultView(project = projectName()) {
+  return selectedProjectConfig(project)?.preferred_items_view || "standard";
 }
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
@@ -109,8 +146,18 @@ function setDatalist(id, values) {
 }
 
 function projectConfig(projectName) {
-  const project = projectName || $("project")?.value || state.settings.active_project;
-  return state.settings.project_configs[project];
+  return selectedProjectConfig(projectName);
+}
+
+function setItemViewOptions(select) {
+  if (!select) return;
+  select.textContent = "";
+  ITEM_VIEW_OPTIONS.forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    select.appendChild(opt);
+  });
 }
 
 function refreshProjectConfig(projectName) {
@@ -152,6 +199,8 @@ async function bootstrap() {
   const res = await fetch("/api/bootstrap");
   if (!res.ok) throw new Error("Could not load app data");
   const data = await res.json();
+  if (!data.settings || !Array.isArray(data.items)) throw new Error("Bootstrap response was incomplete.");
+  $("appError")?.classList.add("hidden");
   state.settings = data.settings;
   state.items = data.items;
   state.trades = data.trades;
@@ -164,6 +213,11 @@ async function bootstrap() {
   setOptions($("editRaisedBy"), state.raisedByOptions, "Who raised this?");
   setOptions($("trade"), state.trades, "Select trade");
   setOptions($("editTrade"), state.trades, "Select trade");
+  setItemViewOptions($("itemsView"));
+  setItemViewOptions($("preferredItemsView"));
+  state.itemView = projectDefaultView();
+  if ($("itemsView")) $("itemsView").value = state.itemView;
+  if ($("preferredItemsView")) $("preferredItemsView").value = state.itemView;
   if ($("dueDate")) $("dueDate").value = dueDate(7);
   refreshProjectConfig();
   refreshEditProjectConfig(state.settings.active_project);
@@ -297,7 +351,7 @@ async function save(issueNow = false) {
     state.items.unshift(item);
     renderItems();
     resetForm(true);
-    toast(issueNow ? "Item issued" : "Item saved");
+    toast(saveConfirmation(item));
   } catch (error) { showValidation(error.message || "Could not save item."); }
 }
 
@@ -331,6 +385,7 @@ async function action(id, endpoint, body = {}) {
 
 function evidenceCounts(item) { return { original: item.original_photos?.length || 0, rectification: item.rectification_evidence?.length || 0, closeout: item.closeout_evidence?.length || 0 }; }
 function locationText(item) { return [item.building, item.level, item.unit, item.room].filter(Boolean).join(" / ") || "Unassigned location"; }
+function saveConfirmation(item) { return `${item.code} ${item.status === "issued" ? "issued" : "saved"} to ${locationText(item)}. Capture another here?`; }
 
 function visibleItems() {
   const status = $("statusFilter")?.value || "all";
@@ -353,6 +408,40 @@ function renderStats(items = state.items) {
   el.innerHTML = `<div class="stat-card"><span class="stat-value">${items.length}</span><span class="stat-label">Total</span></div><div class="stat-card"><span class="stat-value">${outstanding}</span><span class="stat-label">${overdue ? `${overdue} overdue` : "Open"}</span></div><div class="stat-card"><span class="stat-value">${issued}</span><span class="stat-label">With trade</span></div><div class="stat-card"><span class="stat-value">${closed}</span><span class="stat-label">Closed</span></div>`;
 }
 
+async function savePreferredItemsView(value) {
+  const project = state.settings.active_project;
+  const project_configs = JSON.parse(JSON.stringify(state.settings.project_configs));
+  project_configs[project] = { ...project_configs[project], preferred_items_view: value };
+  const res = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_configs }) });
+  if (!res.ok) throw new Error("Could not save project setting");
+  state.settings = await res.json();
+}
+
+function groupLabel(item, view) {
+  const labels = {
+    standard: "Standard list",
+    building: item.building || "Unassigned building",
+    level: item.level || "Unassigned level",
+    unit: item.unit || "Unassigned unit / area",
+    room: item.room || "Unassigned room / location",
+    trade: item.trade || "No trade",
+    subcontractor: item.subcontractor || "Unassigned subcontractor",
+    status: STATUS_LABELS[item.status] || item.status,
+  };
+  return labels[view] || labels.standard;
+}
+
+function groupedItems(items) {
+  if (state.itemView === "standard") return [["", items]];
+  const groups = new Map();
+  items.forEach((item) => {
+    const label = groupLabel(item, state.itemView);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(item);
+  });
+  return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 function nextActionFor(item) {
   if (item.status === "open") return { label: item.trade && item.subcontractor ? "Issue" : "Edit to issue", run: () => item.trade && item.subcontractor ? issueItem(item) : openEdit(item) };
   if (item.status === "issued") return { label: "Start work", run: () => quickAction(item, "in-progress", "Marked in progress") };
@@ -372,7 +461,26 @@ async function issueItem(item) {
   } catch (error) { toast(error.message || "Issue failed"); }
 }
 
-function renderItems() {
+function cardPhoto(item) {
+  const src = item.original_photos?.[0];
+  if (!src) return `<div class="item-photo empty">No photo</div>`;
+  if (src.startsWith("seed://")) {
+    const label = src.replace("seed://", "").replaceAll("/", " / ");
+    return `<div class="item-photo seed">${text(label)}</div>`;
+  }
+  return `<img class="item-photo" src="${text(src)}" alt="Original evidence for ${text(item.code)}">`;
+}
+
+function itemCardMarkup(item) {
+  const counts = evidenceCounts(item);
+  const next = nextActionFor(item);
+  return `<div class="item-band"><div><div class="code">${text(item.code)}</div><div class="item-type">${text(TYPE_LABELS[item.type] || item.type)}</div></div><span class="status ${text(item.status)}">${text(STATUS_LABELS[item.status] || item.status)}</span></div><div class="item-card-body"><aside class="item-evidence">${cardPhoto(item)}<div class="due-under-photo">Due ${text(item.due_date || "Not set")}</div></aside><div class="item-copy"><div class="location-line">${text(locationText(item))}</div><div class="desc">${text(item.description)}</div><div class="assignment-block"><div class="subcontractor-name">${text(item.subcontractor || "Unassigned subcontractor")}</div><div class="trade-name">${text(item.trade || "No trade")}</div></div><div class="evidence-counts"><span class="ev-chip original">Original ${counts.original}</span><span class="ev-chip rectification">Rectification ${counts.rectification}</span><span class="ev-chip closeout">Closeout ${counts.closeout}</span></div></div></div><div class="card-actions"><button type="button" class="quiet-action" data-edit>Edit</button><button type="button" class="next-action" data-next>${text(next.label)}</button><button type="button" class="more-action" data-more>More</button></div>`;
+}
+
+/*
+Legacy renderer retained only as non-executable reference while this file is being consolidated.
+It should be deleted during the next frontend module split.
+function renderItemsLegacyUnused() {
   const list = $("itemsList");
   if (!list) return;
   const items = visibleItems();
@@ -396,6 +504,41 @@ function renderItems() {
     div.querySelector("[data-next]").onclick = next.run;
     div.querySelector("[data-more]").onclick = () => openActionDrawer(item, "menu");
     list.appendChild(div);
+  });
+}
+
+*/
+function renderItems() {
+  const list = $("itemsList");
+  if (!list) return;
+  const items = visibleItems();
+  renderStats(state.items);
+  if ($("listCount")) $("listCount").textContent = `${items.length} shown`;
+  list.textContent = "";
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "item-card";
+    empty.innerHTML = `<div class="code">No matching items</div><div class="meta">Capture an item or clear your filters.</div>`;
+    list.appendChild(empty);
+    return;
+  }
+  groupedItems(items.slice(0, 30)).forEach(([label, group]) => {
+    if (label) {
+      const heading = document.createElement("div");
+      heading.className = "item-group-heading";
+      heading.textContent = `${label} (${group.length})`;
+      list.appendChild(heading);
+    }
+    group.forEach((item) => {
+      const next = nextActionFor(item);
+      const div = document.createElement("div");
+      div.className = `item-card status-${item.status}`;
+      div.innerHTML = itemCardMarkup(item);
+      div.querySelector("[data-edit]").onclick = () => openEdit(item);
+      div.querySelector("[data-next]").onclick = next.run;
+      div.querySelector("[data-more]").onclick = () => openActionDrawer(item, "menu");
+      list.appendChild(div);
+    });
   });
 }
 
@@ -470,7 +613,10 @@ function renderActionContent() {
   const titleMap = { rectification: "Add Rectification", reject: "Reject Item", comment: "Add Comment", close: "Close Item" };
   $("actionKicker").textContent = titleMap[mode] || "Item action";
   submit.textContent = mode === "reject" ? "Reject" : mode === "close" ? "Close item" : "Save";
-  if (mode === "rectification") form.innerHTML = `<p class="hint">Record what the subcontractor has done and attach evidence where available.</p><label for="actionPhoto">Rectification photo</label><input id="actionPhoto" type="file" accept="image/*" capture="environment" /><label for="actionComment">Comment</label><textarea id="actionComment" placeholder="Describe the rectification completed"></textarea><label class="check-row"><input id="actionAdvance" type="checkbox" /> Mark ready for review</label>`;
+  if (mode === "rectification") {
+    submit.textContent = "Submit rectification";
+    form.innerHTML = `<p class="hint">Upload the rectification photo and describe what was fixed. Tick ready for review when the site team can inspect it.</p><label for="actionPhoto">Rectification photo</label><input id="actionPhoto" type="file" accept="image/*" capture="environment" /><label for="actionComment">Rectification comment</label><textarea id="actionComment" placeholder="What was fixed?"></textarea><label class="check-row"><input id="actionAdvance" type="checkbox" /> Send back ready for review</label>`;
+  }
   else if (mode === "reject") form.innerHTML = `<p class="hint">Capture the reason this item failed inspection.</p><label for="actionReason">Rejection reason</label><textarea id="actionReason" placeholder="Explain what still needs to be fixed"></textarea>`;
   else if (mode === "comment") form.innerHTML = `<p class="hint">Add a note to the item audit trail.</p><label for="actionComment">Comment</label><textarea id="actionComment" placeholder="Add comment"></textarea>`;
   else if (mode === "close") form.innerHTML = `<p class="hint">Close the item with supervisor confirmation. Add a photo where practical.</p><label for="actionPhoto">Closeout photo</label><input id="actionPhoto" type="file" accept="image/*" capture="environment" /><label for="actionNote">Closeout note</label><textarea id="actionNote">Reviewed and accepted for closeout.</textarea><label for="actionConfirmation">Confirmation</label><input id="actionConfirmation" value="Confirmed acceptable for closeout" />`;
@@ -488,7 +634,7 @@ async function submitAction() {
       const res = await fetch(`/api/items/${item.id}/rectification`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photo: photos[0] || null, comment, by: state.settings.prepared_by, advance_to_ready: $("actionAdvance")?.checked || false }) });
       if (!res.ok) throw new Error("Rectification failed");
       updated = await res.json();
-      toast("Rectification added");
+      toast($("actionAdvance")?.checked ? "Rectification submitted for review" : "Rectification saved");
     } else if (mode === "reject") {
       const reason = $("actionReason").value.trim();
       if (!reason) return toast("Add a rejection reason");
@@ -525,9 +671,28 @@ function bind() {
   $("draftFromNote").onclick = draftFromNote;
   $("saveBtn").onclick = () => save(false);
   $("issueBtn").onclick = () => save(true);
-  $("resetDemo").onclick = async () => { await fetch("/api/reset-demo", { method: "POST" }); await bootstrap(); toast("Demo reset"); };
+  $("resetDemo").onclick = async () => {
+    try {
+      const res = await fetch("/api/reset-demo", { method: "POST" });
+      if (!res.ok) throw new Error("Demo reset failed");
+      await bootstrap();
+      toast("Demo reset");
+    } catch (error) { showAppError(error.message || "Demo reset failed."); }
+  };
   $("searchInput")?.addEventListener("input", renderItems);
   $("statusFilter")?.addEventListener("change", renderItems);
+  $("clearFilters")?.addEventListener("click", () => {
+    if ($("searchInput")) $("searchInput").value = "";
+    if ($("statusFilter")) $("statusFilter").value = "all";
+    renderItems();
+  });
+  $("itemsView")?.addEventListener("change", () => { state.itemView = $("itemsView").value; renderItems(); });
+  $("preferredItemsView")?.addEventListener("change", async () => {
+    state.itemView = $("preferredItemsView").value;
+    if ($("itemsView")) $("itemsView").value = state.itemView;
+    renderItems();
+    try { await savePreferredItemsView(state.itemView); toast("Project Items view saved"); } catch (error) { toast(error.message || "Could not save setting"); }
+  });
   $("editClose").onclick = closeEdit;
   $("editCancel").onclick = closeEdit;
   $("editSave").onclick = saveEdit;
@@ -543,4 +708,4 @@ function bind() {
 
 bindKeyboardDone();
 bind();
-bootstrap().catch((error) => toast(error.message));
+bootstrap().catch((error) => showAppError(error.message || "The app could not initialise."));

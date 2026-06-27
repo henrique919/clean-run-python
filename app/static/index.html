@@ -19,6 +19,7 @@
   </header>
 
   <main class="shell">
+    <div id="appError" class="app-error hidden" role="alert"></div>
     <section class="hero-card">
       <div>
         <p class="eyebrow">Construction QA · Defects · Punch List</p>
@@ -43,6 +44,15 @@
           <option value="closed">Closed</option>
           <option value="complete">Complete</option>
         </select>
+        <button class="ghost-btn" id="clearFilters" type="button">Clear</button>
+      </div>
+      <div class="tool-row view-row">
+        <label for="itemsView">Items view</label>
+        <select id="itemsView" aria-label="Items page view"></select>
+      </div>
+      <div class="project-setting-row">
+        <label for="preferredItemsView">Project settings: preferred Items view</label>
+        <select id="preferredItemsView" aria-label="Preferred Items page view"></select>
       </div>
       <div class="report-row">
         <a href="/api/reports/open" target="_blank" rel="noreferrer">Open</a>
