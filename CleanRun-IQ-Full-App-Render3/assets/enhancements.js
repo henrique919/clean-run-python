@@ -192,12 +192,37 @@
     capturePhotos.push(...records.map(r=>r.src));capturePhotoMeta.push(...records.map(r=>r.meta));renderCapturePreviews();input.value="";
   };
 
+  let captureVoiceCaptured=false;
+  function updateCaptureVoiceState(){
+    const card=$("#captureVoiceCard"),text=$("#voiceText");
+    if(card)card.hidden=captureVoiceCaptured&&!!text?.value.trim();
+  }
+  function wireCaptureVoice(){
+    const text=$("#voiceText");
+    if(!text)return;
+    text.addEventListener("input",()=>{captureVoiceCaptured=false;updateCaptureVoiceState()},{once:false});
+    updateCaptureVoiceState();
+  }
+  const originalDraftVoice=draftVoice;
+  draftVoice=async function(){
+    await originalDraftVoice();
+    captureVoiceCaptured=!!$("#voiceText")?.value.trim();
+    updateCaptureVoiceState();
+  };
+  const originalStartDictation=startDictation;
+  startDictation=function(){
+    captureVoiceCaptured=false;
+    updateCaptureVoiceState();
+    return originalStartDictation();
+  };
+
   const originalCaptureView=captureView;
   captureView=function(){
     const html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
-      .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.");
-    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews()},0);
+      .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.")
+      .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Voice-to-Note AI</div><textarea id=\"voiceText\" placeholder=\"Speak or type the note, then draft the form\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak Note</button><button class=\"btn\" type=\"button\" onclick=\"draftVoice()\">Draft from Note</button></div></section>");
+    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice()},0);
     return html;
   };
 

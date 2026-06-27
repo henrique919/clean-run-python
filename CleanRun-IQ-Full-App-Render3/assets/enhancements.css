@@ -31,6 +31,61 @@ button[onclick="startDictation()"]{
 }
 button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 
+[data-photo-card]{
+  padding:12px!important;
+}
+[data-photo-card] .spread{
+  align-items:start;
+}
+[data-photo-card] .form-card-title{
+  font-size:15px;
+  line-height:1.15;
+}
+[data-photo-card] .form-card-sub,
+[data-photo-card] #photoHint{
+  font-size:12px;
+  line-height:1.25;
+}
+[data-photo-card] p.subtle{
+  margin:6px 0 8px;
+  font-size:12px;
+  line-height:1.32;
+}
+[data-photo-card] .photo-actions{
+  grid-template-columns:1.2fr .95fr;
+  gap:8px;
+  margin-top:8px;
+}
+[data-photo-card] .photo-action{
+  min-height:78px;
+}
+[data-photo-card] .photo-action.primary{
+  min-height:96px;
+  font-size:16px;
+  font-weight:900;
+}
+.capture-voice{
+  padding:11px 12px;
+}
+.capture-voice .voice-head{
+  font-size:17px;
+  line-height:1.15;
+}
+.capture-voice textarea{
+  min-height:58px;
+}
+.capture-voice-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:8px;
+}
+.capture-voice-actions .btn{
+  min-height:50px;
+  font-size:16px;
+  font-weight:900;
+}
+
 .photo-preview figure,.edit-photo-grid figure{
   margin:0;
   display:grid;
@@ -137,7 +192,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .cr-item-card.status-ready{--rail:#1D4ED8}
 .cr-item-card.status-closed{--rail:#16A34A}
 .cr-item-card.status-rejected{--rail:#C026D3}
-.cr-card-band{display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(32,37,43,.8);color:#fff;padding:8px 16px}
+.cr-card-band{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(32,37,43,.8);color:#fff;padding:6px 14px}
 .cr-card-band{border-top:var(--rail-width) solid var(--rail);box-shadow:none}
 .cr-card-band>div{display:flex;align-items:center;gap:9px;min-width:0}
 .cr-card-main{display:grid;grid-template-columns:142px minmax(0,1fr);gap:15px;padding:13px 16px 11px;align-items:start;background:#ECEFF2}
@@ -146,12 +201,12 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .cr-card-photo .thumb{width:142px;height:108px;flex-basis:142px;border-radius:12px}
 .cr-card-photo.empty{display:grid;place-items:center;color:#667085;font-size:11px;font-weight:800}
 .cr-card-copy{display:grid;gap:5px;min-width:0;align-self:stretch}
-.cr-card-code{font-size:16px;font-weight:950;letter-spacing:.02em;color:#fff}
-.cr-card-status{border-radius:6px!important;font-size:11px!important;letter-spacing:.09em;white-space:nowrap;background:var(--rail)!important;color:#fff!important;border:1px solid var(--rail)}
+.cr-card-code{font-size:15px;font-weight:950;letter-spacing:.02em;color:#fff}
+.cr-card-status{border-radius:6px!important;font-size:10.5px!important;letter-spacing:.09em;white-space:nowrap;background:var(--rail)!important;color:#fff!important;border:1px solid var(--rail)}
 .cr-card-status.captured{color:#121619!important;border-color:#D0D5DD}
-.cr-card-type{background:#2A3037;color:#D8DEE6;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:850;letter-spacing:.03em}
-.cr-card-location{font-size:12px;font-weight:900;letter-spacing:.08em;color:#52606D;text-transform:uppercase}
-.cr-card-desc{text-transform:none!important;font-size:16px;font-weight:850;line-height:1.25;color:#121619;margin:1px 0 7px}
+.cr-card-type{background:#2A3037;color:#D8DEE6;border-radius:6px;padding:2px 7px;font-size:10.5px;font-weight:850;letter-spacing:.03em}
+.cr-card-location{font-size:12px;font-weight:950;letter-spacing:.08em;color:#344054;text-transform:uppercase}
+.cr-card-desc{text-transform:none!important;font-size:15px;font-weight:600;line-height:1.25;color:#121619;margin:1px 0 7px}
 .cr-card-assignment{display:grid;gap:3px;align-items:end;margin-top:auto}
 .cr-card-trade{font-size:11px;font-weight:900;color:#667085;text-transform:uppercase;letter-spacing:.08em;text-align:left;order:2}
 .cr-card-sub{text-transform:none!important;text-align:left;font-size:17px!important;font-weight:900!important;color:#29313A!important;line-height:1.16}
@@ -299,15 +354,17 @@ html[data-theme="dark"] .command-hints span{background:#151A20;border-color:#343
 @media(max-width:760px){
   .contact-row{grid-template-columns:1fr}.admin-kpis{grid-template-columns:1fr}.offline-pill{top:8px;right:8px}
   .cr-item-card{border-left-width:6px!important}
-  .cr-card-band{padding:8px 12px}
+  .cr-card-band{padding:6px 12px}
   .cr-card-main{grid-template-columns:125px minmax(0,1fr);gap:10px;padding:12px}
   .cr-card-media,.cr-card-photo,.cr-card-photo .thumb{width:125px!important;flex-basis:125px}
   .cr-card-photo,.cr-card-photo .thumb{height:98px!important}
-  .cr-card-code{font-size:17px}.cr-card-desc{font-size:15px}
+  .cr-card-code{font-size:15px}.cr-card-desc{font-size:14px}
   .cr-card-assignment{grid-template-columns:1fr;gap:2px}
   .cr-card-date{text-align:left}
   .cr-card-sub{font-size:15px!important}
   .cr-card-actions{justify-content:flex-start}.cr-issue-cta{width:100%;font-size:17px}
+  [data-photo-card] .photo-action.primary{min-height:102px}
+  .capture-voice-actions .btn{font-size:15px}
   .dashboard-kpis,.dashboard-board,.gamify-strip{grid-template-columns:1fr 1fr}
   .dashboard-board{display:grid}
   .dashboard-panel{padding:12px}
