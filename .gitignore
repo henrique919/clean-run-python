@@ -7,4 +7,6 @@ node_modules/
 .DS_Store
 .cleanrun-data/
 .pytest_cache/
+supabase/.branches/
+supabase/.temp/
 .env

@@ -57,6 +57,15 @@ supabase db reset
 supabase gen types typescript --local > supabase/types/database.types.ts
 ```
 
+On Windows with Docker Desktop per-user installs, use the repo scripts so the
+Supabase CLI can find Docker and the local TCP daemon:
+
+```bash
+npm.cmd run supabase:win -- start
+npm.cmd run supabase:win -- db reset
+npm.cmd run supabase:types
+```
+
 Production database deploy:
 
 ```bash
