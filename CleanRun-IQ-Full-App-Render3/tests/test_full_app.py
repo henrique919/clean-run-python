@@ -150,6 +150,8 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn('/assets/banner.png', report)
         self.assertIn('href="/"', report)
         self.assertIn("Print / Save PDF", report)
+        self.assertIn("Executive Summary", report)
+        self.assertIn("Item Index", report)
 
         page = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn('const navs=["home","items","capture","review","more"]', page)
@@ -193,10 +195,20 @@ class FullFieldAppTests(unittest.TestCase):
         self.app.apply_action(item, "in-progress", {"by": "Coastline Painting"})
         self.app.apply_action(item, "rectification", {"photo": photo, "photoMeta": meta, "comment": "Repaired", "by": "Trade"})
         report = self.app.report_html("open")
-        self.assertIn('class="photo-grid"', report)
+        self.assertIn('class="photo-grid', report)
         self.assertGreaterEqual(report.count('class="photo"'), 3)
         self.assertIn("Geo-tag -27.46980, 153.02510", report)
         self.assertIn("font-size:16px", report)
+
+        register = self.app.report_html("register")
+        self.assertIn("Project Defect Register", register)
+        self.assertIn("Evidence completion", register)
+        self.assertIn("Item Index", register)
+
+        exceptions = self.app.report_html("exceptions")
+        self.assertIn("Exceptions Report", exceptions)
+        self.assertIn("Missing rectification evidence", exceptions)
+        self.assertIn("Exception flags", exceptions)
 
         enhancements = (ROOT / "assets" / "enhancements.js").read_text(encoding="utf-8")
         styles = (ROOT / "assets" / "enhancements.css").read_text(encoding="utf-8")
@@ -262,6 +274,8 @@ class FullFieldAppTests(unittest.TestCase):
             "FOCUS_MODES",
             "Items page focus",
             "focus-controls",
+            "itemProjectScope",
+            "itemBuildingValue",
             "cr-card-date under-photo",
             "plan-fit-controls",
             "savePlanFit",
@@ -271,7 +285,7 @@ class FullFieldAppTests(unittest.TestCase):
             self.assertIn(marker, enhancements)
         for marker in (
             ".cr-card-date.under-photo",
-            "border-top:8px solid var(--rail)",
+            "border-top:var(--rail-width) solid var(--rail)",
             ".focus-controls",
             ".plan-fit-controls",
             ".plan.pdf .plan-pdf",
