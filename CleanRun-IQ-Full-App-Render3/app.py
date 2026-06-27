@@ -804,23 +804,69 @@ def is_overdue(item: dict[str, Any]) -> bool:
     return item.get("status") not in CLOSED and item.get("dueDate", "9999") < day_iso()
 
 
+def report_exceptions(item: dict[str, Any]) -> list[str]:
+    original = len(item.get("originalPhotos", []))
+    rectification = len(item.get("rectificationEvidence", []))
+    closeout = len(item.get("closeoutEvidence", []))
+    status = item.get("status", "open")
+    reasons: list[str] = []
+    if is_overdue(item):
+        reasons.append("Overdue")
+    if status == "rejected":
+        reasons.append("Rejected")
+    if item.get("type") in {"defect", "client"} and original == 0:
+        reasons.append("Missing original evidence")
+    if status not in CLOSED and status != "open" and rectification == 0:
+        reasons.append("Missing rectification evidence")
+    if status in CLOSED and closeout == 0:
+        reasons.append("Missing closeout evidence")
+    if status not in CLOSED and item.get("dueDate", "9999") < day_iso():
+        reasons.append("Open or issued past due")
+    return list(dict.fromkeys(reasons))
+
+
+def report_evidence_status(item: dict[str, Any]) -> str:
+    missing = [reason for reason in report_exceptions(item) if reason.startswith("Missing")]
+    if missing:
+        return ", ".join(missing)
+    original = len(item.get("originalPhotos", []))
+    rectification = len(item.get("rectificationEvidence", []))
+    closeout = len(item.get("closeoutEvidence", []))
+    if item.get("status") in CLOSED:
+        return "Complete evidence chain" if original and closeout else "Partial evidence"
+    if original and rectification:
+        return "Original and rectification evidence recorded"
+    if original:
+        return "Original issue evidence recorded"
+    return "No evidence uploaded"
+
+
+def report_location(item: dict[str, Any], separator: str = " / ") -> str:
+    return separator.join(str(v) for v in [item.get("building"), item.get("level"), item.get("unit"), item.get("room")] if v) or "Location not set"
+
+
 def report_items(kind: str) -> list[dict[str, Any]]:
     active = STATE["settings"]["activeProject"]
     items = [copy.deepcopy(item) for item in STATE["items"] if item.get("project") == active]
+    if kind in {"register", "defect-register"}: return sorted(items, key=lambda i: (i.get("status", ""), i.get("building", ""), i.get("level", ""), i.get("code", "")))
     if kind == "open": return [i for i in items if i["status"] not in CLOSED]
     if kind == "overdue": return [i for i in items if is_overdue(i)]
     if kind == "client": return [i for i in items if i["type"] == "client"]
     if kind == "incomplete": return [i for i in items if i["type"] == "incomplete"]
     if kind == "subcontractor": return sorted(items, key=lambda i: i.get("subcontractor", ""))
-    if kind == "handover": return sorted(items, key=lambda i: (i["status"] not in CLOSED, i["updatedAt"]), reverse=False)
+    if kind == "handover": return sorted([i for i in items if i["status"] in CLOSED], key=lambda i: (i.get("building", ""), i.get("level", ""), i.get("unit", ""), i.get("updatedAt", "")))
+    if kind == "exceptions": return [i for i in items if report_exceptions(i)]
     raise ValueError("unknown report type")
 
 
 def report_html(kind: str) -> str:
     titles = {
+        "register": "Project Defect Register",
+        "defect-register": "Project Defect Register",
+        "exceptions": "Exceptions Report",
         "open": "Open Items",
         "overdue": "Overdue Items",
-        "handover": "Closed / Handover Evidence",
+        "handover": "Handover Evidence Pack",
         "subcontractor": "Subcontractor",
         "client": "Client Defects",
         "incomplete": "Incomplete Works",
@@ -855,8 +901,12 @@ def report_html(kind: str) -> str:
         original_count = len(item.get("originalPhotos", []))
         rectification_count = len(item.get("rectificationEvidence", []))
         closeout_count = len(item.get("closeoutEvidence", []))
-        location = " / ".join(filter(None, [item.get("building"), item.get("level"), item.get("unit"), item.get("room")]))
+        location = report_location(item)
         status = re.sub(r"[^a-z_-]", "", str(item.get("status", "open")))
+        exceptions = report_exceptions(item)
+        exception_html = "".join(f'<span class="warning">{esc(reason)}</span>' for reason in exceptions) or "<span>None</span>"
+        audit_html = "".join(f"<li>{esc(event.get('action'))} - {esc(event.get('by'))} - {esc(event.get('at'))}</li>" for event in item.get("auditEvents", [])[-4:]) or "<li>No audit events recorded.</li>"
+        comments_html = "".join(f"<li>{esc(comment.get('text'))} - {esc(comment.get('by'))}</li>" for comment in item.get("comments", [])[-3:]) or "<li>No comments recorded.</li>"
         photos: list[tuple[str, str, Any]] = []
         original_meta = item.get("originalPhotoMeta", [])
         for index, photo in enumerate(item.get("originalPhotos", [])):
@@ -867,10 +917,14 @@ def report_html(kind: str) -> str:
         for index, evidence in enumerate(item.get("closeoutEvidence", [])):
             if evidence.get("photo"):
                 photos.append((f"Closeout {index + 1}", photo_source(evidence["photo"]), evidence.get("photoMeta")))
+        shown_photos = photos[:4]
         gallery = "".join(
             f'<figure class="photo"><img src="{html.escape(source, quote=True)}" alt="{esc(label)}"><figcaption>{photo_caption(label, meta)}</figcaption></figure>'
-            for label, source, meta in photos if source
+            for label, source, meta in shown_photos if source
         )
+        if len(photos) > 4:
+            gallery += f'<div class="missing-panel compact"><b>{len(photos) - 4} additional photos available</b><span>Open the item in CleanRun IQ to inspect the full evidence set.</span></div>'
+        gallery_html = f'<div class="photo-grid photo-grid--{min(len(shown_photos), 4)}">{gallery}</div>' if gallery else '<div class="missing-panel"><b>No photos attached</b><span>Evidence is not available for this item in the current report export.</span></div>'
         rows.append(
             f"""
             <article class="item item--{status}">
@@ -878,20 +932,35 @@ def report_html(kind: str) -> str:
               <div class="register"><span>{esc(location)}</span><span>{esc(item.get('trade'))}</span><span>{esc(item.get('subcontractor'))}</span></div>
               <p class="description">{esc(item['description'])}</p>
               <div class="evidence"><div><b>Original issue</b><span>{original_count} photo{'' if original_count == 1 else 's'}</span></div><div><b>Rectification</b><span>{rectification_count} record{'' if rectification_count == 1 else 's'}</span></div><div><b>Closeout</b><span>{closeout_count} record{'' if closeout_count == 1 else 's'}</span></div></div>
-              {f'<div class="photo-grid">{gallery}</div>' if gallery else ''}
+              <div class="quality"><b>Evidence status</b><span>{esc(report_evidence_status(item))}</span><b>Exception flags</b><span>{exception_html}</span></div>
+              {gallery_html}
+              <div class="notes"><div><b>Comments</b><ul>{comments_html}</ul></div><div><b>Audit summary</b><ul>{audit_html}</ul></div></div>
               <footer><span>Evidence chain: {original_count} / {rectification_count} / {closeout_count}</span><span class="due">Due {esc(item.get('dueDate'))}</span></footer>
             </article>
             """
         )
 
     generated = datetime.now().strftime("%d %b %Y %H:%M")
+    closed_count = sum(i["status"] in CLOSED for i in items)
+    open_count = sum(i["status"] not in CLOSED for i in items)
+    overdue_count = sum(is_overdue(i) for i in items)
+    rejected_count = sum(i["status"] == "rejected" for i in items)
+    missing_flags = sum(1 for item in items for reason in report_exceptions(item) if reason.startswith("Missing"))
+    evidence_ready = sum(report_evidence_status(item) not in {"No evidence uploaded"} and "Missing" not in report_evidence_status(item) for item in items)
+    percent = lambda value, total: "0%" if total <= 0 else f"{round(value / total * 100)}%"
+    project_config = settings.get("projectConfigs", {}).get(settings.get("activeProject"), {})
+    report_status = "For Review" if kind == "handover" else "Draft"
+    index_rows = "".join(
+        f"<tr><td>{esc(item.get('code'))}</td><td>{esc(TYPE_LABEL.get(item.get('type'), item.get('type')))}</td><td>{esc(report_location(item))}</td><td>{esc(item.get('trade'))}</td><td>{esc(item.get('subcontractor'))}</td><td>{esc(STATUS_LABEL.get(item.get('status'), item.get('status')))}</td><td>{esc(item.get('dueDate'))}</td><td>{esc(report_evidence_status(item))}</td></tr>"
+        for item in items
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(titles[kind])}</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
-*{{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}}body{{margin:0;background:#F3F4F6;color:#121619;font:14px Inter,system-ui,sans-serif}}.shell{{max-width:1080px;margin:24px auto;background:#fff;border:1px solid #DDE1E5;padding:24px}}.brand{{display:flex;justify-content:space-between;gap:20px;align-items:start;border-bottom:4px solid #20C55E;padding-bottom:16px}}.brand img{{width:230px;max-width:55%;height:auto}}.meta{{text-align:right;color:#6B7280;line-height:1.55}}h1,h2,h3,.code,.status,.stat b,.stat span,.evidence b,button,a{{font-family:Archivo,system-ui,sans-serif}}h1{{font-size:30px;line-height:1;margin:22px 0 5px}}.tagline{{color:#6B7280;font-weight:600}}.actions{{display:flex;gap:8px;margin:16px 0}}button,a.back{{border:1px solid #121619;border-radius:7px;background:#fff;color:#121619;padding:10px 13px;text-decoration:none;font-weight:700;cursor:pointer}}button{{background:#18A94F;border-color:#18A94F}}.summary{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:18px 0 22px}}.stat{{border:1px solid #DDE1E5;border-left:4px solid #121619;background:#F8F9FA;padding:12px}}.stat:nth-child(2){{border-left-color:#20C55E}}.stat:nth-child(3){{border-left-color:#B42318}}.stat:nth-child(4){{border-left-color:#6B7280}}.stat b{{display:block;font-size:28px}}.stat span{{color:#6B7280;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}}.item{{border:1px solid #DDE1E5;border-left:5px solid #6B7280;padding:13px;margin:10px 0;break-inside:avoid}}.item--closed,.item--complete{{border-left-color:#20C55E}}.item--rejected{{border-left-color:#B42318}}.item header,.item footer{{display:flex;justify-content:space-between;gap:12px;align-items:start}}.code{{display:block;font-size:16px;line-height:1.15;font-weight:800}}small{{display:block;color:#6B7280;margin-top:2px}}.status{{border:1px solid #B9C0C8;background:#F8F9FA;padding:4px 7px;font-size:9px;font-weight:700;text-transform:uppercase}}.status.closed,.status.complete{{border-color:#20C55E;background:#E1F7E9;color:#0C7733}}.status.rejected{{border-color:#B42318;background:#FEE4E2;color:#B42318}}.register{{display:grid;grid-template-columns:1.4fr .8fr 1fr;gap:7px;margin-top:8px}}.register span{{border:1px solid #DDE1E5;background:#F8F9FA;color:#52606D;padding:6px;font-size:11px;font-weight:600}}.description{{line-height:1.45}}.evidence{{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:10px 0}}.evidence div{{display:grid;gap:3px;border:1px solid #DDE1E5;border-top:3px solid #6B7280;background:#F8F9FA;padding:8px}}.evidence div:last-child{{border-top-color:#20C55E}}.evidence b{{font-size:9px;letter-spacing:.06em;text-transform:uppercase}}.evidence span,footer{{color:#6B7280;font-size:10px}}.photo-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:12px 0}}.photo{{margin:0;border:1px solid #DDE1E5;background:#F8F9FA;padding:6px;break-inside:avoid}}.photo img{{display:block;width:100%;height:155px;object-fit:cover;background:#E9EDF0}}.photo figcaption{{display:grid;gap:2px;padding-top:5px;color:#52606D;font-size:9px;line-height:1.35}}.photo figcaption b{{font-family:Archivo,system-ui,sans-serif;color:#121619;font-size:10px}}.due{{margin-left:auto}}.empty{{border:1px dashed #B9C0C8;background:#F8F9FA;padding:18px;color:#6B7280}}.footer{{margin-top:24px;padding-top:12px;border-top:1px solid #DDE1E5;text-align:center;color:#6B7280;font-size:9px;letter-spacing:.07em;text-transform:uppercase}}
-@media(max-width:700px){{.shell{{margin:0;padding:15px}}.brand{{display:block}}.meta{{text-align:left;margin-top:10px}}.summary{{grid-template-columns:repeat(2,1fr)}}.register,.evidence{{grid-template-columns:1fr}}.photo-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}.photo img{{height:130px}}h1{{font-size:26px}}}}@media print{{body{{background:#fff}}.shell{{max-width:none;margin:0;border:0;padding:10mm}}.actions{{display:none}}.photo-grid{{grid-template-columns:repeat(3,minmax(0,1fr))}}.photo img{{height:42mm}}}}
-</style></head><body><main class="shell"><header class="brand"><div><img src="/assets/banner.png" alt="CleanRun IQ"><div class="tagline">Smarter Field. Cleaner Builds.</div></div><div class="meta"><strong>{esc(settings['company'])}</strong><br>{esc(settings['activeProject'])}<br>Generated {esc(generated)}</div></header><h1>{esc(titles[kind])} Report</h1><div class="tagline">Evidence-first field capture, assignment and closeout register.</div><div class="actions"><a class="back" href="/">Back to app</a><button type="button" onclick="window.print()">Print / Save PDF</button></div><section class="summary"><div class="stat"><b>{len(items)}</b><span>Total items</span></div><div class="stat"><b>{sum(i['status'] in CLOSED for i in items)}</b><span>Closed / Complete</span></div><div class="stat"><b>{sum(is_overdue(i) for i in items)}</b><span>Overdue</span></div><div class="stat"><b>{sum(i['type']=='client' for i in items)}</b><span>Client defects</span></div></section>{''.join(rows) or '<div class="empty">No items match this report.</div>'}<footer class="footer">CleanRun IQ - Smarter Field. Cleaner Builds. - Original Issue / Rectification / Supervisor Closeout</footer></main></body></html>"""
+*{{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}}@page{{size:A4;margin:12mm 10mm 15mm}}body{{margin:0;background:#F3F4F6;color:#121619;font:14px Inter,system-ui,sans-serif}}.shell{{max-width:1080px;margin:24px auto;background:#fff;border:1px solid #DDE1E5;padding:24px}}.brand{{display:flex;justify-content:space-between;gap:20px;align-items:start;border-bottom:4px solid #20C55E;padding-bottom:16px}}.brand img{{width:230px;max-width:55%;height:auto}}.meta{{text-align:right;color:#6B7280;line-height:1.55}}h1,h2,h3,.code,.status,.stat b,.stat span,.evidence b,button,a,th,.quality b,.notes b{{font-family:Archivo,system-ui,sans-serif}}h1{{font-size:30px;line-height:1;margin:22px 0 5px}}h2{{font-size:18px;margin:22px 0 10px}}.tagline{{color:#6B7280;font-weight:600}}.cover-note{{border:1px solid #DDE1E5;background:#F8F9FA;padding:12px;margin-top:12px;line-height:1.5}}.actions{{display:flex;gap:8px;margin:16px 0}}button,a.back{{border:1px solid #121619;border-radius:7px;background:#fff;color:#121619;padding:10px 13px;text-decoration:none;font-weight:700;cursor:pointer}}button{{background:#18A94F;border-color:#18A94F}}.summary{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:18px 0 22px}}.stat{{border:1px solid #DDE1E5;border-left:4px solid #121619;background:#F8F9FA;padding:12px}}.stat:nth-child(2){{border-left-color:#20C55E}}.stat:nth-child(3),.stat:nth-child(7){{border-left-color:#B42318}}.stat:nth-child(4),.stat:nth-child(8){{border-left-color:#6B7280}}.stat b{{display:block;font-size:28px}}.stat span{{color:#6B7280;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}}table{{width:100%;border-collapse:collapse;margin:10px 0 22px;font-size:11px}}th{{text-align:left;background:#121619;color:#fff;font-size:9px;letter-spacing:.06em;text-transform:uppercase}}th,td{{border:1px solid #DDE1E5;padding:7px;vertical-align:top}}td{{color:#344054}}.item{{border:1px solid #DDE1E5;border-left:5px solid #6B7280;padding:13px;margin:10px 0;break-inside:avoid}}.item--closed,.item--complete{{border-left-color:#20C55E}}.item--rejected,.item--issued{{border-left-color:#B42318}}.item header,.item footer{{display:flex;justify-content:space-between;gap:12px;align-items:start}}.code{{display:block;font-size:16px;line-height:1.15;font-weight:800}}small{{display:block;color:#6B7280;margin-top:2px}}.status{{border:1px solid #B9C0C8;background:#F8F9FA;padding:4px 7px;font-size:9px;font-weight:700;text-transform:uppercase}}.status.closed,.status.complete{{border-color:#20C55E;background:#E1F7E9;color:#0C7733}}.status.rejected{{border-color:#B42318;background:#FEE4E2;color:#B42318}}.register{{display:grid;grid-template-columns:1.4fr .8fr 1fr;gap:7px;margin-top:8px}}.register span{{border:1px solid #DDE1E5;background:#F8F9FA;color:#52606D;padding:6px;font-size:11px;font-weight:600}}.description{{font-size:16px;line-height:1.45}}.evidence,.quality,.notes{{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:10px 0}}.quality,.notes{{grid-template-columns:1fr 2fr}}.evidence div,.quality,.notes>div{{display:grid;gap:3px;border:1px solid #DDE1E5;border-top:3px solid #6B7280;background:#F8F9FA;padding:8px}}.evidence div:last-child{{border-top-color:#20C55E}}.evidence b,.quality b,.notes b{{font-size:9px;letter-spacing:.06em;text-transform:uppercase}}.evidence span,footer,.quality span,.notes li{{color:#6B7280;font-size:10px}}ul{{margin:5px 0 0 16px;padding:0}}.warning{{display:inline-block;margin:0 4px 4px 0;border:1px solid #FCA5A5;background:#FEF2F2;color:#991B1B;padding:3px 6px;font-weight:700}}.photo-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:12px 0}}.photo-grid--1{{grid-template-columns:1fr}}.photo-grid--2{{grid-template-columns:repeat(2,minmax(0,1fr))}}.photo{{margin:0;border:1px solid #DDE1E5;background:#F8F9FA;padding:6px;break-inside:avoid}}.photo img{{display:block;width:100%;height:155px;object-fit:cover;background:#E9EDF0}}.photo-grid--1 img{{height:260px}}.photo figcaption{{display:grid;gap:2px;padding-top:5px;color:#52606D;font-size:9px;line-height:1.35}}.photo figcaption b{{font-family:Archivo,system-ui,sans-serif;color:#121619;font-size:10px}}.missing-panel{{border:1px dashed #B9C0C8;background:#F8F9FA;color:#52606D;padding:14px;margin:10px 0;display:grid;gap:4px}}.missing-panel b{{color:#121619}}.compact{{margin:0}}.due{{margin-left:auto}}.empty{{border:1px dashed #B9C0C8;background:#F8F9FA;padding:18px;color:#6B7280}}.footer{{margin-top:24px;padding-top:12px;border-top:1px solid #DDE1E5;text-align:center;color:#6B7280;font-size:9px;letter-spacing:.07em;text-transform:uppercase}}
+@media(max-width:700px){{.shell{{margin:0;padding:15px}}.brand{{display:block}}.meta{{text-align:left;margin-top:10px}}.summary{{grid-template-columns:repeat(2,1fr)}}.register,.evidence,.quality,.notes{{grid-template-columns:1fr}}.photo-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}.photo-grid--1{{grid-template-columns:1fr}}.photo img,.photo-grid--1 img{{height:130px}}h1{{font-size:26px}}}}@media print{{body{{background:#fff}}.shell{{max-width:none;margin:0;border:0;padding:10mm}}.actions{{display:none}}.photo-grid{{grid-template-columns:repeat(3,minmax(0,1fr))}}.photo-grid--1{{grid-template-columns:1fr}}.photo img{{height:42mm}}.photo-grid--1 img{{height:72mm}}}}
+</style></head><body><main class="shell"><header class="brand"><div><img src="/assets/banner.png" alt="CleanRun IQ"><div class="tagline">Smarter Field. Cleaner Builds.</div></div><div class="meta"><strong>{esc(settings['company'])}</strong><br>{esc(settings['activeProject'])}<br>{esc(project_config.get('address') or 'Project address not set')}<br>Generated {esc(generated)}</div></header><h1>{esc(titles[kind])}</h1><div class="tagline">Evidence-first field capture, assignment and closeout register.</div><div class="cover-note"><b>Report status:</b> {esc(report_status)}<br><b>Prepared by:</b> {esc(settings.get('preparedBy'))}<br><b>Disclaimer:</b> This report reflects the item status and evidence recorded in CleanRun IQ at export time. Missing evidence panels are deliberate quality flags, not broken report content.</div><div class="actions"><a class="back" href="/">Back to app</a><button type="button" onclick="window.print()">Print / Save PDF</button></div><section><h2>Executive Summary</h2><div class="summary"><div class="stat"><b>{len(items)}</b><span>Total items</span></div><div class="stat"><b>{closed_count}</b><span>Closed / Complete</span></div><div class="stat"><b>{open_count}</b><span>Open / Active</span></div><div class="stat"><b>{overdue_count}</b><span>Overdue</span></div><div class="stat"><b>{rejected_count}</b><span>Rejected</span></div><div class="stat"><b>{percent(closed_count, len(items))}</b><span>Completion rate</span></div><div class="stat"><b>{missing_flags}</b><span>Missing evidence flags</span></div><div class="stat"><b>{percent(evidence_ready, len(items))}</b><span>Evidence completion</span></div></div></section><section><h2>Item Index</h2><table><thead><tr><th>Item ID</th><th>Type</th><th>Location</th><th>Trade</th><th>Subcontractor</th><th>Status</th><th>Due date</th><th>Evidence status</th></tr></thead><tbody>{index_rows or '<tr><td colspan="8">No qualifying items.</td></tr>'}</tbody></table></section>{''.join(rows) or '<div class="empty">No items match this report.</div>'}<footer class="footer">CleanRun IQ - Smarter Field. Cleaner Builds. - Original Issue / Rectification / Supervisor Closeout</footer></main></body></html>"""
 
 
 class Handler(BaseHTTPRequestHandler):

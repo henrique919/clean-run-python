@@ -123,9 +123,10 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .review-reject-options .btn{min-height:46px}
 .cr-item-card{
   --rail:#fff;
+  --rail-width:6px;
   position:relative;
   overflow:hidden;
-  border-left:6px solid var(--rail)!important;
+  border-left:var(--rail-width) solid var(--rail)!important;
   padding:0!important;
   background:#DDE1E5!important;
   text-transform:none;
@@ -137,7 +138,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .cr-item-card.status-closed{--rail:#16A34A}
 .cr-item-card.status-rejected{--rail:#C026D3}
 .cr-card-band{display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(32,37,43,.8);color:#fff;padding:8px 16px}
-.cr-card-band{border-top:8px solid var(--rail);box-shadow:inset 0 3px 0 color-mix(in srgb,var(--rail) 65%,transparent)}
+.cr-card-band{border-top:var(--rail-width) solid var(--rail);box-shadow:none}
 .cr-card-band>div{display:flex;align-items:center;gap:9px;min-width:0}
 .cr-card-main{display:grid;grid-template-columns:142px minmax(0,1fr);gap:15px;padding:13px 16px 11px;align-items:start;background:#ECEFF2}
 .cr-card-media{width:142px;display:grid;gap:8px;align-content:start}
@@ -187,7 +188,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .gamify-strip span{display:block;background:#F2F4F7;border:1px solid #D9DEE5;border-radius:10px;padding:10px;color:#344054;font-weight:850}
 .gamify-strip b{display:block;font-size:20px;color:#121619}
 
-.focus-controls{display:grid;grid-template-columns:minmax(180px,260px) minmax(180px,260px);gap:8px;padding-top:10px}
+.focus-controls{display:grid;grid-template-columns:minmax(180px,260px) minmax(180px,260px) minmax(220px,360px);gap:8px;padding-top:10px}
 .focus-controls select{min-height:42px;border:1px solid #D0D5DD;border-radius:10px;background:#fff;color:#121619;padding:8px 10px;font-weight:800}
 .plan{overflow:hidden;background-repeat:no-repeat;background-position:center;background-size:contain}
 .plan.pdf{background:#202326}
@@ -244,12 +245,42 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 
 @media(max-width:720px){
   .focus-controls{grid-template-columns:1fr}
-  .cr-card-band{border-top-width:7px}
+  .cr-card-band{border-top-width:var(--rail-width)}
   .cr-card-main{grid-template-columns:142px minmax(0,1fr)}
   .plan-fit-controls{grid-template-columns:1fr 1fr 1fr}
   .plan-fit-controls>div{grid-column:1/-1}
   .plan-fit-controls label{grid-column:1/-1}
   .plan-fit-controls input[type="range"]{width:100%}
+  .settings-scroll .spread,
+  .settings-scroll .native-card .spread,
+  .settings-scroll .form-card .spread{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:8px;
+    align-items:start;
+  }
+  .settings-scroll .badge,
+  .settings-scroll .pill{
+    width:max-content;
+    max-width:100%;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+  .settings-scroll input,
+  .settings-scroll select,
+  .settings-scroll textarea,
+  .settings-scroll button{
+    max-width:100%;
+    min-width:0;
+  }
+  .settings-scroll .contact-row{
+    grid-template-columns:1fr;
+  }
+  .settings-scroll .sub-profile-card,
+  .settings-scroll .native-card,
+  .settings-scroll .form-card{
+    overflow-wrap:anywhere;
+  }
 }
 html[data-theme="dark"] body,html[data-theme="dark"] .app,html[data-theme="dark"] .page{background:#0C0F12;color:#F4F6F9}
 html[data-theme="dark"] .native-card,html[data-theme="dark"] .form-card,html[data-theme="dark"] .menu,html[data-theme="dark"] .menu-row,html[data-theme="dark"] .dialog,html[data-theme="dark"] .dialog-top,html[data-theme="dark"] .filter-stack,html[data-theme="dark"] .sub-profile-card,html[data-theme="dark"] .dashboard-panel,html[data-theme="dark"] .dashboard-kpi,html[data-theme="dark"] .review-pane{background:#171B20;color:#F4F6F9;border-color:#343B42}

@@ -420,20 +420,63 @@ def is_overdue(item: dict[str, Any]) -> bool:
     return item.get("status") not in CLOSED and item.get("dueDate", "9999") < day_iso()
 
 
+def report_exceptions(item: dict[str, Any]) -> list[str]:
+    original = len(item.get("originalPhotos", []))
+    rectification = len(item.get("rectificationEvidence", []))
+    closeout = len(item.get("closeoutEvidence", []))
+    status = item.get("status", "open")
+    reasons: list[str] = []
+    if is_overdue(item):
+        reasons.append("Overdue")
+    if status == "rejected":
+        reasons.append("Rejected")
+    if item.get("type") in {"defect", "client"} and original == 0:
+        reasons.append("Missing original evidence")
+    if status not in CLOSED and status != "open" and rectification == 0:
+        reasons.append("Missing rectification evidence")
+    if status in CLOSED and closeout == 0:
+        reasons.append("Missing closeout evidence")
+    if status not in CLOSED and item.get("dueDate", "9999") < day_iso():
+        reasons.append("Open or issued past due")
+    return list(dict.fromkeys(reasons))
+
+
+def report_evidence_status(item: dict[str, Any]) -> str:
+    missing = [reason for reason in report_exceptions(item) if reason.startswith("Missing")]
+    if missing:
+        return ", ".join(missing)
+    original = len(item.get("originalPhotos", []))
+    rectification = len(item.get("rectificationEvidence", []))
+    closeout = len(item.get("closeoutEvidence", []))
+    if item.get("status") in CLOSED:
+        return "Complete evidence chain" if original and closeout else "Partial evidence"
+    if original and rectification:
+        return "Original and rectification evidence recorded"
+    if original:
+        return "Original issue evidence recorded"
+    return "No evidence uploaded"
+
+
+def report_location(item: dict[str, Any], separator: str = " / ") -> str:
+    return separator.join(str(v) for v in [item.get("building"), item.get("level"), item.get("unit"), item.get("room")] if v) or "Location not set"
+
+
 def report_items(kind: str) -> list[dict[str, Any]]:
     active = STATE["settings"]["activeProject"]
     items = [copy.deepcopy(item) for item in STATE["items"] if item.get("project") == active]
+    if kind in {"register", "defect-register"}: return sorted(items, key=lambda i: (i.get("status", ""), i.get("building", ""), i.get("level", ""), i.get("code", "")))
     if kind == "open": return [i for i in items if i["status"] not in CLOSED]
     if kind == "overdue": return [i for i in items if is_overdue(i)]
     if kind == "client": return [i for i in items if i["type"] == "client"]
     if kind == "incomplete": return [i for i in items if i["type"] == "incomplete"]
     if kind == "subcontractor": return sorted(items, key=lambda i: i.get("subcontractor", ""))
-    if kind == "handover": return sorted(items, key=lambda i: (i["status"] not in CLOSED, i["updatedAt"]), reverse=False)
+    if kind == "handover": return sorted([i for i in items if i["status"] in CLOSED], key=lambda i: (i.get("building", ""), i.get("level", ""), i.get("unit", ""), i.get("updatedAt", "")))
+    if kind == "exceptions": return [i for i in items if report_exceptions(i)]
     raise ValueError("unknown report type")
 
 
 def report_html(kind: str) -> str:
-    titles = {"open": "Open Items", "overdue": "Overdue Items", "handover": "Closed / Handover Evidence", "subcontractor": "Subcontractor", "client": "Client Defects", "incomplete": "Incomplete Works"}
+    titles = {"register": "Project Defect Register", "defect-register": "Project Defect Register", "exceptions": "Exceptions Report", "open": "Open Items", "overdue": "Overdue Items", "handover": "Handover Evidence Pack", "subcontractor": "Subcontractor", "client": "Client Defects", "incomplete": "Incomplete Works"}
     items = report_items(kind); settings = STATE["settings"]
     def esc(value: Any) -> str: return html.escape(str(value or "—"))
     rows = []
@@ -442,6 +485,34 @@ def report_html(kind: str) -> str:
         location = " · ".join(filter(None, [item.get("building"), item.get("level"), item.get("unit"), item.get("room")]))
         rows.append(f"<article><header><b>{esc(item['code'])}</b><span class='status {esc(item['status'])}'>{esc(STATUS_LABEL.get(item['status'], item['status']))}</span></header><small>{esc(TYPE_LABEL[item['type']])} · {esc(location)} · {esc(item.get('trade'))} · {esc(item.get('subcontractor'))}</small><p>{esc(item['description'])}</p><footer>{esc(evidence)}<span class='due'>Due {esc(item['dueDate'])}</span></footer></article>")
     return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{esc(titles[kind])}</title><style>*{{box-sizing:border-box}}body{{font:14px system-ui;color:#10213b;margin:32px;max-width:1000px}}.brand{{border-bottom:4px solid #10213b;padding-bottom:18px}}h1{{margin-bottom:4px}}.summary{{display:flex;gap:12px;margin:20px 0}}.stat{{background:#f1f4f8;padding:16px;border-radius:12px;flex:1;text-align:center}}article{{border:1px solid #dce3ec;border-radius:12px;padding:15px;margin:12px 0;break-inside:avoid}}article header,article footer{{display:flex;justify-content:space-between;gap:12px}}small{{color:#637086}}.status{{padding:4px 9px;background:#e9edf3;border-radius:999px}}.closed,.complete{{background:#dcfce7;color:#15803d}}.rejected{{background:#fee2e2;color:#b91c1c}}.due{{margin-left:auto}}@media print{{button{{display:none}}body{{margin:15mm}}}}</style></head><body><div class='brand'><strong>CLEANRUN IQ</strong><span style='float:right'>{esc(settings['company'])}</span></div><h1>{esc(titles[kind])} Report</h1><p>{esc(settings['activeProject'])} · Prepared by {esc(settings['preparedBy'])} · {datetime.now().strftime('%d %b %Y %H:%M')}</p><button onclick='print()'>Print / Save PDF</button><div class='summary'><div class='stat'><b>{len(items)}</b><br>Total</div><div class='stat'><b>{sum(i['status'] in CLOSED for i in items)}</b><br>Closed</div><div class='stat'><b>{sum(is_overdue(i) for i in items)}</b><br>Overdue</div><div class='stat'><b>{sum(i['type']=='client' for i in items)}</b><br>Client defects</div></div>{''.join(rows) or '<p>No items match this report.</p>'}<p><small>Generated with CleanRun IQ · Capture → Assign → Issue → Inspect → Close with Evidence → Report</small></p></body></html>"""
+
+
+def report_html(kind: str) -> str:
+    titles = {"register": "Project Defect Register", "defect-register": "Project Defect Register", "exceptions": "Exceptions Report", "open": "Open Items", "overdue": "Overdue Items", "handover": "Handover Evidence Pack", "subcontractor": "Subcontractor", "client": "Client Defects", "incomplete": "Incomplete Works"}
+    items = report_items(kind)
+    settings = STATE["settings"]
+
+    def esc(value: Any) -> str:
+        return html.escape(str(value or "-"))
+
+    generated = datetime.now().strftime("%d %b %Y %H:%M")
+    closed_count = sum(i["status"] in CLOSED for i in items)
+    open_count = sum(i["status"] not in CLOSED for i in items)
+    overdue_count = sum(is_overdue(i) for i in items)
+    rejected_count = sum(i["status"] == "rejected" for i in items)
+    missing_flags = sum(1 for item in items for reason in report_exceptions(item) if reason.startswith("Missing"))
+    evidence_ready = sum(report_evidence_status(item) != "No evidence uploaded" and "Missing" not in report_evidence_status(item) for item in items)
+    percent = lambda value, total: "0%" if total <= 0 else f"{round(value / total * 100)}%"
+    index_rows = "".join(
+        f"<tr><td>{esc(item.get('code'))}</td><td>{esc(TYPE_LABEL.get(item.get('type'), item.get('type')))}</td><td>{esc(report_location(item))}</td><td>{esc(item.get('trade'))}</td><td>{esc(item.get('subcontractor'))}</td><td>{esc(STATUS_LABEL.get(item.get('status'), item.get('status')))}</td><td>{esc(item.get('dueDate'))}</td><td>{esc(report_evidence_status(item))}</td></tr>"
+        for item in items
+    )
+    rows: list[str] = []
+    for item in items:
+        exceptions = "".join(f"<span class='warning'>{esc(reason)}</span>" for reason in report_exceptions(item)) or "<span>None</span>"
+        evidence = f"Original {len(item.get('originalPhotos', []))} / Rectification {len(item.get('rectificationEvidence', []))} / Closeout {len(item.get('closeoutEvidence', []))}"
+        rows.append(f"<article><header><b>{esc(item.get('code'))}</b><span class='status {esc(item.get('status'))}'>{esc(STATUS_LABEL.get(item.get('status'), item.get('status')))}</span></header><small>{esc(TYPE_LABEL.get(item.get('type'), item.get('type')))} - {esc(report_location(item))} - {esc(item.get('trade'))} - {esc(item.get('subcontractor'))}</small><p>{esc(item.get('description'))}</p><div class='evidence'><span>{esc(evidence)}</span><span>{esc(report_evidence_status(item))}</span><span>{exceptions}</span></div><footer>Created {esc(item.get('createdAt'))}<span class='due'>Due {esc(item.get('dueDate'))}</span></footer></article>")
+    return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{esc(titles[kind])}</title><style>*{{box-sizing:border-box}}body{{font:14px system-ui;color:#121619;margin:32px;max-width:1120px}}.brand{{border-bottom:4px solid #20C55E;padding-bottom:18px}}h1{{margin-bottom:4px}}h2{{margin-top:24px}}.cover{{background:#f8f9fa;border:1px solid #dde1e5;padding:12px;margin:14px 0}}.summary{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}}.stat{{background:#f1f4f8;border-left:4px solid #121619;padding:16px}}table{{width:100%;border-collapse:collapse;font-size:12px}}th{{background:#121619;color:white;text-align:left}}td,th{{border:1px solid #dce3ec;padding:7px;vertical-align:top}}article{{border:1px solid #dce3ec;border-left:5px solid #6B7280;border-radius:8px;padding:15px;margin:12px 0;break-inside:avoid}}article header,article footer,.evidence{{display:flex;justify-content:space-between;gap:12px}}small{{color:#637086}}.status{{padding:4px 9px;background:#e9edf3;border-radius:6px}}.closed,.complete{{background:#dcfce7;color:#15803d}}.rejected{{background:#fee2e2;color:#b91c1c}}.warning{{display:inline-block;background:#fee2e2;color:#991b1b;padding:3px 6px;margin:0 3px 3px 0}}.due{{margin-left:auto}}@media print{{button{{display:none}}body{{margin:15mm}}}}</style></head><body><div class='brand'><strong>CLEANRUN IQ</strong><span style='float:right'>{esc(settings['company'])}</span></div><h1>{esc(titles[kind])}</h1><p>{esc(settings['activeProject'])} - Prepared by {esc(settings['preparedBy'])} - {esc(generated)}</p><div class='cover'><b>Report status:</b> {'For Review' if kind == 'handover' else 'Draft'}<br><b>Disclaimer:</b> This report reflects item status and evidence recorded in CleanRun IQ at export time. Missing evidence is flagged deliberately.</div><button onclick='print()'>Print / Save PDF</button><h2>Executive Summary</h2><div class='summary'><div class='stat'><b>{len(items)}</b><br>Total</div><div class='stat'><b>{closed_count}</b><br>Closed</div><div class='stat'><b>{open_count}</b><br>Open / active</div><div class='stat'><b>{overdue_count}</b><br>Overdue</div><div class='stat'><b>{rejected_count}</b><br>Rejected</div><div class='stat'><b>{percent(closed_count, len(items))}</b><br>Completion</div><div class='stat'><b>{missing_flags}</b><br>Missing evidence</div><div class='stat'><b>{percent(evidence_ready, len(items))}</b><br>Evidence completion</div></div><h2>Item Index</h2><table><thead><tr><th>Item ID</th><th>Type</th><th>Location</th><th>Trade</th><th>Subcontractor</th><th>Status</th><th>Due</th><th>Evidence</th></tr></thead><tbody>{index_rows or '<tr><td colspan="8">No qualifying items.</td></tr>'}</tbody></table><h2>Item Details</h2>{''.join(rows) or '<p>No items match this report.</p>'}<p><small>Generated with CleanRun IQ - Original issue / rectification / supervisor closeout evidence.</small></p></body></html>"""
 
 
 class Handler(BaseHTTPRequestHandler):
