@@ -8,9 +8,13 @@ const state = {
   actionItem: null,
   actionMode: null,
   itemView: "standard",
+  authToken: localStorage.getItem("cleanrun_auth_token") || "",
+  authConfig: null,
+  user: null,
 };
 
 const $ = (id) => document.getElementById(id);
+const AUTH_TOKEN_KEY = "cleanrun_auth_token";
 
 const TYPE_LABELS = { defect: "Defect", incomplete: "Incomplete Work", client: "Client Defect" };
 const STATUS_LABELS = {
@@ -51,6 +55,79 @@ function toast(message) {
   el.textContent = message;
   el.classList.remove("hidden");
   setTimeout(() => el.classList.add("hidden"), 2600);
+}
+
+function setAuthToken(token) {
+  state.authToken = token || "";
+  if (state.authToken) localStorage.setItem(AUTH_TOKEN_KEY, state.authToken);
+  else localStorage.removeItem(AUTH_TOKEN_KEY);
+  updateAuthUi();
+}
+
+function authHeaders(extra = {}) {
+  return {
+    ...extra,
+    ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {}),
+  };
+}
+
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, { ...options, headers: authHeaders(options.headers || {}) });
+  if (res.status === 401) {
+    setAuthToken("");
+    state.user = null;
+    updateAuthUi();
+    throw new Error("Login required.");
+  }
+  if (res.status === 403) throw new Error("You do not have permission for that action.");
+  return res;
+}
+
+async function loadAuthConfig() {
+  if (state.authConfig) return state.authConfig;
+  const res = await fetch("/api/auth/config");
+  state.authConfig = res.ok ? await res.json() : { dev_tokens_enabled: false };
+  updateAuthUi();
+  return state.authConfig;
+}
+
+function updateAuthUi() {
+  const signedIn = !!state.authToken;
+  $("authPanel")?.classList.toggle("hidden", signedIn);
+  $("logoutBtn")?.classList.toggle("hidden", !signedIn);
+  if ($("currentUser")) $("currentUser").textContent = state.user?.email || "";
+  $("authDevRow")?.classList.toggle("hidden", !(state.authConfig?.dev_tokens_enabled));
+}
+
+async function loginWithPassword() {
+  const cfg = await loadAuthConfig();
+  const email = $("authEmail")?.value.trim();
+  const password = $("authPassword")?.value;
+  if (!cfg.supabase_url || !cfg.supabase_publishable_key) return toast("Password login is not configured.");
+  if (!email || !password) return toast("Enter email and password.");
+  const res = await fetch(`${cfg.supabase_url}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: cfg.supabase_publishable_key },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) return toast("Login failed.");
+  const data = await res.json();
+  setAuthToken(data.access_token);
+  await bootstrap();
+}
+
+async function loginWithToken(token) {
+  if (!token) return toast("Enter an access token.");
+  setAuthToken(token);
+  await bootstrap();
+}
+
+function logout() {
+  setAuthToken("");
+  state.user = null;
+  state.items = [];
+  renderItems();
+  updateAuthUi();
 }
 
 function showAppError(message) {
@@ -196,7 +273,12 @@ function dueDate(days = 7) {
 }
 
 async function bootstrap() {
-  const res = await fetch("/api/bootstrap");
+  await loadAuthConfig();
+  if (!state.authToken) {
+    updateAuthUi();
+    return;
+  }
+  const res = await apiFetch("/api/bootstrap");
   if (!res.ok) throw new Error("Could not load app data");
   const data = await res.json();
   if (!data.settings || !Array.isArray(data.items)) throw new Error("Bootstrap response was incomplete.");
@@ -205,6 +287,8 @@ async function bootstrap() {
   state.items = data.items;
   state.trades = data.trades;
   state.raisedByOptions = data.raised_by_options;
+  state.user = data.user;
+  updateAuthUi();
 
   setOptions($("project"), state.settings.projects);
   setOptions($("editProject"), state.settings.projects);
@@ -342,7 +426,7 @@ async function save(issueNow = false) {
   if (warning) return showValidation(warning);
   if ($("type").value === "incomplete" && state.photos.length === 0 && !confirm("Incomplete Work can be saved without a photo, but evidence is recommended. Save anyway?")) return;
   try {
-    const res = await fetch(`/api/items?issue_now=${issueNow}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload()) });
+    const res = await apiFetch(`/api/items?issue_now=${issueNow}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload()) });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || "Could not save item");
@@ -356,7 +440,7 @@ async function save(issueNow = false) {
 }
 
 async function patchItem(id, patch) {
-  const res = await fetch(`/api/items/${id}?by=${encodeURIComponent(state.settings.prepared_by)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+  const res = await apiFetch(`/api/items/${id}?by=${encodeURIComponent(state.settings.prepared_by)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Update failed");
@@ -373,7 +457,7 @@ function replaceItem(item) {
 }
 
 async function action(id, endpoint, body = {}) {
-  const res = await fetch(`/api/items/${id}/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ by: state.settings.prepared_by, ...body }) });
+  const res = await apiFetch(`/api/items/${id}/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ by: state.settings.prepared_by, ...body }) });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Action failed");
@@ -412,7 +496,7 @@ async function savePreferredItemsView(value) {
   const project = state.settings.active_project;
   const project_configs = JSON.parse(JSON.stringify(state.settings.project_configs));
   project_configs[project] = { ...project_configs[project], preferred_items_view: value };
-  const res = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_configs }) });
+  const res = await apiFetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_configs }) });
   if (!res.ok) throw new Error("Could not save project setting");
   state.settings = await res.json();
 }
@@ -448,13 +532,28 @@ function nextActionFor(item) {
   if (item.status === "in_progress" || item.status === "rejected") return { label: "Add rectification", run: () => openActionDrawer(item, "rectification") };
   if (item.status === "ready_for_review") return { label: "Start inspection", run: () => quickAction(item, "inspection/start", "Inspection started") };
   if (item.status === "under_inspection") return { label: "Close", run: () => openActionDrawer(item, "close") };
-  return { label: "Report", run: () => window.open("/api/reports/handover", "_blank") };
+  return { label: "Report", run: () => openReport("handover") };
 }
 
 async function quickAction(item, endpoint, success) { try { await action(item.id, endpoint); toast(success); } catch (error) { toast(error.message || "Action failed"); } }
+
+async function openReport(reportType) {
+  try {
+    const res = await apiFetch(`/api/reports/${reportType}`);
+    if (!res.ok) throw new Error("Report failed");
+    const html = await res.text();
+    const reportWindow = window.open("", "_blank");
+    if (!reportWindow) return toast("Allow popups to view reports.");
+    reportWindow.document.open();
+    reportWindow.document.write(html);
+    reportWindow.document.close();
+  } catch (error) {
+    toast(error.message || "Could not open report");
+  }
+}
 async function issueItem(item) {
   try {
-    const res = await fetch(`/api/items/${item.id}/issue`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: item.subcontractor, by: state.settings.prepared_by }) });
+    const res = await apiFetch(`/api/items/${item.id}/issue`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: item.subcontractor, by: state.settings.prepared_by }) });
     if (!res.ok) throw new Error("Issue failed");
     replaceItem(await res.json());
     toast("Item issued");
@@ -607,7 +706,7 @@ function renderActionContent() {
     menu.appendChild(menuButton("Reject", "Send back after failed inspection", () => openActionDrawer(item, "reject")));
     menu.appendChild(menuButton("Comment", "Add an audit note", () => openActionDrawer(item, "comment")));
     menu.appendChild(menuButton("Close", "Close with supervisor proof", () => openActionDrawer(item, "close")));
-    menu.appendChild(menuButton("Report", "Open handover report", () => window.open("/api/reports/handover", "_blank")));
+    menu.appendChild(menuButton("Report", "Open handover report", () => openReport("handover")));
     return;
   }
   const titleMap = { rectification: "Add Rectification", reject: "Reject Item", comment: "Add Comment", close: "Close Item" };
@@ -631,7 +730,7 @@ async function submitAction() {
     if (mode === "rectification") {
       const photos = await handleFiles($("actionPhoto")?.files || []);
       const comment = $("actionComment").value.trim();
-      const res = await fetch(`/api/items/${item.id}/rectification`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photo: photos[0] || null, comment, by: state.settings.prepared_by, advance_to_ready: $("actionAdvance")?.checked || false }) });
+      const res = await apiFetch(`/api/items/${item.id}/rectification`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photo: photos[0] || null, comment, by: state.settings.prepared_by, advance_to_ready: $("actionAdvance")?.checked || false }) });
       if (!res.ok) throw new Error("Rectification failed");
       updated = await res.json();
       toast($("actionAdvance")?.checked ? "Rectification submitted for review" : "Rectification saved");
@@ -643,7 +742,7 @@ async function submitAction() {
     } else if (mode === "comment") {
       const value = $("actionComment").value.trim();
       if (!value) return toast("Add a comment");
-      const res = await fetch(`/api/items/${item.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: value, by: state.settings.prepared_by }) });
+      const res = await apiFetch(`/api/items/${item.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: value, by: state.settings.prepared_by }) });
       if (!res.ok) throw new Error("Comment failed");
       updated = await res.json();
       toast("Comment added");
@@ -651,7 +750,7 @@ async function submitAction() {
       const photos = await handleFiles($("actionPhoto")?.files || []);
       const note = $("actionNote").value.trim();
       const confirmation = $("actionConfirmation").value.trim();
-      const res = await fetch(`/api/items/${item.id}/closeout`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photo: photos[0] || null, by: state.settings.prepared_by, role: "Supervisor", note, confirmation }) });
+      const res = await apiFetch(`/api/items/${item.id}/closeout`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photo: photos[0] || null, by: state.settings.prepared_by, role: "Supervisor", note, confirmation }) });
       if (!res.ok) throw new Error("Closeout failed");
       updated = await res.json();
       toast("Item closed");
@@ -663,6 +762,18 @@ async function submitAction() {
 
 function bindKeyboardDone() { const done = $("keyboardDone"); if (!done) return; document.addEventListener("focusin", (event) => { if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) done.classList.remove("hidden"); }); document.addEventListener("focusout", () => setTimeout(() => done.classList.add("hidden"), 120)); done.onclick = () => { if (document.activeElement) document.activeElement.blur(); done.classList.add("hidden"); }; }
 function bind() {
+  $("loginBtn")?.addEventListener("click", loginWithPassword);
+  $("tokenLoginBtn")?.addEventListener("click", () => loginWithToken($("authToken")?.value.trim()));
+  $("logoutBtn")?.addEventListener("click", logout);
+  document.querySelectorAll("[data-dev-token]").forEach((button) => {
+    button.addEventListener("click", () => loginWithToken(button.dataset.devToken));
+  });
+  document.querySelectorAll("[data-report]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      openReport(link.dataset.report);
+    });
+  });
   $("type").onchange = () => { const itemType = $("type").value; $("raisedByWrap").classList.toggle("hidden", itemType !== "client"); $("photoRequirement").textContent = itemType === "incomplete" ? "Incomplete Work: photo recommended" : itemType === "client" ? "Client Defect: photo required" : "Defect: photo required"; clearValidation(); };
   $("project").onchange = () => { refreshProjectConfig(); $("building").value = ""; $("level").value = ""; $("unit").value = ""; $("room").value = ""; };
   $("trade").onchange = () => { refreshSubcontractors(); $("subcontractor").value = ""; };
@@ -673,7 +784,7 @@ function bind() {
   $("issueBtn").onclick = () => save(true);
   $("resetDemo").onclick = async () => {
     try {
-      const res = await fetch("/api/reset-demo", { method: "POST" });
+      const res = await apiFetch("/api/reset-demo", { method: "POST" });
       if (!res.ok) throw new Error("Demo reset failed");
       await bootstrap();
       toast("Demo reset");

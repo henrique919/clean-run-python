@@ -82,8 +82,12 @@ CLEANRUN_STORAGE=supabase
 CLEANRUN_REQUIRE_SUPABASE=true
 SUPABASE_URL=<project-url>
 SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+SUPABASE_JWT_SECRET=<project-jwt-secret>
+CLEANRUN_ENABLE_DEMO_RESET=false
 ```
 
 Never configure `SUPABASE_SERVICE_ROLE_KEY` in the web app process. If privileged work is needed later, place it behind Supabase Edge Functions or security-definer database functions.
+
+See `SECURITY.md` for the current auth, tenant/RLS, storage, audit, and demo reset rules.
 
 See `CODE_HEALTH.md` before deploying so the Render service targets the active FastAPI app surface.

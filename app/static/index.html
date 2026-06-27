@@ -20,13 +20,38 @@
 
   <main class="shell">
     <div id="appError" class="app-error hidden" role="alert"></div>
+    <section class="card auth-panel" id="authPanel">
+      <div class="section-title-row">
+        <div>
+          <h2>Sign in</h2>
+          <p>Use your CleanRun IQ account to load project data.</p>
+        </div>
+      </div>
+      <div class="auth-grid">
+        <input id="authEmail" type="email" placeholder="Email" autocomplete="email" />
+        <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" />
+        <button class="primary-btn" id="loginBtn" type="button">Login</button>
+      </div>
+      <div class="auth-grid auth-token-row">
+        <input id="authToken" type="password" placeholder="Access token" autocomplete="off" />
+        <button class="ghost-btn" id="tokenLoginBtn" type="button">Use token</button>
+      </div>
+      <div class="auth-dev-row hidden" id="authDevRow">
+        <button class="secondary-btn" data-dev-token="dev-site-manager" type="button">Site Manager demo</button>
+        <button class="secondary-btn" data-dev-token="dev-subcontractor" type="button">Subcontractor demo</button>
+      </div>
+    </section>
     <section class="hero-card">
       <div>
         <p class="eyebrow">Construction QA · Defects · Punch List</p>
         <h1>Capture. Assign. Close.</h1>
         <p>Evidence-first field control for clean, accountable handover.</p>
       </div>
-      <button class="small-btn" id="resetDemo" type="button">Reset demo</button>
+      <div class="hero-actions">
+        <span id="currentUser" class="current-user"></span>
+        <button class="small-btn" id="logoutBtn" type="button">Logout</button>
+        <button class="small-btn" id="resetDemo" type="button">Reset demo</button>
+      </div>
     </section>
 
     <section class="register-tools">
@@ -55,11 +80,11 @@
         <select id="preferredItemsView" aria-label="Preferred Items page view"></select>
       </div>
       <div class="report-row">
-        <a href="/api/reports/open" target="_blank" rel="noreferrer">Open</a>
-        <a href="/api/reports/overdue" target="_blank" rel="noreferrer">Overdue</a>
-        <a href="/api/reports/client" target="_blank" rel="noreferrer">Client defects</a>
-        <a href="/api/reports/incomplete" target="_blank" rel="noreferrer">Incomplete</a>
-        <a href="/api/reports/handover" target="_blank" rel="noreferrer">Handover</a>
+        <a href="#" data-report="open">Open</a>
+        <a href="#" data-report="overdue">Overdue</a>
+        <a href="#" data-report="client">Client defects</a>
+        <a href="#" data-report="incomplete">Incomplete</a>
+        <a href="#" data-report="handover">Handover</a>
       </div>
     </section>
 

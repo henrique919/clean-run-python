@@ -19,15 +19,19 @@ class SupabaseContractTests(unittest.TestCase):
         self.assertTrue(MIGRATIONS.exists())
         self.assertFalse((SUPABASE / "schema.sql").exists())
         self.assertFalse((SUPABASE / "add_items_payload.sql").exists())
-        self.assertGreaterEqual(len(list(MIGRATIONS.glob("*.sql"))), 6)
+        self.assertGreaterEqual(len(list(MIGRATIONS.glob("*.sql"))), 7)
 
     def test_all_application_tables_enable_rls(self) -> None:
         migrations = read_migrations().lower()
         tables = [
+            "companies",
+            "company_members",
             "profiles",
             "projects",
             "project_members",
             "subcontractors",
+            "project_subcontractors",
+            "subcontractor_users",
             "items",
             "evidence",
             "comments",
@@ -43,6 +47,37 @@ class SupabaseContractTests(unittest.TestCase):
         self.assertIn("public = false", migrations)
         self.assertIn("(storage.foldername(name))[1] = auth.uid()::text", migrations)
         self.assertIn("app.is_project_member(((storage.foldername(name))[2])::uuid)", migrations)
+
+    def test_tenant_security_functions_and_policies_exist(self) -> None:
+        migrations = read_migrations().lower()
+        expected = [
+            "create or replace function app.is_company_member",
+            "create or replace function app.has_company_role",
+            "create or replace function app.is_subcontractor_for_item",
+            "create policy \"items_select_authorized_scope\"",
+            "create policy \"evidence_insert_item_managers_or_assigned_subcontractor\"",
+            "create policy \"audit_events_insert_authorized_append_only\"",
+        ]
+        for text in expected:
+            self.assertIn(text, migrations)
+
+    def test_foreign_key_columns_are_indexed(self) -> None:
+        migrations = read_migrations().lower()
+        indexed_columns = [
+            "company_members(company_id)",
+            "company_members(user_id)",
+            "projects(company_id)",
+            "project_subcontractors(project_id)",
+            "project_subcontractors(subcontractor_id)",
+            "subcontractor_users(subcontractor_id)",
+            "subcontractor_users(user_id)",
+            "items(company_id)",
+            "evidence(project_id)",
+            "comments(project_id)",
+            "audit_events(project_id)",
+        ]
+        for column in indexed_columns:
+            self.assertIn(column, migrations)
 
     def test_no_service_role_configuration_in_runtime_examples(self) -> None:
         checked_files = [

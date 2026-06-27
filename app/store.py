@@ -6,7 +6,7 @@ import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 from threading import RLock
-from typing import Callable
+from typing import Any, Callable
 
 from app.models import (
     AppData,
@@ -152,7 +152,7 @@ class CleanRunStore:
                     pass
         return f"{prefix}-{(max(numbers) if numbers else 1000) + 1}"
 
-    def create_item(self, payload: ItemCreate, *, issue_now: bool = False) -> Item:
+    def create_item(self, payload: ItemCreate, *, issue_now: bool = False, actor: dict[str, Any] | None = None) -> Item:
         validate_capture(payload, for_issue=issue_now)
         data = self._read()
         now = now_iso()
@@ -165,46 +165,46 @@ class CleanRunStore:
             created_at=now,
             updated_at=now,
             sync=SyncState.SYNCED,
-            audit_events=[AuditEvent(at=now, action=f"Created ({code})", by=payload.created_by)],
         )
+        item = self._audit(item, f"Created ({code})", by=payload.created_by, at=now, actor=actor)
         if issue_now:
-            item = self._issue_mutation(item, to=payload.subcontractor, by=payload.created_by)
+            item = self._issue_mutation(item, to=payload.subcontractor, by=payload.created_by, actor=actor)
         data.items.insert(0, item)
         self._write(data)
         return item
 
-    def update_item(self, item_id: str, payload: ItemUpdate, *, by: str | None = None) -> Item:
+    def update_item(self, item_id: str, payload: ItemUpdate, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         validate_update(payload)
-        return self._patch(item_id, lambda item: self._update_mutation(item, payload, by=by))
+        return self._patch(item_id, lambda item: self._update_mutation(item, payload, by=by, actor=actor))
 
-    def issue_item(self, item_id: str, *, to: str, by: str | None = None, note: str | None = None, reissue: bool = False) -> Item:
-        return self._patch(item_id, lambda item: self._issue_mutation(item, to=to, by=by, note=note, reissue=reissue))
+    def issue_item(self, item_id: str, *, to: str, by: str | None = None, note: str | None = None, reissue: bool = False, actor: dict[str, Any] | None = None) -> Item:
+        return self._patch(item_id, lambda item: self._issue_mutation(item, to=to, by=by, note=note, reissue=reissue, actor=actor))
 
-    def mark_in_progress(self, item_id: str, *, by: str | None = None) -> Item:
+    def mark_in_progress(self, item_id: str, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
-        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"status": ItemStatus.IN_PROGRESS, "in_progress_at": item.in_progress_at or at}), "Marked in progress", by=by, at=at))
+        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"status": ItemStatus.IN_PROGRESS, "in_progress_at": item.in_progress_at or at}), "Marked in progress", by=by, at=at, actor=actor))
 
-    def mark_ready(self, item_id: str, *, by: str | None = None) -> Item:
+    def mark_ready(self, item_id: str, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
-        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"status": ItemStatus.READY_FOR_REVIEW, "ready_for_review_at": at}), "Marked ready for review", by=by, at=at))
+        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"status": ItemStatus.READY_FOR_REVIEW, "ready_for_review_at": at}), "Marked ready for review", by=by, at=at, actor=actor))
 
-    def start_inspection(self, item_id: str, *, by: str) -> Item:
+    def start_inspection(self, item_id: str, *, by: str, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
         def mut(item: Item) -> Item:
             event = InspectionEvent(at=at, by=by, action="started")
             item = item.model_copy(update={"status": ItemStatus.UNDER_INSPECTION, "under_inspection_at": at, "inspection_history": [*item.inspection_history, event]})
-            return self._audit(item, "Inspection started", by=by, at=at)
+            return self._audit(item, "Inspection started", by=by, at=at, actor=actor)
         return self._patch(item_id, mut)
 
-    def reject(self, item_id: str, *, by: str, reason: str) -> Item:
+    def reject(self, item_id: str, *, by: str, reason: str, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
         def mut(item: Item) -> Item:
             event = InspectionEvent(at=at, by=by, action="rejected", reason=reason)
             item = item.model_copy(update={"status": ItemStatus.REJECTED, "rejection_reason": reason, "inspection_history": [*item.inspection_history, event]})
-            return self._audit(item, "Rejected on inspection", by=by, note=reason, at=at)
+            return self._audit(item, "Rejected on inspection", by=by, note=reason, at=at, actor=actor)
         return self._patch(item_id, mut)
 
-    def close_with_evidence(self, item_id: str, evidence: CloseoutEvidence) -> Item:
+    def close_with_evidence(self, item_id: str, evidence: CloseoutEvidence, *, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
         def mut(item: Item) -> Item:
             status = ItemStatus.COMPLETE if item.type == "incomplete" else ItemStatus.CLOSED
@@ -212,17 +212,17 @@ class CleanRunStore:
             if item.status == ItemStatus.UNDER_INSPECTION:
                 history = [*history, InspectionEvent(at=at, by=evidence.by, action="accepted")]
             item = item.model_copy(update={"status": status, "closed_at": at, "closeout_evidence": [*item.closeout_evidence, evidence], "inspection_history": history})
-            return self._audit(item, "Closed with evidence", by=evidence.by, at=at)
+            return self._audit(item, "Closed with evidence", by=evidence.by, at=at, actor=actor)
         return self._patch(item_id, mut)
 
-    def add_comment(self, item_id: str, comment: Comment) -> Item:
-        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"comments": [*item.comments, comment]}), "Comment added", by=comment.by, note=comment.text, at=comment.at))
+    def add_comment(self, item_id: str, comment: Comment, *, actor: dict[str, Any] | None = None) -> Item:
+        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"comments": [*item.comments, comment]}), "Comment added", by=comment.by, note=comment.text, at=comment.at, actor=actor))
 
-    def add_rectification(self, item_id: str, evidence: RectificationEvidence, *, advance_to_ready: bool = False) -> Item:
+    def add_rectification(self, item_id: str, evidence: RectificationEvidence, *, advance_to_ready: bool = False, actor: dict[str, Any] | None = None) -> Item:
         def mut(item: Item) -> Item:
             status = ItemStatus.IN_PROGRESS if item.status == ItemStatus.ISSUED else item.status
             item = item.model_copy(update={"status": status, "rectification_evidence": [*item.rectification_evidence, evidence]})
-            item = self._audit(item, "Rectification evidence added", by=evidence.by, note=evidence.comment, at=evidence.at)
+            item = self._audit(item, "Rectification evidence added", by=evidence.by, note=evidence.comment, at=evidence.at, actor=actor)
             if advance_to_ready:
                 item = item.model_copy(update={"status": ItemStatus.READY_FOR_REVIEW, "ready_for_review_at": now_iso()})
             return item
@@ -256,17 +256,26 @@ class CleanRunStore:
         self._write(data)
         return changed
 
-    def _audit(self, item: Item, action: str, *, by: str | None = None, note: str | None = None, at: str | None = None) -> Item:
-        event = AuditEvent(at=at or now_iso(), action=action, by=by, note=note)
+    def _audit(self, item: Item, action: str, *, by: str | None = None, note: str | None = None, at: str | None = None, actor: dict[str, Any] | None = None) -> Item:
+        event = AuditEvent(
+            at=at or now_iso(),
+            action=action,
+            by=by,
+            note=note,
+            user_id=actor.get("id") if actor else None,
+            email=actor.get("email") if actor else (by if by and "@" in by else None),
+            role=actor.get("role") if actor else None,
+            context=actor,
+        )
         return item.model_copy(update={"audit_events": [*item.audit_events, event], "updated_at": event.at})
 
-    def _update_mutation(self, item: Item, payload: ItemUpdate, *, by: str | None = None) -> Item:
+    def _update_mutation(self, item: Item, payload: ItemUpdate, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         updates = payload.model_dump(exclude_unset=True)
         item = item.model_copy(update=updates)
-        return self._audit(item, "Item details edited", by=by)
+        return self._audit(item, "Item details edited", by=by, actor=actor)
 
-    def _issue_mutation(self, item: Item, *, to: str, by: str | None = None, note: str | None = None, reissue: bool = False) -> Item:
+    def _issue_mutation(self, item: Item, *, to: str, by: str | None = None, note: str | None = None, reissue: bool = False, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
         issue = IssueEvent(at=at, to=to, by=by, note=note, reissue=reissue)
         item = item.model_copy(update={"subcontractor": to or item.subcontractor, "status": ItemStatus.ISSUED, "issued_at": item.issued_at or at, "issue_history": [*item.issue_history, issue]})
-        return self._audit(item, "Re-issued to " + to if reissue else "Issued to " + to, by=by, note=note, at=at)
+        return self._audit(item, "Re-issued to " + to if reissue else "Issued to " + to, by=by, note=note, at=at, actor=actor)

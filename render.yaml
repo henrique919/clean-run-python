@@ -23,3 +23,7 @@ services:
         sync: false
       - key: SUPABASE_PUBLISHABLE_KEY
         sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: CLEANRUN_ENABLE_DEMO_RESET
+        value: "false"
