@@ -36,6 +36,8 @@ ROOT = Path(__file__).resolve().parent
 # CLEANRUN_DATA_FILE=/var/data/cleanrun_data.json when using such a disk.
 DATA_FILE = Path(os.environ.get("CLEANRUN_DATA_FILE", ROOT / "cleanrun_data.json"))
 INDEX_FILE = ROOT / "index.html"
+LEGACY_INDEX_FILE = ROOT / "CleanRun-IQ-Full-App-Render3" / "index.html"
+LEGACY_ASSETS_DIR = ROOT / "CleanRun-IQ-Full-App-Render3" / "assets"
 LOCK = threading.RLock()
 
 # Embedded by work/build_single_file.py for one-file hosting.
@@ -231,6 +233,10 @@ def audit(item: dict[str, Any], action: str, by: str | None = None, note: str | 
     item["sync"] = "synced"
 
 
+def same_target(left: Any, right: Any) -> bool:
+    return str(left or "").strip().lower() == str(right or "").strip().lower()
+
+
 def next_code(kind: str) -> str:
     prefix = CODE_PREFIX[kind]
     nums = []
@@ -351,16 +357,24 @@ def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> Non
         if not target or not item.get("trade"):
             raise ValueError("issuing requires a trade and subcontractor")
         reissue = bool(body.get("reissue"))
+        if not reissue and item.get("status") in {"issued", "in_progress", "ready_for_review", "under_inspection", "closed", "complete"} and same_target(item.get("subcontractor"), target):
+            return
         item.update(status="issued", subcontractor=target)
         item.setdefault("issuedAt", at)
         item.setdefault("issueHistory", []).append({"at": at, "to": target, "by": by, "note": body.get("note"), "reissue": reissue})
         if not reissue: item.pop("rejectionReason", None)
         audit(item, f"{'Re-issued' if reissue else 'Issued'} to {target}", by, body.get("note"))
     elif action == "in-progress":
+        if item.get("status") == "in_progress":
+            return
         item["status"] = "in_progress"; item.setdefault("inProgressAt", at); audit(item, "Marked in progress", by)
     elif action == "ready":
+        if item.get("status") == "ready_for_review":
+            return
         item.update(status="ready_for_review", readyForReviewAt=at); audit(item, "Marked ready for review", by, body.get("note"))
     elif action == "inspect":
+        if item.get("status") == "under_inspection":
+            return
         item.update(status="under_inspection", underInspectionAt=at)
         item.setdefault("inspectionHistory", []).append({"at": at, "by": by, "action": "started"}); audit(item, "Inspection started", by)
     elif action == "reject":
@@ -377,6 +391,8 @@ def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> Non
         if body.get("advanceToReady"):
             item.update(status="ready_for_review", readyForReviewAt=at); audit(item, "Marked ready for review", by)
     elif action == "close":
+        if item.get("status") in CLOSED:
+            return
         if not body.get("confirmed"):
             raise ValueError("closeout confirmation is required")
         if item["type"] != "incomplete" and not body.get("photo"):
@@ -449,9 +465,30 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             if path in {"/", "/index.html"}:
-                self.send_bytes(INDEX_FILE.read_bytes() if INDEX_FILE.exists() else EMBEDDED_INDEX, "text/html; charset=utf-8")
-            elif path in {"/assets/banner.png", "/assets/icon-mark.png"}:
-                self.send_bytes((ROOT / path.lstrip("/")).read_bytes() if (ROOT / path.lstrip("/")).exists() else EMBEDDED_ASSETS[path], "image/png")
+                index = INDEX_FILE if INDEX_FILE.exists() else LEGACY_INDEX_FILE
+                self.send_bytes(index.read_bytes() if index.exists() else EMBEDDED_INDEX, "text/html; charset=utf-8")
+            elif path.startswith("/assets/"):
+                asset = ROOT / path.lstrip("/")
+                legacy_asset = LEGACY_ASSETS_DIR / path.removeprefix("/assets/")
+                if asset.exists():
+                    content_type = "text/css" if asset.suffix == ".css" else "application/javascript" if asset.suffix == ".js" else "image/svg+xml" if asset.suffix == ".svg" else "image/png"
+                    self.send_bytes(asset.read_bytes(), content_type)
+                elif legacy_asset.exists():
+                    content_type = "text/css" if legacy_asset.suffix == ".css" else "application/javascript" if legacy_asset.suffix == ".js" else "image/svg+xml" if legacy_asset.suffix == ".svg" else "image/png"
+                    self.send_bytes(legacy_asset.read_bytes(), content_type)
+                elif path in EMBEDDED_ASSETS:
+                    self.send_bytes(EMBEDDED_ASSETS[path], "image/png")
+                else:
+                    self.send_json({"error": "Not found"}, 404)
+            elif path == "/service-worker.js":
+                worker = ROOT / "service-worker.js"
+                legacy_worker = ROOT / "CleanRun-IQ-Full-App-Render3" / "service-worker.js"
+                if worker.exists():
+                    self.send_bytes(worker.read_bytes(), "application/javascript")
+                elif legacy_worker.exists():
+                    self.send_bytes(legacy_worker.read_bytes(), "application/javascript")
+                else:
+                    self.send_json({"error": "Not found"}, 404)
             elif path == "/api/state": self.send_json(STATE)
             elif path.startswith("/api/items/"): self.send_json(get_item(unquote(path.split("/")[-1])))
             elif path.startswith("/api/reports/"):
@@ -494,11 +531,19 @@ class Handler(BaseHTTPRequestHandler):
             body = self.body()
             with LOCK:
                 match = re.fullmatch(r"/api/items/([^/]+)", path)
+                plan_match = re.fullmatch(r"/api/plans/([^/]+)", path)
                 pin_match = re.fullmatch(r"/api/plans/([^/]+)/pins/([^/]+)", path)
                 if match:
                     result = get_item(unquote(match.group(1)))
                     allowed = {"type", "project", "building", "level", "unit", "room", "trade", "subcontractor", "priority", "dueDate", "description", "raisedBy"}
-                    result.update({k: v for k, v in body.items() if k in allowed}); audit(result, "Item details edited", body.get("by"))
+                    updates = {k: v for k, v in body.items() if k in allowed}
+                    changed = {k: v for k, v in updates.items() if result.get(k) != v}
+                    if changed:
+                        result.update(changed); audit(result, "Item details edited", body.get("by"))
+                elif plan_match:
+                    result = next(p for p in STATE["plans"] if p["id"] == plan_match.group(1))
+                    allowed = {"name", "building", "level", "fit", "fitLocked"}
+                    result.update({k: v for k, v in body.items() if k in allowed})
                 elif pin_match:
                     plan = next(p for p in STATE["plans"] if p["id"] == pin_match.group(1)); result = next(p for p in plan["pins"] if p["id"] == pin_match.group(2)); result.update(body)
                 else: self.send_json({"error": "Not found"}, 404); return
