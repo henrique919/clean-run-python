@@ -225,6 +225,7 @@ class ProjectConfig(BaseModel):
     units: list[str] = Field(default_factory=list)
     rooms: list[str] = Field(default_factory=list)
     default_due_days: int = 7
+    preferred_items_view: Literal["standard", "building", "level", "unit", "room", "trade", "subcontractor", "status"] = "standard"
 
 
 class SubProfile(BaseModel):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 from threading import RLock
@@ -116,7 +117,11 @@ class CleanRunStore:
     def _write(self, data: AppData) -> None:
         with self.lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(data.model_dump_json(indent=2), encoding="utf-8")
+            payload = data.model_dump_json(indent=2)
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=self.path.parent, delete=False) as temp:
+                temp.write(payload)
+                temp_path = Path(temp.name)
+            temp_path.replace(self.path)
 
     def snapshot(self) -> AppData:
         return self._read()
@@ -227,6 +232,12 @@ class CleanRunStore:
         data = seed_data()
         self._write(data)
         return data
+
+    def update_settings(self, settings: Settings) -> Settings:
+        data = self._read()
+        data.settings = settings
+        self._write(data)
+        return data.settings
 
     def _patch(self, item_id: str, mutator: Callable[[Item], Item]) -> Item:
         data = self._read()

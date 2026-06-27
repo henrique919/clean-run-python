@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from threading import RLock
 from typing import Any
 
-from app.models import AppData, Item, SyncState
+from app.models import AppData, Item, Settings, SyncState
 from app.store import CleanRunStore, seed_data, seed_settings
 from app.storage import normalize_photo
 from app.supabase_client import get_supabase_client
+
+logger = logging.getLogger(__name__)
+SETTINGS_ID = "default"
 
 
 def _enum_value(value: Any) -> Any:
@@ -74,6 +78,15 @@ class SupabaseCleanRunStore(CleanRunStore):
         response = self.client.table("items").select("code").limit(1).execute()
         if not response.data:
             self._write(seed_data())
+        self._ensure_settings()
+
+    def _ensure_settings(self) -> None:
+        try:
+            response = self.client.table("app_settings").select("id").eq("id", SETTINGS_ID).limit(1).execute()
+            if not response.data:
+                self.update_settings(seed_settings())
+        except Exception:
+            logger.exception("Supabase settings table unavailable. Using seeded settings for this process.")
 
     def _read(self) -> AppData:
         with self.lock:
@@ -93,10 +106,31 @@ class SupabaseCleanRunStore(CleanRunStore):
                 item.sync = SyncState.SYNCED
                 items.append(item)
 
-            return AppData(items=items, settings=seed_settings())
+            return AppData(items=items, settings=self._read_settings())
 
     def _write(self, data: AppData) -> None:
         with self.lock:
             for item in data.items:
                 row = _item_to_row(item)
                 self.client.table("items").upsert(row, on_conflict="code").execute()
+
+    def update_settings(self, settings: Settings) -> Settings:
+        with self.lock:
+            try:
+                self.client.table("app_settings").upsert(
+                    {"id": SETTINGS_ID, "payload": settings.model_dump(mode="json")},
+                    on_conflict="id",
+                ).execute()
+            except Exception:
+                logger.exception("Could not persist Supabase settings. Returning in-memory settings.")
+        return settings
+
+    def _read_settings(self) -> Settings:
+        try:
+            response = self.client.table("app_settings").select("payload").eq("id", SETTINGS_ID).limit(1).execute()
+            payload = response.data[0].get("payload") if response.data else None
+            if payload:
+                return Settings.model_validate(payload)
+        except Exception:
+            logger.exception("Could not load Supabase settings. Falling back to seeded settings.")
+        return seed_settings()
