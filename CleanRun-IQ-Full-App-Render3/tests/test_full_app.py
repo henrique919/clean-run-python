@@ -228,6 +228,55 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn(".command-home", styles)
         self.assertIn(".command-palette", styles)
         self.assertIn(".cr-card-photo", styles)
+
+    def test_repeated_actions_do_not_explode_audit_history(self) -> None:
+        item = self.app.create_item(
+            {
+                "type": "defect",
+                "project": "Jura Noosa",
+                "description": "Repeated button press",
+                "trade": "Painting",
+                "subcontractor": "Coastline Painting",
+                "dueDate": self.app.day_iso(2),
+                "originalPhotos": ["data:image/png;base64,iVBORw0KGgo="],
+                "createdBy": "Site Manager",
+            }
+        )
+
+        self.app.apply_action(item, "issue", {"to": "Coastline Painting", "by": "Site Manager"})
+        self.app.apply_action(item, "issue", {"to": "Coastline Painting", "by": "Site Manager"})
+        self.app.apply_action(item, "issue", {"to": "Coastline Painting", "by": "Site Manager"})
+        self.assertEqual(len(item["issueHistory"]), 1)
+        self.assertEqual(len([event for event in item["auditEvents"] if event["action"] == "Issued to Coastline Painting"]), 1)
+
+        self.app.apply_action(item, "in-progress", {"by": "Site Manager"})
+        self.app.apply_action(item, "in-progress", {"by": "Site Manager"})
+        self.assertEqual(len([event for event in item["auditEvents"] if event["action"] == "Marked in progress"]), 1)
+
+    def test_enhancement_source_contains_card_focus_and_plan_fit_controls(self) -> None:
+        enhancements = (ROOT / "assets" / "enhancements.js").read_text(encoding="utf-8")
+        styles = (ROOT / "assets" / "enhancements.css").read_text(encoding="utf-8")
+        worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
+
+        for marker in (
+            "FOCUS_MODES",
+            "Items page focus",
+            "focus-controls",
+            "cr-card-date under-photo",
+            "plan-fit-controls",
+            "savePlanFit",
+            "fitLocked",
+            "toolbar=0",
+        ):
+            self.assertIn(marker, enhancements)
+        for marker in (
+            ".cr-card-date.under-photo",
+            "border-top:8px solid var(--rail)",
+            ".focus-controls",
+            ".plan-fit-controls",
+            ".plan.pdf .plan-pdf",
+        ):
+            self.assertIn(marker, styles)
         self.assertIn(".cr-card-sub{text-transform:none", styles)
         self.assertIn(".cr-item-card.status-rejected", styles)
         self.assertIn('html[data-theme="dark"]', styles)

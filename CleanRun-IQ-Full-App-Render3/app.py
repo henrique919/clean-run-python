@@ -537,6 +537,10 @@ def audit(item: dict[str, Any], action: str, by: str | None = None, note: str | 
     item["sync"] = "synced"
 
 
+def same_target(left: Any, right: Any) -> bool:
+    return str(left or "").strip().lower() == str(right or "").strip().lower()
+
+
 def next_code(kind: str) -> str:
     prefix = CODE_PREFIX[kind]
     nums = []
@@ -719,6 +723,16 @@ def apply_action(item: dict[str, Any], action: str, body: dict[str, Any]) -> Non
     body = copy.deepcopy(body)
 
     current_status = item.get("status", "open")
+    if action == "issue" and current_status in {"issued", "in_progress", "ready_for_review", "under_inspection", "closed", "complete"} and same_target(item.get("subcontractor"), body.get("to") or item.get("subcontractor")) and not body.get("reissue"):
+        return
+    if action == "in-progress" and current_status == "in_progress":
+        return
+    if action == "ready" and current_status == "ready_for_review":
+        return
+    if action == "inspect" and current_status == "under_inspection":
+        return
+    if action == "close" and current_status in CLOSED:
+        return
     allowed = ALLOWED_ACTIONS_BY_STATUS.get(current_status, {"comment"})
     if action not in allowed:
         raise ValueError(f"cannot perform '{action}' while item is {current_status.replace('_', ' ')}")
@@ -976,6 +990,7 @@ class Handler(BaseHTTPRequestHandler):
             body = self.body()
             with LOCK:
                 match = re.fullmatch(r"/api/items/([^/]+)", path)
+                plan_match = re.fullmatch(r"/api/plans/([^/]+)", path)
                 pin_match = re.fullmatch(r"/api/plans/([^/]+)/pins/([^/]+)", path)
                 if match:
                     result = get_item(unquote(match.group(1)))
@@ -990,6 +1005,10 @@ class Handler(BaseHTTPRequestHandler):
                     result.update(update)
                     added_photos = max(0, len(result.get("originalPhotos", [])) - previous_photos)
                     audit(result, f"Item details edited{f' · {added_photos} retrospective photo(s) added' if added_photos else ''}", body.get("by"))
+                elif plan_match:
+                    result = next(p for p in STATE["plans"] if p["id"] == plan_match.group(1))
+                    allowed = {"name", "building", "level", "fit", "fitLocked"}
+                    result.update({k: v for k, v in body.items() if k in allowed})
                 elif pin_match:
                     plan = next(p for p in STATE["plans"] if p["id"] == pin_match.group(1)); result = next(p for p in plan["pins"] if p["id"] == pin_match.group(2)); result.update(body)
                 else: self.send_json({"error": "Not found"}, 404); return
