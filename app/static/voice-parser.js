@@ -2,42 +2,40 @@
  * voice-parser.js — Deterministic voice-to-fields parser for CleanRun IQ.
  * No AI required. Works offline. Import before app.js.
  *
- * Exported (global): window.VoiceParser = { parseVoiceNote }
+ * Exported (global): window.VoiceParser = { parseVoiceNote, cleanDescription }
  */
 (function (global) {
   'use strict';
 
-  const NUMBER_WORDS = {
-    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+  var NUMBER_WORDS = {
+    zero: 0, oh: 0, o: 0,
+    one: 1, two: 2, three: 3, four: 4, five: 5,
     six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-    eleven: 11, twelve: 12, ground: 0, oh: 0,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+    sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
   };
 
-  const ROOM_KEYWORDS = [
-    'ensuite', 'bathroom', 'kitchen', 'living', 'laundry', 'balcony',
-    'hallway', 'garage', 'lobby', 'lounge', 'dining', 'toilet',
-    'wc', 'pantry', 'stairwell', 'corridor', 'entry', 'external',
-    'bedroom', 'master bedroom', 'master bathroom',
+  var ROOM_KEYWORDS = [
+    'master bathroom', 'master bedroom', 'rear balcony', 'front balcony',
+    'ground floor', 'roof', 'external', 'entry', 'ensuite', 'bathroom',
+    'kitchen', 'living', 'laundry', 'balcony', 'hallway', 'garage', 'lobby',
+    'lounge', 'dining', 'toilet', 'wc', 'pantry', 'stairwell', 'corridor',
+    'bedroom'
   ];
 
-  // Order matters: longer/more specific first to avoid partial matches
-  const TRADE_HINTS = [
-    { matches: ['cabinet maker', 'cabinet-maker', 'cabinetry'], trade: 'Joinery' },
-    { matches: ['joinery'], trade: 'Joinery' },
+  var TRADE_HINTS = [
+    { matches: ['cabinet maker', 'cabinet-maker', 'cabinetry', 'joinery'], trade: 'Joinery' },
     { matches: ['waterproofer', 'waterproofing', 'waterproof'], trade: 'Waterproofing' },
-    { matches: ['plasterer', 'plasterboard', 'plastering'], trade: 'Plastering' },
+    { matches: ['plasterer', 'plasterboard', 'plastering', 'plaster'], trade: 'Plastering' },
     { matches: ['renderer', 'rendering', 'render'], trade: 'Render' },
-    { matches: ['painter', 'painting'], trade: 'Painting' },
-    { matches: ['tiler', 'tiling', 'grout', 'regrout'], trade: 'Tiling' },
-    { matches: ['tile'], trade: 'Tiling' },
-    { matches: ['paint'], trade: 'Painting' },
-    { matches: ['plaster'], trade: 'Plastering' },
+    { matches: ['painter', 'painting', 'paint'], trade: 'Painting' },
+    { matches: ['tiler', 'tiling', 'regrout', 'grout', 'tile'], trade: 'Tiling' },
     { matches: ['door', 'hardware', 'hinge', 'lock'], trade: 'Doors / Hardware' },
     { matches: ['window', 'glaz', 'glass', 'aluminium', 'aluminum'], trade: 'Windows / Aluminium' },
     { matches: ['carpet', 'timber floor', 'vinyl', 'flooring'], trade: 'Flooring' },
-    { matches: ['gutter', 'roofing'], trade: 'Roofing' },
-    { matches: ['facade', 'cladding'], trade: 'Cladding' },
-    { matches: ['power point', 'gpo', 'electrical', 'electrician'], trade: 'Electrical' },
+    { matches: ['gutter', 'roofing', 'roof'], trade: 'Roofing' },
+    { matches: ['facade', 'cladding', 'clad'], trade: 'Cladding' },
+    { matches: ['power point', 'gpo', 'electrical', 'electrician', 'electric', 'light switch'], trade: 'Electrical' },
     { matches: ['hydraulic', 'plumbing', 'plumber', 'tap', 'basin', 'drain', 'pipe'], trade: 'Hydraulic' },
     { matches: ['mechanical', 'hvac', 'air con', 'aircon', 'duct'], trade: 'Mechanical' },
     { matches: ['fire services', 'sprinkler', 'smoke detector'], trade: 'Fire Services' },
@@ -45,288 +43,310 @@
     { matches: ['landscap', 'garden', 'turf'], trade: 'Landscaping' },
     { matches: ['concrete', 'slab'], trade: 'Concrete' },
     { matches: ['caulk', 'sealant', 'silicone'], trade: 'Caulking / Sealant' },
-    { matches: ['floor'], trade: 'Flooring' },
-    { matches: ['roof'], trade: 'Roofing' },
-    { matches: ['clad'], trade: 'Cladding' },
-    { matches: ['electric', 'light switch'], trade: 'Electrical' },
-    { matches: ['plumb'], trade: 'Hydraulic' },
   ];
 
-  const URGENT_WORDS = ['urgent', 'critical', 'immediate', 'immediately', 'safety', 'stop work', 'asap', 'emergency'];
-  const DEFECT_WORDS = ['damaged', 'defective', 'cracked', 'crack', 'scratched', 'broken', 'chipped', 'leak', 'stain', 'drummy', 'faulty'];
-  const INCOMPLETE_WORDS = ['not finished', 'unfinished', 'incomplete', 'missing', 'not installed', 'outstanding work'];
-  const CLIENT_WORDS = ['client raised', 'owner raised', 'superintendent', 'consultant', 'architect'];
+  var URGENT_WORDS = ['urgent', 'critical', 'immediate', 'immediately', 'safety', 'stop work', 'asap', 'emergency'];
+  var DEFECT_WORDS = ['damaged', 'defective', 'cracked', 'crack', 'scratched', 'broken', 'chipped', 'leak', 'stain', 'drummy', 'faulty', 'defect'];
+  var INCOMPLETE_WORDS = ['not finished', 'unfinished', 'incomplete', 'missing', 'not installed', 'outstanding work'];
+  var CLIENT_WORDS = ['client raised', 'owner raised', 'superintendent', 'consultant', 'architect'];
+
+  function escapeRegex(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function cleanSpaces(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
 
   function wordToNum(word) {
-    return NUMBER_WORDS[word.toLowerCase()] ?? null;
+    return NUMBER_WORDS[String(word || '').toLowerCase()] ?? null;
   }
 
-  /**
-   * Convert a word-number sequence like "three oh five" to a digit string "305".
-   * Returns null if any word is not a number word.
-   */
   function parseNumberWords(str) {
-    const words = str.trim().toLowerCase().split(/\s+/);
-    const nums = words.map(w => NUMBER_WORDS[w]);
-    if (nums.some(n => n === undefined || n === null)) return null;
-    return nums.map(n => String(n)).join('');
+    var words = String(str || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return null;
+    var nums = words.map(function (word) { return NUMBER_WORDS[word]; });
+    if (nums.some(function (num) { return num === undefined || num === null || num > 9; })) return null;
+    return nums.map(function (num) { return String(num); }).join('');
   }
 
-  function detectBuilding(text) {
-    let m;
-    // "building 3" / "building three" / "bldg 3"
-    m = text.match(/\b(?:building|bldg)\s+([a-z0-9]+)/i);
+  function optionValues(values) {
+    return Array.isArray(values) ? values.filter(Boolean).map(String) : [];
+  }
+
+  function digitsOnly(value) {
+    return String(value || '').replace(/[^0-9]/g, '');
+  }
+
+  function findBuildingOption(raw, config) {
+    var cfg = optionValues(config.buildings);
+    var rawDigits = digitsOnly(raw);
+    if (!cfg.length) return null;
+    return cfg.find(function (candidate) {
+      var c = candidate.toLowerCase();
+      return candidate === raw || c === raw.toLowerCase() || digitsOnly(candidate) === rawDigits || c === ('b' + rawDigits);
+    }) || null;
+  }
+
+  function findUnitOption(raw, config) {
+    var cfg = optionValues(config.units);
+    var rawDigits = digitsOnly(raw);
+    if (!cfg.length) return null;
+    return cfg.find(function (candidate) {
+      return candidate === raw || candidate.toLowerCase() === raw.toLowerCase() || digitsOnly(candidate) === rawDigits;
+    }) || null;
+  }
+
+  function findSimpleOption(value, values) {
+    var lower = String(value || '').toLowerCase();
+    return optionValues(values).find(function (candidate) { return candidate.toLowerCase() === lower; }) || null;
+  }
+
+  function detectProject(text, config) {
+    var lower = text.toLowerCase();
+    var names = optionValues(config.projectNames || config.projects);
+    return names.find(function (name) { return lower.includes(name.toLowerCase()); }) || null;
+  }
+
+  function detectBuilding(text, config) {
+    var m = text.match(/\b(?:building|bldg)\s+([a-z0-9]+)\b/i);
     if (m) {
-      const val = m[1].toLowerCase();
-      const n = wordToNum(val);
-      const num = n != null ? n : (isNaN(Number(val)) ? val.toUpperCase() : Number(val));
-      return { value: `Building ${num}`, normalized: `B${num}` };
+      var token = m[1].toLowerCase();
+      var n = wordToNum(token);
+      var num = n != null ? String(n) : token.replace(/[^0-9a-z]/gi, '').toUpperCase();
+      var normalized = /^\d+$/.test(num) ? ('B' + num) : ('Building ' + num);
+      return findBuildingOption(normalized, config) || normalized;
     }
-    // "B3" or "B 3" (uppercase B followed by digits)
+
     m = text.match(/\bB\s*([0-9]{1,2})\b/);
-    if (m) return { value: `B${m[1]}`, normalized: `B${m[1]}` };
-    // "B three" / "B two"
+    if (m) return findBuildingOption('B' + m[1], config) || ('B' + m[1]);
+
     m = text.match(/\bB\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/i);
     if (m) {
-      const n = wordToNum(m[1]);
-      if (n != null) return { value: `B${n}`, normalized: `B${n}` };
+      var wordNum = wordToNum(m[1]);
+      if (wordNum != null) return findBuildingOption('B' + wordNum, config) || ('B' + wordNum);
     }
-    // "block B" / "tower 1"
-    m = text.match(/\bblock\s+([a-z0-9]+)/i);
-    if (m) return { value: `Block ${m[1].toUpperCase()}`, normalized: `Block ${m[1].toUpperCase()}` };
-    m = text.match(/\btower\s+([a-z0-9]+)/i);
-    if (m) return { value: `Tower ${m[1].toUpperCase()}`, normalized: `Tower ${m[1].toUpperCase()}` };
+
+    m = text.match(/\bblock\s+([a-z0-9]+)\b/i);
+    if (m) return 'Block ' + m[1].toUpperCase();
+
+    m = text.match(/\btower\s+([a-z0-9]+)\b/i);
+    if (m) return 'Tower ' + m[1].toUpperCase();
+
     return null;
   }
 
-  function detectLevel(text) {
-    let m;
-    // "level 1" / "l1" / "floor 1" / "lvl 1"
-    m = text.match(/\b(?:level|floor|lvl)\s*([0-9]{1,2})\b/i);
-    if (m) return `Level ${parseInt(m[1], 10)}`;
-    // "level one" / "floor two"
-    m = text.match(/\b(?:level|floor)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i);
+  function detectLevel(text, config) {
+    var m = text.match(/\b(?:level|floor|lvl)\s*([0-9]{1,2})\b/i);
+    if (m) return findSimpleOption('Level ' + parseInt(m[1], 10), config.levels) || ('Level ' + parseInt(m[1], 10));
+
+    m = text.match(/\b(?:level|floor|lvl)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i);
     if (m) {
-      const n = wordToNum(m[1]);
-      return n != null ? `Level ${n}` : null;
+      var n = wordToNum(m[1]);
+      if (n != null) return findSimpleOption('Level ' + n, config.levels) || ('Level ' + n);
     }
-    // "ground floor" / "ground level" / bare "ground"
-    if (/\bground\s+(?:floor|level)\b/i.test(text) || /\bon\s+ground\b/i.test(text)) return 'Ground';
+
+    if (/\bground\s+(?:floor|level)\b/i.test(text) || /\bon\s+ground\b/i.test(text) || /\bground\b/i.test(text)) {
+      return findSimpleOption('Ground', config.levels) || 'Ground';
+    }
+
     return null;
   }
 
-  var NUM_WORD_ALT = '(?:zero|one|two|three|four|five|six|seven|eight|nine|oh)';
-  var NUM_WORD_SEQ_RE = new RegExp(
-    '\\b(?:unit|apartment|apt|lot)\\s+(' + NUM_WORD_ALT + '(?:\\s+' + NUM_WORD_ALT + ')*)\\b', 'i'
-  );
+  var NUM_WORD_ALT = '(?:zero|one|two|three|four|five|six|seven|eight|nine|oh|o)';
+  var NUM_WORD_SEQ_RE = new RegExp('\\b(?:unit|apartment|apt|lot)\\s+(' + NUM_WORD_ALT + '(?:\\s+' + NUM_WORD_ALT + ')*)\\b', 'i');
 
-  function detectUnit(text) {
-    var m;
-    // "unit 305" — pure digits, word-bounded so we don't eat following words
-    m = text.match(/\b(?:unit|apartment|apt|lot)\s+([0-9]+)\b/i);
-    if (m) return 'U' + m[1];
+  function detectUnit(text, config) {
+    var m = text.match(/\b(?:unit|apartment|apt|lot)\s+([0-9]+)\b/i);
+    if (m) return findUnitOption('U' + m[1], config) || ('U' + m[1]);
 
-    // "unit three oh five" — bounded number-word sequence
     m = text.match(NUM_WORD_SEQ_RE);
     if (m) {
-      var pw = parseNumberWords(m[1]);
-      if (pw) return 'U' + pw;
+      var numberWords = parseNumberWords(m[1]);
+      if (numberWords) return findUnitOption('U' + numberWords, config) || ('U' + numberWords);
     }
 
-    // "unit B-204" — single alphanumeric token
     m = text.match(/\b(?:unit|apartment|apt|lot)\s+([A-Za-z0-9-]+)\b/i);
-    if (m) return 'U' + m[1].toUpperCase();
-    // Bare "U305"
-    m = text.match(/\bU([0-9]{2,4})\b/);
-    if (m) return `U${m[1]}`;
+    if (m) return findUnitOption('U' + m[1].toUpperCase(), config) || ('U' + m[1].toUpperCase());
+
+    m = text.match(/\bU\s*([0-9]{2,4})\b/i);
+    if (m) return findUnitOption('U' + m[1], config) || ('U' + m[1]);
+
     return null;
   }
 
-  function detectRoom(text) {
-    const lower = text.toLowerCase();
-    for (const kw of ROOM_KEYWORDS) {
+  function detectRoom(text, config) {
+    var lower = text.toLowerCase();
+    var cfgRooms = optionValues(config.rooms);
+
+    var configured = cfgRooms
+      .slice()
+      .sort(function (a, b) { return b.length - a.length; })
+      .find(function (room) { return lower.includes(room.toLowerCase()); });
+    if (configured) return configured;
+
+    for (var i = 0; i < ROOM_KEYWORDS.length; i += 1) {
+      var kw = ROOM_KEYWORDS[i];
       if (lower.includes(kw)) {
-        const bedMatch = lower.match(/bedroom\s*([0-9])/);
-        if (kw === 'bedroom' && bedMatch) return `Bedroom ${bedMatch[1]}`;
-        return kw.charAt(0).toUpperCase() + kw.slice(1);
+        if (kw === 'bedroom') {
+          var bedMatch = lower.match(/bedroom\s*([0-9])/);
+          if (bedMatch) return 'Bedroom ' + bedMatch[1];
+        }
+        if (kw === 'roof') return findSimpleOption('Roof', cfgRooms) || 'Roof';
+        if (kw === 'ground floor') continue;
+        return kw.replace(/\b\w/g, function (c) { return c.toUpperCase(); });
       }
     }
     return null;
   }
 
-  function detectTrade(text) {
-    const lower = text.toLowerCase();
-    for (const { matches, trade } of TRADE_HINTS) {
-      if (matches.some(m => lower.includes(m))) return trade;
+  function detectTrade(text, config) {
+    var lower = text.toLowerCase();
+    var cfgTrades = optionValues(config.trades);
+    for (var i = 0; i < TRADE_HINTS.length; i += 1) {
+      var hint = TRADE_HINTS[i];
+      if (hint.matches.some(function (needle) { return lower.includes(needle); })) {
+        return findSimpleOption(hint.trade, cfgTrades) || hint.trade;
+      }
     }
     return null;
+  }
+
+  function detectSubcontractor(text, config) {
+    var lower = text.toLowerCase();
+    return optionValues(config.subcontractors)
+      .slice()
+      .sort(function (a, b) { return b.length - a.length; })
+      .find(function (name) { return lower.includes(name.toLowerCase()); }) || null;
   }
 
   function detectType(text) {
-    const lower = text.toLowerCase();
-    if (CLIENT_WORDS.some(w => lower.includes(w))) return 'client';
-    if (INCOMPLETE_WORDS.some(w => lower.includes(w))) return 'incomplete';
-    if (DEFECT_WORDS.some(w => lower.includes(w))) return 'defect';
-    return null;
+    var lower = text.toLowerCase();
+    if (CLIENT_WORDS.some(function (w) { return lower.includes(w); })) return 'client';
+    if (INCOMPLETE_WORDS.some(function (w) { return lower.includes(w); })) return 'incomplete';
+    if (DEFECT_WORDS.some(function (w) { return lower.includes(w); })) return 'defect';
+    return 'defect';
   }
 
-  /**
-   * Strip location/assignment phrases from transcript and return a clean description.
-   * Preserves action/defect wording. Converts remaining comma-clauses to sentence form.
-   */
-  function cleanDescription(transcript, parsed) {
-    let text = transcript;
+  function removeRegex(value, regex) {
+    return value.replace(regex, ' ');
+  }
 
-    if (parsed.building) {
-      text = text.replace(/\b(?:building|bldg)\s+\w+[,\s]*/gi, ' ');
-      text = text.replace(/\bB\s*[0-9]{1,2}\b[,\s]*/g, ' ');
-      text = text.replace(/\b(?:block|tower)\s+\w+[,\s]*/gi, ' ');
-      // "B three" etc.
-      text = text.replace(/\bB\s+(?:one|two|three|four|five|six|seven|eight|nine|ten)\b[,\s]*/gi, ' ');
-    }
+  function removeKnownPhrase(value, phrase) {
+    if (!phrase) return value;
+    return removeRegex(value, new RegExp('\\b' + escapeRegex(phrase) + '\\b[,;:\\s]*', 'gi'));
+  }
 
-    if (parsed.unit) {
-      // "unit 305" — digits only, word-bounded
-      text = text.replace(/\b(?:unit|apartment|apt|lot)\s+[0-9]+\b[,\s]*/gi, ' ');
-      // "unit three oh five" — number words only
-      text = text.replace(/\b(?:unit|apartment|apt|lot)\s+(?:zero|one|two|three|four|five|six|seven|eight|nine|oh)(?:\s+(?:zero|one|two|three|four|five|six|seven|eight|nine|oh))*\b[,\s]*/gi, ' ');
-      // Bare "U305"
-      text = text.replace(/\bU[0-9]{2,4}\b[,\s]*/g, ' ');
-    }
+  function normaliseDescription(value) {
+    var text = cleanSpaces(value)
+      .replace(/^[,.;:\-\s]+/, '')
+      .replace(/[,;:\-\s]+$/, '')
+      .replace(/\s+,/g, ',')
+      .replace(/\bto patch sand and paint\b/gi, 'to patch, sand and paint')
+      .replace(/\b(penetration|vanity|entry|wall|door|tile|crack|damage)\s+(waterproofer|tiler|painter|plasterer|renderer|cabinet maker)\s+to\b/gi, '$1. $2 to')
+      .replace(/,\s*(?=(?:and\s+)?(?:tiler|painter|plasterer|renderer|waterproofer|cabinet maker|subcontractor|trade)\b)/gi, '. ')
+      .replace(/,\s*(?=[A-Z])/g, '. ')
+      .replace(/\s*\.\s*/g, '. ')
+      .replace(/\.{2,}/g, '.')
+      .trim();
 
-    if (parsed.level) {
-      text = text.replace(/\b(?:on\s+)?(?:level|floor|lvl)\s+\w+[,\s]*/gi, ' ');
-      text = text.replace(/\bground\s+(?:floor|level)?[,\s]*/gi, ' ');
-      text = text.replace(/\bL[0-9]{1,2}\b[,\s]*/g, ' ');
-    }
-
-    if (parsed.room) {
-      const roomEsc = parsed.room.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      text = text.replace(new RegExp(`\\b${roomEsc}\\b[,\\s]*`, 'gi'), ' ');
-    }
-
-    // Remove project names if supplied
-    for (const name of (parsed._projectNames || [])) {
-      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      text = text.replace(new RegExp(`\\b${esc}\\b[,\\s]*`, 'gi'), ' ');
-    }
-
-    // Clean up leading commas/spaces
-    text = text.replace(/\s{2,}/g, ' ').trim();
-    text = text.replace(/^[\s,;]+/, '').trim();
-
-    // Convert remaining commas between clauses into sentence breaks
-    text = text.replace(/,\s*(?=[A-Za-z])/g, (m, offset, str) => {
-      // Only replace if what follows looks like a new clause (not a list item)
-      return '. ';
-    });
-
-    // Capitalise after each sentence boundary
-    text = text.replace(/([.!?])\s+([a-z])/g, (_, p, c) => `${p} ${c.toUpperCase()}`);
-
-    // Remove any double periods
-    text = text.replace(/\.{2,}/g, '.').replace(/\.\s+\./g, '.').trim();
-
-    // Sentence-case the first character
     if (text) text = text.charAt(0).toUpperCase() + text.slice(1);
-
-    // Ensure ends with a period
+    text = text.replace(/([.!?])\s+([a-z])/g, function (_, p, c) { return p + ' ' + c.toUpperCase(); });
     if (text && !/[.!?]$/.test(text)) text += '.';
-
-    // Fallback: if cleaned text is too short, return the last meaningful clause
-    if (!text || text.length < 4) {
-      const clauses = transcript.split(/[,]+/).map(s => s.trim()).filter(Boolean);
-      const last = clauses[clauses.length - 1] || transcript;
-      text = last.charAt(0).toUpperCase() + last.slice(1);
-      if (!/[.!?]$/.test(text)) text += '.';
-    }
-
     return text;
   }
 
-  /**
-   * Primary export. Parse a spoken or typed defect note into structured fields.
-   *
-   * @param {string} transcript
-   * @param {object} [config]  optional project config { buildings, levels, units, rooms, projectNames }
-   * @returns {{ building?, level?, unit?, room?, trade?, type?, priority, description, raw_transcript, confidence, warnings[] }}
-   */
+  function actionFallback(transcript) {
+    var clauses = String(transcript || '').split(/[,;]+/).map(cleanSpaces).filter(Boolean);
+    var actionWords = /(repair|repaired|replace|regrout|patch|repaint|review|make good|scratched|cracked|damage|defect|incomplete|missing|silicone|leak|broken|chipped)/i;
+    var chosen = clauses.find(function (clause) { return actionWords.test(clause); }) || clauses[clauses.length - 1] || transcript;
+    return normaliseDescription(chosen);
+  }
+
+  function cleanDescription(transcript, parsed) {
+    var text = String(transcript || '');
+
+    if (parsed.project) text = removeKnownPhrase(text, parsed.project);
+
+    if (parsed.building) {
+      text = removeRegex(text, /\b(?:building|bldg)\s+(?:[0-9]{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\b[,;:\s]*/gi);
+      text = removeRegex(text, /\bB\s*(?:[0-9]{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\b[,;:\s]*/gi);
+      text = removeRegex(text, /\b(?:block|tower)\s+\w+\b[,;:\s]*/gi);
+      text = removeKnownPhrase(text, parsed.building);
+    }
+
+    if (parsed.unit) {
+      text = removeRegex(text, /\b(?:unit|apartment|apt|lot)\s+[0-9A-Za-z-]+\b[,;:\s]*/gi);
+      text = removeRegex(text, new RegExp('\\b(?:unit|apartment|apt|lot)\\s+' + NUM_WORD_ALT + '(?:\\s+' + NUM_WORD_ALT + ')*\\b[,;:\\s]*', 'gi'));
+      text = removeRegex(text, /\bU\s*[0-9]{2,4}\b[,;:\s]*/gi);
+      text = removeKnownPhrase(text, parsed.unit);
+    }
+
+    if (parsed.level) {
+      text = removeRegex(text, /\b(?:on\s+)?(?:level|floor|lvl)\s*(?:[0-9]{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b[,;:\s]*/gi);
+      text = removeRegex(text, /\b(?:on\s+)?ground\s+(?:floor|level)\b[,;:\s]*/gi);
+      if (parsed.level === 'Ground') text = removeRegex(text, /\bground\b[,;:\s]*/gi);
+      text = removeRegex(text, /\bL\s*[0-9]{1,2}\b[,;:\s]*/gi);
+      text = removeKnownPhrase(text, parsed.level);
+    }
+
+    if (parsed.room) {
+      text = removeKnownPhrase(text, parsed.room);
+    }
+
+    text = text
+      .replace(/\b(?:urgent|high priority|critical priority)\b[,;:\s]*/gi, ' ')
+      .replace(/\b(?:defect|incomplete work|client defect)\b[,;:\s]*(?=(?:building|bldg|b\s*\d|unit|level|floor|lvl)\b)/gi, ' ')
+      .replace(/\b(on|at|in)\s*(?=[,.;]|$)/gi, ' ');
+
+    var cleaned = normaliseDescription(text);
+    if (!cleaned || cleaned.length < 4) cleaned = actionFallback(transcript);
+    return cleaned;
+  }
+
   function parseVoiceNote(transcript, config) {
     config = config || {};
-    const original = (transcript || '').trim();
+    var original = cleanSpaces(transcript);
     if (!original) return { raw_transcript: '', description: '', confidence: 0, warnings: ['Empty transcript'] };
 
-    const parsed = {
+    var parsed = {
       raw_transcript: original,
+      project: detectProject(original, config),
+      building: null,
+      level: null,
+      unit: null,
+      room: null,
+      trade: null,
+      subcontractor: null,
+      priority: URGENT_WORDS.some(function (w) { return original.toLowerCase().includes(w); }) ? 'urgent' : 'high',
+      type: detectType(original),
+      due_date: null,
+      description: '',
       confidence: 0,
       warnings: [],
-      _projectNames: config.projectNames || [],
     };
 
-    const building = detectBuilding(original);
-    if (building) {
-      const cfgBuildings = config.buildings || [];
-      const match = cfgBuildings.find(b =>
-        b === building.value ||
-        b === building.normalized ||
-        b.toLowerCase() === building.value.toLowerCase() ||
-        b.toLowerCase() === building.normalized.toLowerCase()
-      );
-      parsed.building = match || building.normalized || building.value;
-    }
-
-    const level = detectLevel(original);
-    if (level) {
-      const cfgLevels = config.levels || [];
-      const match = cfgLevels.find(l => l.toLowerCase() === level.toLowerCase());
-      parsed.level = match || level;
-    }
-
-    const unit = detectUnit(original);
-    if (unit) {
-      const cfgUnits = config.units || [];
-      // Normalise to digits-only for comparison ("U203" → "203", "Unit 203" → "203")
-      const norm = unit.replace(/^U(?:nit\s*)?/i, '').trim();
-      const match = cfgUnits.find(function (u) {
-        if (u === unit) return true;
-        const uNorm = u.replace(/^U(?:nit\s*)?/i, '').trim();
-        return uNorm === norm;
-      });
-      parsed.unit = match || unit;
-    }
-
-    const room = detectRoom(original);
-    if (room) {
-      const cfgRooms = config.rooms || [];
-      const match = cfgRooms.find(r => r.toLowerCase() === room.toLowerCase());
-      parsed.room = match || room;
-    }
-
-    const trade = detectTrade(original);
-    if (trade) parsed.trade = trade;
-
-    const type = detectType(original);
-    if (type) parsed.type = type;
-
-    parsed.priority = URGENT_WORDS.some(w => original.toLowerCase().includes(w)) ? 'urgent' : 'high';
-
+    parsed.building = detectBuilding(original, config);
+    parsed.level = detectLevel(original, config);
+    parsed.unit = detectUnit(original, config);
+    parsed.room = detectRoom(original, config);
+    parsed.trade = detectTrade(original, config);
+    parsed.subcontractor = detectSubcontractor(original, config);
     parsed.description = cleanDescription(original, parsed);
 
-    const fieldCount = ['building', 'level', 'unit', 'room', 'trade'].filter(k => parsed[k]).length;
-    parsed.confidence = Math.min(fieldCount / 3, 1.0);
-
-    // Remove internal helper key before returning
-    delete parsed._projectNames;
+    var fieldCount = ['building', 'level', 'unit', 'room', 'trade', 'subcontractor'].filter(function (key) { return Boolean(parsed[key]); }).length;
+    parsed.confidence = Math.min(fieldCount / 4, 1.0);
+    if (!parsed.description || parsed.description === original) parsed.warnings.push('Description may need review.');
+    if (!parsed.building) parsed.warnings.push('Building not detected.');
+    if (!parsed.unit) parsed.warnings.push('Unit / area not detected.');
 
     return parsed;
   }
 
-  // Expose as global and CommonJS module
   var exports = { parseVoiceNote: parseVoiceNote, cleanDescription: cleanDescription };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = exports;
   } else {
     global.VoiceParser = exports;
   }
-
-}(typeof globalThis !== 'undefined' ? globalThis : this));
+}(typeof window !== 'undefined' ? window : globalThis));
