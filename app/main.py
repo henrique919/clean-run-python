@@ -35,12 +35,14 @@ from app.services import reports as report_service
 from app.validation import ValidationError
 
 logger = logging.getLogger(__name__)
+APP_DIR = Path(__file__).resolve().parent
+STATIC_DIR = APP_DIR / "static"
 
 
 app = FastAPI(title="CleanRun IQ Python", version="0.1.0")
 store = build_repository()
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class IssuePayload(BaseModel):
@@ -183,7 +185,7 @@ def auth_config() -> dict[str, object]:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(html)
 
 
