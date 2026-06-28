@@ -18,6 +18,20 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+print(
+    "[CleanRun boot] "
+    f"cwd={Path.cwd()} "
+    f"repo_root={REPO_ROOT} "
+    f"APP_ENV={os.getenv('APP_ENV') or ''} "
+    f"CLEANRUN_ENV={os.getenv('CLEANRUN_ENV') or ''} "
+    f"CLEANRUN_STORAGE={os.getenv('CLEANRUN_STORAGE') or ''} "
+    f"SUPABASE_URL={'set' if os.getenv('SUPABASE_URL') else 'missing'} "
+    f"SUPABASE_PUBLISHABLE_KEY={'set' if os.getenv('SUPABASE_PUBLISHABLE_KEY') else 'missing'} "
+    f"SUPABASE_JWT_SECRET={'set' if os.getenv('SUPABASE_JWT_SECRET') else 'missing'} "
+    f"SUPABASE_SERVICE_ROLE_KEY={'set' if os.getenv('SUPABASE_SERVICE_ROLE_KEY') else 'missing'}",
+    flush=True,
+)
+
 from app.main import app  # noqa: E402
 
 
