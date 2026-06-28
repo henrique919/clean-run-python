@@ -450,7 +450,7 @@ class SupabaseCleanRunStore(CleanRunStore):
         return settings
 
     def create_access_request(self, payload: AccessRequest) -> AccessRequest:
-        self.client.table("access_requests").insert(payload.model_dump(mode="json")).execute()
+        self.client.table("access_requests").insert(payload.model_dump(mode="json"), returning="minimal").execute()
         return payload
 
     def _read_settings(self) -> Settings:

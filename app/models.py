@@ -241,7 +241,7 @@ class SubProfile(BaseModel):
 
 
 class AccessRequest(BaseModel):
-    id: str = Field(default_factory=make_id)
+    id: str = Field(default_factory=lambda: str(uuid4()))
     full_name: str
     email: str
     company: str
