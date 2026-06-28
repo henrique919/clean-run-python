@@ -13,6 +13,12 @@ services:
         value: /var/data/cleanrun_data.json
       - key: CLEANRUN_STORAGE
         value: supabase
+      - key: APP_ENV
+        value: production
+      - key: CLEANRUN_ENV
+        value: production
+      - key: CLEANRUN_REQUIRE_SUPABASE
+        value: "true"
       - key: CLEANRUN_STORAGE_BUCKET
         value: cleanrun-evidence
       - key: CLEANRUN_MAX_IMAGE_BYTES
@@ -29,7 +35,9 @@ services:
         value: production
       - key: SUPABASE_URL
         sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
         sync: false
     disk:
       name: cleanrun-data
