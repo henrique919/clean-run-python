@@ -83,6 +83,8 @@ async function apiFetch(url, options = {}) {
   return res;
 }
 
+window.cleanrunApiFetch = apiFetch;
+
 async function loadAuthConfig() {
   if (state.authConfig) return state.authConfig;
   const res = await fetch("/api/auth/config");

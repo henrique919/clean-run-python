@@ -1,10 +1,7 @@
 /**
- * voice-capture.js — Browser speech recognition state machine for CleanRun IQ.
- * Requires voice-parser.js to be loaded first.
- *
- * States: idle | requesting_permission | recording | processing | parsed | failed
- *
- * Falls back to typed-note parsing when SpeechRecognition is unavailable.
+ * voice-capture.js — reliable browser audio recorder for CleanRun IQ.
+ * Records a short audio blob with MediaRecorder and sends it to /api/voice/parse.
+ * If AI transcription is unavailable, the typed note parser remains the fallback.
  */
 (function () {
   'use strict';
@@ -18,212 +15,212 @@
     FAILED: 'failed',
   };
 
-  var recognition = null;
   var currentState = STATES.IDLE;
-  var partialTranscript = '';
-
-  var hasSpeechAPI = typeof window !== 'undefined' &&
-    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-
-  // ── UI helpers ───────────────────────────────────────────────────────────────
+  var recorder = null;
+  var stream = null;
+  var chunks = [];
 
   function el(id) { return document.getElementById(id); }
 
-  function setState(state) {
+  function setState(state, message) {
     currentState = state;
-    renderState(state);
+    renderState(message);
   }
 
-  function renderState(state) {
-    var btn = el('voiceRecordBtn');
+  function setStatus(message) {
     var statusEl = el('voiceStatus');
+    if (statusEl) statusEl.textContent = message || '';
+  }
+
+  function setFallback(visible, message) {
     var fallbackEl = el('voiceFallback');
+    if (!fallbackEl) return;
+    fallbackEl.classList.toggle('hidden', !visible);
+    if (message) {
+      var helper = fallbackEl.querySelector('.helper');
+      if (helper) helper.textContent = message;
+    }
+  }
+
+  function renderState(message) {
+    var btn = el('voiceRecordBtn');
     if (!btn) return;
 
     btn.disabled = false;
     btn.classList.remove('voice-btn--recording', 'voice-btn--processing');
-    if (fallbackEl) fallbackEl.classList.add('hidden');
 
-    switch (state) {
+    switch (currentState) {
       case STATES.IDLE:
         btn.textContent = '🎤 Record Note';
-        if (statusEl) statusEl.textContent = '';
+        setStatus(message || '');
         break;
-
       case STATES.REQUESTING:
         btn.textContent = 'Requesting microphone…';
         btn.disabled = true;
-        if (statusEl) statusEl.textContent = 'Waiting for microphone permission.';
+        setStatus(message || 'Waiting for microphone permission.');
         break;
-
       case STATES.RECORDING:
         btn.textContent = '⏹ Stop Recording';
         btn.classList.add('voice-btn--recording');
-        if (statusEl) statusEl.textContent = 'Recording… Speak clearly then tap Stop.';
+        setStatus(message || 'Listening… speak the item clearly, then tap Stop.');
         break;
-
       case STATES.PROCESSING:
         btn.textContent = 'Processing…';
         btn.disabled = true;
         btn.classList.add('voice-btn--processing');
-        if (statusEl) statusEl.textContent = 'Processing transcript…';
+        setStatus(message || 'Processing voice note…');
         break;
-
       case STATES.PARSED:
         btn.textContent = '🎤 Record Again';
-        if (statusEl) statusEl.textContent = 'Fields drafted. Review and edit before saving.';
+        setStatus(message || 'Fields drafted. Review and edit before saving.');
         break;
-
       case STATES.FAILED:
         btn.textContent = '🎤 Retry';
-        if (statusEl) statusEl.textContent = 'Voice capture failed. Retry or type a note below.';
-        if (fallbackEl) fallbackEl.classList.remove('hidden');
+        setStatus(message || 'Voice capture failed. Retry or type a note below.');
+        setFallback(true, 'Voice unavailable — type your note below and tap Draft form from note.');
         break;
     }
   }
 
-  function setStatus(msg) {
-    var statusEl = el('voiceStatus');
-    if (statusEl) statusEl.textContent = msg;
+  function supportedMimeType() {
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/mpeg'];
+    for (var i = 0; i < candidates.length; i += 1) {
+      if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+    return '';
   }
 
-  // ── Core recognition ─────────────────────────────────────────────────────────
+  function stopTracks() {
+    if (stream) {
+      stream.getTracks().forEach(function (track) { track.stop(); });
+      stream = null;
+    }
+  }
 
-  function handleTranscript(transcript) {
-    transcript = (transcript || '').trim();
-    if (!transcript) {
-      if (partialTranscript) {
-        transcript = partialTranscript;
-      } else {
-        setStatus('No speech detected. Speak clearly and try again, or type a note below.');
-        setState(STATES.FAILED);
-        return;
-      }
+  function projectValue() {
+    return el('project')?.value || '';
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      setState(STATES.FAILED, 'This browser cannot record voice notes. Type the note and use Draft form from note.');
+      return;
     }
 
-    // Preserve raw transcript in the textarea
+    chunks = [];
+    setFallback(false);
+    setState(STATES.REQUESTING);
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      var mimeType = supportedMimeType();
+      var options = mimeType ? { mimeType: mimeType } : undefined;
+      recorder = new MediaRecorder(stream, options);
+
+      recorder.ondataavailable = function (event) {
+        if (event.data && event.data.size > 0) chunks.push(event.data);
+      };
+
+      recorder.onerror = function () {
+        stopTracks();
+        setState(STATES.FAILED, 'Recording failed. Retry or type the note below.');
+      };
+
+      recorder.onstop = function () {
+        stopTracks();
+        uploadRecording().catch(function (error) {
+          setState(STATES.FAILED, error.message || 'Voice parsing failed. Type the note below.');
+        });
+      };
+
+      recorder.start();
+      setState(STATES.RECORDING);
+    } catch (error) {
+      stopTracks();
+      if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+        setState(STATES.FAILED, 'Microphone permission denied. Type the note and use Draft form from note.');
+      } else {
+        setState(STATES.FAILED, 'Could not access the microphone. Retry or type the note below.');
+      }
+    }
+  }
+
+  function stopRecording() {
+    if (!recorder || currentState !== STATES.RECORDING) return;
+    setState(STATES.PROCESSING, 'Uploading and transcribing voice note…');
+    try {
+      recorder.stop();
+    } catch (error) {
+      stopTracks();
+      setState(STATES.FAILED, 'Could not stop recording. Retry or type the note below.');
+    }
+  }
+
+  async function uploadRecording() {
+    if (!chunks.length) {
+      setState(STATES.FAILED, 'No audio was recorded. Retry or type the note below.');
+      return;
+    }
+
+    var type = chunks[0].type || supportedMimeType() || 'audio/webm';
+    var audioBlob = new Blob(chunks, { type: type });
+    if (!audioBlob.size) {
+      setState(STATES.FAILED, 'The recording was empty. Retry or type the note below.');
+      return;
+    }
+
+    var formData = new FormData();
+    formData.append('audio', audioBlob, 'cleanrun-voice-note.webm');
+    formData.append('project', projectValue());
+
+    var fetcher = window.cleanrunApiFetch || window.fetch.bind(window);
+    var res = await fetcher('/api/voice/parse', { method: 'POST', body: formData });
+    if (!res.ok) {
+      var err = await res.json().catch(function () { return {}; });
+      throw new Error(err.detail || 'AI voice parsing is unavailable. Type the note below.');
+    }
+
+    var result = await res.json();
+    var transcript = (result.transcript || result.parsed?.raw_transcript || '').trim();
+    if (!transcript) {
+      setState(STATES.FAILED, 'No speech was detected. Retry or type the note below.');
+      return;
+    }
+
     var noteEl = el('voiceNote');
     if (noteEl) noteEl.value = transcript;
 
-    setState(STATES.PARSED);
-
-    // Call app.js integration point
-    if (typeof window.draftFromVoice === 'function') {
+    if (typeof window.cleanrunApplyVoiceResult === 'function') {
+      window.cleanrunApplyVoiceResult(result.parsed || {}, transcript, result.source || 'ai');
+    } else if (typeof window.draftFromVoice === 'function') {
       window.draftFromVoice(transcript);
     }
-  }
 
-  function startRecognition() {
-    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-AU';
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = function () {
-      setState(STATES.RECORDING);
-    };
-
-    recognition.onresult = function (event) {
-      var interim = '';
-      var final = '';
-      for (var i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
-        }
-      }
-      partialTranscript = (final || interim).trim();
-      if (interim) setStatus('Heard: "' + interim + '"');
-    };
-
-    recognition.onerror = function (event) {
-      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-        setStatus('Microphone permission denied. Type your note below instead.');
-        var fallbackEl = el('voiceFallback');
-        if (fallbackEl) fallbackEl.classList.remove('hidden');
-        setState(STATES.FAILED);
-      } else if (event.error === 'no-speech') {
-        if (partialTranscript) {
-          setState(STATES.PROCESSING);
-          handleTranscript(partialTranscript);
-        } else {
-          setStatus('No speech detected. Speak more clearly and try again, or type a note below.');
-          setState(STATES.FAILED);
-        }
-      } else if (event.error === 'aborted') {
-        if (partialTranscript) {
-          setState(STATES.PROCESSING);
-          handleTranscript(partialTranscript);
-        } else {
-          setState(STATES.IDLE);
-        }
-      } else {
-        setStatus('Voice error (' + event.error + '). Try again or type a note below.');
-        setState(STATES.FAILED);
-      }
-    };
-
-    recognition.onend = function () {
-      if (currentState === STATES.RECORDING) {
-        setState(STATES.PROCESSING);
-        setTimeout(function () { handleTranscript(partialTranscript); }, 100);
-      }
-    };
-
-    try {
-      recognition.start();
-      setState(STATES.REQUESTING);
-    } catch (e) {
-      setStatus('Could not start voice capture: ' + e.message);
-      setState(STATES.FAILED);
-    }
-  }
-
-  function stopRecognition() {
-    if (recognition) {
-      try { recognition.stop(); } catch (e) { /* ignore */ }
-    }
+    setState(STATES.PARSED, 'AI drafted the fields. Review before saving.');
   }
 
   function toggle() {
-    if (currentState === STATES.RECORDING) {
-      stopRecognition();
-    } else if (currentState !== STATES.REQUESTING && currentState !== STATES.PROCESSING) {
-      partialTranscript = '';
-      if (!hasSpeechAPI) {
-        var btn = el('voiceRecordBtn');
-        var statusEl = el('voiceStatus');
-        var fallbackEl = el('voiceFallback');
-        if (btn) { btn.textContent = 'Voice not supported'; btn.disabled = true; }
-        if (statusEl) statusEl.textContent = 'Your browser does not support voice capture. Type a note and use "Draft from note" instead.';
-        if (fallbackEl) fallbackEl.classList.remove('hidden');
-        return;
-      }
-      startRecognition();
-    }
+    if (currentState === STATES.RECORDING) stopRecording();
+    else if (currentState !== STATES.REQUESTING && currentState !== STATES.PROCESSING) startRecording();
   }
 
-  // Expose to global scope
   window.voiceCapture = { toggle: toggle, states: STATES };
 
   document.addEventListener('DOMContentLoaded', function () {
     var btn = el('voiceRecordBtn');
     if (!btn) return;
-
-    if (!hasSpeechAPI) {
-      btn.textContent = 'Voice not supported in this browser';
-      btn.disabled = true;
-      var statusEl = el('voiceStatus');
-      var fallbackEl = el('voiceFallback');
-      if (statusEl) statusEl.textContent = 'Your browser does not support voice capture. Type a note and use "Draft from note" instead.';
-      if (fallbackEl) fallbackEl.classList.remove('hidden');
-      return;
-    }
-
     btn.addEventListener('click', toggle);
+    if (!window.MediaRecorder) {
+      setFallback(true, 'Voice recording is not supported here — type your note below and tap Draft form from note.');
+      setStatus('Voice recording is not supported in this browser.');
+    }
   });
-
 }());
