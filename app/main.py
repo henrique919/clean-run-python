@@ -36,13 +36,18 @@ from app.validation import ValidationError
 
 logger = logging.getLogger(__name__)
 APP_DIR = Path(__file__).resolve().parent
+REPO_ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
+FIELD_APP_DIR = REPO_ROOT / "CleanRun-IQ-Full-App-Render3"
+FIELD_ASSETS_DIR = FIELD_APP_DIR / "assets"
 
 
 app = FastAPI(title="CleanRun IQ Python", version="0.1.0")
 store = build_repository()
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if FIELD_ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(FIELD_ASSETS_DIR)), name="assets")
 
 
 class IssuePayload(BaseModel):
@@ -185,7 +190,8 @@ def auth_config() -> dict[str, object]:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    field_app = FIELD_APP_DIR / "index.html"
+    html = (field_app if field_app.exists() else STATIC_DIR / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(html)
 
 
