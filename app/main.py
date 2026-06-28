@@ -386,7 +386,7 @@ def report_html(report_type: str, project: str | None = Query(default=None)):
 def report_summary(report_type: str, project: str | None = Query(default=None)):
     data = store.snapshot()
     project_name = project or data.settings.active_project
-    items = filter_items([i for i in items if i.project == project_name], report_type)
+    items = filter_items([i for i in data.items if i.project == project_name], report_type)
     return {
         "report_type": report_type,
         "project": project_name,
