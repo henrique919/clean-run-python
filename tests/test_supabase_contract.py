@@ -25,17 +25,24 @@ class SupabaseContractTests(unittest.TestCase):
         migrations = read_migrations().lower()
         tables = [
             "companies",
+            "user_profiles",
             "company_members",
             "profiles",
             "projects",
             "project_members",
+            "locations",
             "subcontractors",
             "project_subcontractors",
+            "subcontractor_project_access",
             "subcontractor_users",
             "items",
+            "item_photos",
+            "item_comments",
+            "item_audit_events",
             "evidence",
             "comments",
             "audit_events",
+            "subcontractor_invites",
             "app_settings",
         ]
         for table in tables:
@@ -54,12 +61,19 @@ class SupabaseContractTests(unittest.TestCase):
             "create or replace function app.is_company_member",
             "create or replace function app.has_company_role",
             "create or replace function app.is_subcontractor_for_item",
+            "create or replace function app.is_subcontractor_for_project",
             "create policy \"items_select_authorized_scope\"",
             "create policy \"evidence_insert_item_managers_or_assigned_subcontractor\"",
+            "create policy \"item_photos_insert_authorized_scope\"",
             "create policy \"audit_events_insert_authorized_append_only\"",
+            "create policy \"item_audit_events_insert_append_only\"",
         ]
         for text in expected:
             self.assertIn(text, migrations)
+
+    def test_payload_column_is_marked_legacy(self) -> None:
+        migrations = read_migrations().lower()
+        self.assertIn("legacy compatibility snapshot only", migrations)
 
     def test_foreign_key_columns_are_indexed(self) -> None:
         migrations = read_migrations().lower()
@@ -72,6 +86,16 @@ class SupabaseContractTests(unittest.TestCase):
             "subcontractor_users(subcontractor_id)",
             "subcontractor_users(user_id)",
             "items(company_id)",
+            "items(location_id)",
+            "item_photos(company_id)",
+            "item_photos(project_id)",
+            "item_photos(item_id)",
+            "item_comments(company_id)",
+            "item_comments(project_id)",
+            "item_comments(item_id)",
+            "item_audit_events(company_id)",
+            "item_audit_events(project_id)",
+            "item_audit_events(item_id)",
             "evidence(project_id)",
             "comments(project_id)",
             "audit_events(project_id)",

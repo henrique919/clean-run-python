@@ -26,6 +26,7 @@ This scaffold implements:
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+CLEANRUN_STORAGE=local
 uvicorn app.main:app --reload
 ```
 
@@ -77,6 +78,7 @@ supabase gen types typescript --project-id <project-ref> > supabase/types/databa
 Production environment:
 
 ```text
+APP_ENV=production
 CLEANRUN_ENV=production
 CLEANRUN_STORAGE=supabase
 CLEANRUN_REQUIRE_SUPABASE=true
@@ -84,10 +86,28 @@ SUPABASE_URL=<project-url>
 SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 SUPABASE_JWT_SECRET=<project-jwt-secret>
 CLEANRUN_ENABLE_DEMO_RESET=false
+ALLOW_LOCAL_STORAGE_IN_PRODUCTION=false
 ```
 
 Never configure `SUPABASE_SERVICE_ROLE_KEY` in the web app process. If privileged work is needed later, place it behind Supabase Edge Functions or security-definer database functions.
 
 See `SECURITY.md` for the current auth, tenant/RLS, storage, audit, and demo reset rules.
+
+## Storage guardrails
+
+- `CLEANRUN_STORAGE=supabase` is the production mode and fails startup if Supabase is unavailable or misconfigured.
+- `CLEANRUN_STORAGE=local` is for local development/demos only.
+- Production refuses local JSON unless `ALLOW_LOCAL_STORAGE_IN_PRODUCTION=true` is explicitly set for emergency recovery.
+- `/api/storage-status` reports backend health without returning secrets or record previews in production.
+
+## Payload migration
+
+Existing rows that still contain legacy `items.payload` snapshots can be replayed into normalized tables:
+
+```bash
+python scripts/migrate_payload_items_to_normalized.py
+```
+
+The script is idempotent and prints migrated/skipped/failed counts.
 
 See `CODE_HEALTH.md` before deploying so the Render service targets the active FastAPI app surface.

@@ -9,6 +9,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+      - key: APP_ENV
+        value: production
       - key: CLEANRUN_ENV
         value: production
       - key: CLEANRUN_STORAGE
@@ -26,4 +28,6 @@ services:
       - key: SUPABASE_JWT_SECRET
         sync: false
       - key: CLEANRUN_ENABLE_DEMO_RESET
+        value: "false"
+      - key: ALLOW_LOCAL_STORAGE_IN_PRODUCTION
         value: "false"

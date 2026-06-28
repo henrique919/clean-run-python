@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.config import is_production
+
 try:
     import jwt
 except Exception:  # pragma: no cover - production dependency guard
@@ -36,10 +38,6 @@ class AuthUser:
 @dataclass(frozen=True)
 class RequestContext:
     user: AuthUser
-
-
-def is_production() -> bool:
-    return os.getenv("CLEANRUN_ENV", "development").lower() == "production"
 
 
 def _dev_users() -> dict[str, AuthUser]:

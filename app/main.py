@@ -9,7 +9,9 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.auth import RequestContext, get_request_context, is_production
+from app.auth import RequestContext, get_request_context
+from app.config import app_env, is_production
+from app.db import build_repository
 from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, TRADES
 from app.permissions import (
     require_close_item,
@@ -25,31 +27,16 @@ from app.permissions import (
     visible_items,
     visible_projects,
 )
-from app.reporting import build_report_html, filter_items
-from app.store import CleanRunStore
+from app.services import items as item_service
+from app.services import projects as project_service
+from app.services import reports as report_service
 from app.validation import ValidationError
 
 logger = logging.getLogger(__name__)
 
 
-def build_store():
-    if os.getenv("CLEANRUN_STORAGE", "").lower() == "supabase":
-        try:
-            from app.store_supabase import SupabaseCleanRunStore
-
-            return SupabaseCleanRunStore()
-        except Exception:
-            logger.exception("Supabase storage unavailable.")
-            strict = os.getenv("CLEANRUN_REQUIRE_SUPABASE", "").lower() in {"1", "true", "yes"}
-            production = os.getenv("CLEANRUN_ENV", "development").lower() == "production"
-            if strict or production:
-                raise
-            logger.warning("Falling back to local JSON storage because CLEANRUN_REQUIRE_SUPABASE is not enabled.")
-    return CleanRunStore()
-
-
 app = FastAPI(title="CleanRun IQ Python", version="0.1.0")
-store = build_store()
+store = build_repository()
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -101,7 +88,7 @@ def actor_context(ctx: RequestContext) -> dict[str, str | None]:
 
 def get_authorized_item(item_id: str, ctx: RequestContext):
     try:
-        item = store.get_item(item_id)
+        item = item_service.get_item(store, item_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
     require_item_access(ctx.user, item)
@@ -135,11 +122,6 @@ def auth_config() -> dict[str, object]:
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     html = Path("app/static/index.html").read_text(encoding="utf-8")
-    if "/static/photo-compression.js" not in html:
-        html = html.replace(
-            '<script src="/static/app.js"></script>',
-            '<script src="/static/app.js"></script>\n  <script src="/static/photo-compression.js"></script>',
-        )
     return HTMLResponse(html)
 
 
@@ -157,24 +139,21 @@ def api_health() -> dict[str, bool]:
 def storage_status(ctx: RequestContext = Depends(get_request_context)):
     require_storage_status_access(ctx.user)
     data = store.snapshot()
-    latest = data.items[0] if data.items else None
-    latest_photo = None
-    if latest and latest.original_photos:
-        latest_photo = latest.original_photos[0]
-    return {
+    response = {
         "requested_storage": os.getenv("CLEANRUN_STORAGE", "local"),
         "active_store": store.__class__.__name__,
+        "environment": app_env(),
         "supabase_url_configured": bool(os.getenv("SUPABASE_URL")),
         "supabase_publishable_key_configured": bool(os.getenv("SUPABASE_PUBLISHABLE_KEY")),
-        "service_role_key_present": bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY")),
-        "requires_supabase": os.getenv("CLEANRUN_REQUIRE_SUPABASE", "").lower() in {"1", "true", "yes"},
+        "auth_jwt_secret_configured": bool(os.getenv("SUPABASE_JWT_SECRET")),
+        "requires_supabase": os.getenv("CLEANRUN_STORAGE", "").lower() == "supabase",
         "storage_bucket": os.getenv("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence"),
         "item_count": len(data.items),
-        "latest_item_code": latest.code if latest else None,
-        "latest_item_description": latest.description if latest else None,
-        "latest_photo_type": "storage_url" if latest_photo and str(latest_photo).startswith("http") else "base64_or_empty" if latest_photo else "none",
-        "latest_photo_preview": str(latest_photo)[:80] if latest_photo else None,
     }
+    if not is_production():
+        latest = data.items[0] if data.items else None
+        response["latest_item_code"] = latest.code if latest else None
+    return response
 
 
 @app.get("/api/bootstrap")
@@ -202,7 +181,7 @@ def update_settings(payload: SettingsPayload, ctx: RequestContext = Depends(get_
     current = data.settings
     updates = payload.model_dump(exclude_unset=True)
     settings = Settings.model_validate({**current.model_dump(), **updates})
-    return store.update_settings(settings)
+    return project_service.update_settings(store, settings)
 
 
 @app.get("/api/items")
@@ -213,7 +192,7 @@ def list_items(
 ):
     if project:
         require_report_access(ctx.user, project)
-    return visible_items(ctx.user, store.list_items(project=project, status=status))
+    return visible_items(ctx.user, item_service.list_items(store, project=project, status=status))
 
 
 @app.get("/api/items/{item_id}")
@@ -226,7 +205,7 @@ def create_item(payload: ItemCreate, issue_now: bool = Query(default=False), ctx
     require_create_item(ctx.user, payload.project)
     payload = payload.model_copy(update={"created_by": actor_label(ctx)})
     try:
-        return store.create_item(payload, issue_now=issue_now, actor=actor_context(ctx))
+        return item_service.create_item(store, payload, issue_now=issue_now, actor=actor_context(ctx))
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -236,7 +215,7 @@ def update_item(item_id: str, payload: ItemUpdate, by: str | None = Query(defaul
     item = get_authorized_item(item_id, ctx)
     require_update_item(ctx.user, item)
     try:
-        return store.update_item(item_id, payload, by=actor_label(ctx), actor=actor_context(ctx))
+        return item_service.update_item(store, item_id, payload, by=actor_label(ctx), actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
     except ValidationError as exc:
@@ -332,7 +311,7 @@ def report_html(report_type: str, project: str | None = Query(default=None), ctx
     project_name = project or data.settings.active_project
     require_report_access(ctx.user, project_name)
     items = [i for i in data.items if i.project == project_name]
-    html = build_report_html(items, data.settings, report_type=report_type)
+    html = report_service.build_report(items, data.settings, report_type=report_type)
     return HTMLResponse(html)
 
 
@@ -341,7 +320,7 @@ def report_summary(report_type: str, project: str | None = Query(default=None), 
     data = store.snapshot()
     project_name = project or data.settings.active_project
     require_report_access(ctx.user, project_name)
-    items = filter_items([i for i in data.items if i.project == project_name], report_type)
+    items = report_service.report_items([i for i in data.items if i.project == project_name], report_type)
     return {
         "report_type": report_type,
         "project": project_name,

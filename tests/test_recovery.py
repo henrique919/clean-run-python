@@ -104,11 +104,14 @@ class RecoveryTests(unittest.TestCase):
     def test_restored_ui_contains_register_tools_and_lifecycle_actions(self) -> None:
         root = Path(__file__).resolve().parents[1]
         html = (root / "app/static/index.html").read_text(encoding="utf-8")
-        script = (root / "app/static/app.js").read_text(encoding="utf-8")
+        entry_script = (root / "app/static/app.js").read_text(encoding="utf-8")
+        script = (root / "app/static/js/main.js").read_text(encoding="utf-8")
         styles = (root / "app/static/styles.css").read_text(encoding="utf-8")
 
         for element_id in ("statsBar", "searchInput", "statusFilter", "clearFilters", "saveBtn", "issueBtn"):
             self.assertIn(f'id="{element_id}"', html)
+        self.assertIn('type="module" src="/static/app.js"', html)
+        self.assertEqual(entry_script.strip(), 'import "./js/main.js";')
         for action in ("data-rectify", "data-reject", "data-close", "data-comment"):
             self.assertIn(action, script)
         self.assertEqual(script.count("function renderItems()"), 1)

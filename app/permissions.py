@@ -9,10 +9,10 @@ from app.auth import AuthUser, is_production
 from app.models import Item, Settings
 
 
-COMPANY_ADMIN_ROLES = {"owner", "admin"}
-COMPANY_PROJECT_WIDE_ROLES = {"owner", "admin", "project_manager", "quality_manager"}
-PROJECT_WRITE_ROLES = {"project_admin", "project_manager", "site_manager", "quality_manager", "owner", "admin"}
-PROJECT_CLOSE_ROLES = {"project_admin", "project_manager", "site_manager", "quality_manager", "owner", "admin"}
+COMPANY_ADMIN_ROLES = {"owner", "admin", "company_admin"}
+COMPANY_PROJECT_WIDE_ROLES = {"owner", "admin", "company_admin", "project_manager", "quality_manager"}
+PROJECT_WRITE_ROLES = {"project_admin", "project_manager", "site_manager", "foreman", "quality_manager", "owner", "admin", "company_admin"}
+PROJECT_CLOSE_ROLES = {"project_admin", "project_manager", "site_manager", "foreman", "quality_manager", "owner", "admin", "company_admin"}
 PROJECT_REPORT_ROLES = PROJECT_WRITE_ROLES | {"viewer"}
 
 
