@@ -5,16 +5,21 @@ import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+try:
+    from openai import OpenAI
+except Exception:  # dependency may be absent until Render rebuilds
+    OpenAI = None
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("CLEANRUN_DATA_DIR", ROOT / ".data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = DATA_DIR / "state.json"
 
-app = FastAPI(title="CleanRun IQ", version="render3-voice")
+app = FastAPI(title="CleanRun IQ", version="render3-ai-voice")
 
 if (ROOT / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(ROOT / "assets")), name="assets")
@@ -29,39 +34,7 @@ def now():
 
 def seed_state():
     today = date.today()
-    return {
-        "settings": {
-            "activeProject": "Jura Noosa",
-            "preparedBy": "CleanRun IQ",
-            "projects": ["Jura Noosa", "Meta Street"],
-            "trades": TRADES,
-            "subcontractors": SUBS,
-        },
-        "items": [
-            {
-                "id": "seed-def-022",
-                "code": "DEF-022",
-                "project": "Jura Noosa",
-                "type": "defect",
-                "status": "open",
-                "priority": "high",
-                "building": "Building 3",
-                "level": "Level 1",
-                "unit": "Unit 305",
-                "room": "Balcony",
-                "trade": "Tiling",
-                "subcontractor": "ASTW Tiling",
-                "description": "Balcony tiling to be repaired.",
-                "dueDate": (today + timedelta(days=3)).isoformat(),
-                "createdAt": now(),
-                "updatedAt": now(),
-                "originalPhotos": [],
-                "rectificationPhotos": [],
-                "comments": [],
-                "events": [],
-            }
-        ],
-    }
+    return {"settings": {"activeProject": "Jura Noosa", "preparedBy": "CleanRun IQ", "projects": ["Jura Noosa", "Meta Street"], "trades": TRADES, "subcontractors": SUBS}, "items": [{"id": "seed-def-022", "code": "DEF-022", "project": "Jura Noosa", "type": "defect", "status": "open", "priority": "high", "building": "Building 3", "level": "Level 1", "unit": "Unit 305", "room": "Balcony", "trade": "Tiling", "subcontractor": "ASTW Tiling", "description": "Balcony tiling to be repaired.", "dueDate": (today + timedelta(days=3)).isoformat(), "createdAt": now(), "updatedAt": now(), "originalPhotos": [], "rectificationPhotos": [], "comments": [], "events": []}]}
 
 
 def load_state():
@@ -88,6 +61,7 @@ def clean_description(text):
     value = text or ""
     for pattern in [r"\bbuilding\s*\d+\b", r"\blevel\s*\d+\b", r"\bunit\s*\d+[a-z]?\b", r"\bblock\s*[a-z0-9]+\b"]:
         value = re.sub(pattern, " ", value, flags=re.I)
+    value = re.sub(r"\b(on|in|at|for)\s*(,|$)", " ", value, flags=re.I)
     value = re.sub(r"\s*,\s*", ", ", value)
     value = re.sub(r"^[\s,.-]+|[\s,.-]+$", "", value)
     value = re.sub(r"\s+", " ", value).strip()
@@ -97,7 +71,7 @@ def clean_description(text):
 def parse_note(transcript):
     raw = (transcript or "").strip()
     text = raw.lower()
-    fields = {"voiceTranscript": raw, "raw_transcript": raw}
+    fields = {"voiceTranscript": raw, "voice_transcript": raw, "raw_transcript": raw}
     b = first(r"\bbuilding\s*(\d+)\b", raw)
     if b:
         fields["building"] = f"Building {b}"
@@ -117,10 +91,49 @@ def parse_note(transcript):
             fields["trade"] = trade
             break
     fields["priority"] = "urgent" if "urgent" in text or "asap" in text else "medium"
-    fields["type"] = "incomplete" if "incomplete" in text or "missing" in text else "defect"
+    fields["type"] = "incomplete" if "incomplete" in text or "missing" in text or "not finished" in text else "defect"
     fields["description"] = clean_description(raw)
     fields["voiceNote"] = {"transcript": raw, "parsed_fields": dict(fields), "created_at": now(), "status": "parsed"}
+    fields["voice_note"] = fields["voiceNote"]
     return fields
+
+
+def ai_available():
+    return bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None
+
+
+def ai_parse_note(transcript):
+    base = parse_note(transcript)
+    if not ai_available():
+        return base
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        model = os.getenv("OPENAI_PARSE_MODEL", "gpt-4o-mini")
+        prompt = "Extract CleanRun IQ defect fields as compact JSON only. Allowed keys: building, level, unit, room, trade, subcontractor, priority, type, description. Do not invent unknown fields. Description must be the actual issue only, not the location words."
+        res = client.chat.completions.create(model=model, response_format={"type": "json_object"}, messages=[{"role": "system", "content": prompt}, {"role": "user", "content": transcript}])
+        data = json.loads(res.choices[0].message.content or "{}")
+        for key in ["building", "level", "unit", "room", "trade", "subcontractor", "priority", "type", "description"]:
+            if data.get(key):
+                base[key] = data[key]
+        base["voiceNote"] = {"transcript": transcript, "parsed_fields": dict(base), "created_at": now(), "status": "ai_parsed"}
+        base["voice_note"] = base["voiceNote"]
+    except Exception as exc:
+        base["voice_warning"] = f"AI parse fallback used: {exc}"
+    return base
+
+
+async def transcribe_upload(upload):
+    if not ai_available():
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured on Render")
+    data = await upload.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Audio recording is empty")
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    model = os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+    name = getattr(upload, "filename", None) or "voice.webm"
+    mime = getattr(upload, "content_type", None) or "audio/webm"
+    result = client.audio.transcriptions.create(model=model, file=(name, data, mime))
+    return getattr(result, "text", "") or str(result)
 
 
 @app.get("/")
@@ -140,12 +153,12 @@ def health():
 
 @app.get("/api/health")
 def api_health():
-    return {"ok": True, "version": "render3-voice"}
+    return {"ok": True, "version": "render3-ai-voice"}
 
 
 @app.get("/api/voice/status")
 def voice_status():
-    return {"ai_voice_enabled": False, "deterministic_parser_enabled": True, "parse_model": "render3-deterministic"}
+    return {"ai_voice_enabled": ai_available(), "deterministic_parser_enabled": True, "transcribe_model": os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"), "parse_model": os.getenv("OPENAI_PARSE_MODEL", "gpt-4o-mini")}
 
 
 @app.post("/api/parse")
@@ -153,14 +166,25 @@ def parse(payload: dict = Body(default_factory=dict)):
     transcript = str(payload.get("transcript") or payload.get("text") or "")
     if not transcript.strip():
         raise HTTPException(status_code=400, detail="Transcript is empty")
-    return parse_note(transcript)
+    return ai_parse_note(transcript)
 
 
 @app.post("/api/voice/parse")
-def voice_parse(payload: dict = Body(default_factory=dict)):
-    transcript = str(payload.get("transcript") or payload.get("text") or "")
-    parsed = parse_note(transcript) if transcript.strip() else {}
-    return {"transcript": transcript, "parsed": parsed, "warnings": [] if parsed else ["No transcript supplied"]}
+async def voice_parse(request: Request):
+    ctype = (request.headers.get("content-type") or "").lower()
+    transcript = ""
+    if "multipart/form-data" in ctype:
+        form = await request.form()
+        transcript = str(form.get("transcript") or "")
+        audio = form.get("audio") or form.get("file") or form.get("recording")
+        if audio is not None and hasattr(audio, "read"):
+            transcript = await transcribe_upload(audio)
+    elif "application/json" in ctype:
+        data = await request.json()
+        transcript = str(data.get("transcript") or data.get("text") or "")
+    if not transcript.strip():
+        raise HTTPException(status_code=400, detail="No transcript or audio supplied")
+    return {"transcript": transcript, "parsed": ai_parse_note(transcript), "warnings": []}
 
 
 @app.get("/api/state")
@@ -174,7 +198,7 @@ def create_item(payload: dict = Body(default_factory=dict)):
     kind = payload.get("type") or "defect"
     prefix = "INC" if kind == "incomplete" else "DEF"
     n = 1 + sum(1 for i in state.get("items", []) if str(i.get("code", "")).startswith(prefix + "-"))
-    item = {"id": str(uuid.uuid4()), "code": f"{prefix}-{n:03d}", "project": payload.get("project") or state["settings"]["activeProject"], "type": kind, "status": payload.get("status") or "open", "priority": payload.get("priority") or "medium", "building": payload.get("building") or "", "level": payload.get("level") or "", "unit": payload.get("unit") or "", "room": payload.get("room") or "", "trade": payload.get("trade") or "", "subcontractor": payload.get("subcontractor") or "", "description": payload.get("description") or "", "dueDate": payload.get("dueDate") or (date.today() + timedelta(days=7)).isoformat(), "createdAt": now(), "updatedAt": now(), "originalPhotos": payload.get("originalPhotos") or payload.get("photos") or [], "rectificationPhotos": [], "comments": [], "events": [], "voiceTranscript": payload.get("voiceTranscript") or "", "voiceNote": payload.get("voiceNote")}
+    item = {"id": str(uuid.uuid4()), "code": f"{prefix}-{n:03d}", "project": payload.get("project") or state["settings"]["activeProject"], "type": kind, "status": payload.get("status") or "open", "priority": payload.get("priority") or "medium", "building": payload.get("building") or "", "level": payload.get("level") or "", "unit": payload.get("unit") or "", "room": payload.get("room") or "", "trade": payload.get("trade") or "", "subcontractor": payload.get("subcontractor") or "", "description": payload.get("description") or "", "dueDate": payload.get("dueDate") or (date.today() + timedelta(days=7)).isoformat(), "createdAt": now(), "updatedAt": now(), "originalPhotos": payload.get("originalPhotos") or payload.get("photos") or [], "rectificationPhotos": [], "comments": [], "events": [], "voiceTranscript": payload.get("voiceTranscript") or payload.get("voice_transcript") or "", "voiceNote": payload.get("voiceNote") or payload.get("voice_note")}
     state.setdefault("items", []).append(item)
     save_state(state)
     return item
