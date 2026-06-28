@@ -318,6 +318,8 @@ function draftFromNote() {
     rooms: cfg.rooms || [],
     projectNames: state.settings ? state.settings.projects : [],
   });
+  console.log('[CleanRun] parsed result:', JSON.stringify(parsed));
+  console.log('[CleanRun] cfg.units:', JSON.stringify(cfg.units || []));
   applyParsedFields(parsed);
 }
 
