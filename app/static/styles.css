@@ -102,6 +102,12 @@ h1 { font-size: clamp(26px, 6vw, 44px); line-height:.95; }
 h2 { font-size: 21px; line-height:1; }
 h3 { color:var(--steel); text-transform:uppercase; font-size:12px; letter-spacing:.7px; }
 .hero-card p:not(.eyebrow) { margin:8px 0 0; color:rgba(255,255,255,.68); font-size:13px; line-height:1.4; }
+.hero-actions { display:grid; gap:8px; justify-items:end; }
+.current-user { color:rgba(255,255,255,.72); font-size:11px; font-weight:800; text-align:right; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.auth-panel { padding:16px; }
+.auth-grid { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin-top:12px; }
+.auth-token-row { grid-template-columns:1fr auto; }
+.auth-dev-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
 
 .register-tools { padding:14px; }
 .stats-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; }
@@ -130,11 +136,6 @@ h3 { color:var(--steel); text-transform:uppercase; font-size:12px; letter-spacin
 .thumb button { position:absolute; top:3px; right:3px; border:0; background:var(--danger); color:white; border-radius:999px; width:22px; height:22px; font-weight:900; }
 .voice-card { box-shadow:none; }
 .voice-card textarea { margin-top:12px; min-height:72px; }
-.voice-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:4px; }
-.voice-record-btn { width:auto; margin-top:0; }
-.voice-record-btn.recording { background:var(--danger,#d93232) !important; color:#fff !important; }
-.voice-record-btn.processing { opacity:.6; }
-.voice-status { margin:0; font-size:12px; color:var(--steel,#65758b); flex:1; }
 
 .form-panel { overflow:hidden; }
 .form-group { padding:16px; border-bottom:1px solid var(--line); }
@@ -225,7 +226,7 @@ button, .small-btn, .secondary-btn, .ghost-btn, .primary-btn { border:0; min-hei
 
 @media (max-width: 720px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .tool-row, .view-row, .project-setting-row { grid-template-columns:1fr; }
+  .tool-row, .view-row, .project-setting-row, .auth-grid, .auth-token-row, .auth-dev-row { grid-template-columns:1fr; }
   .photo-actions { grid-template-columns:1fr 1fr; }
   .card-actions { grid-template-columns:1fr 1fr; }
   .card-actions .quiet-action { grid-column:span 1; }

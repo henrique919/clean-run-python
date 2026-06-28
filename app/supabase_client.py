@@ -34,6 +34,7 @@ def _load_supabase_create_client() -> Any:
     existing = sys.modules.get("supabase")
     if existing is not None and not hasattr(existing, "create_client"):
         sys.modules.pop("supabase", None)
+
     try:
         sys.path = [
             path
@@ -49,4 +50,5 @@ def _load_supabase_create_client() -> Any:
     create_client = getattr(module, "create_client", None)
     if create_client is None:
         raise RuntimeError("Installed Supabase Python client does not expose create_client")
+
     return create_client
