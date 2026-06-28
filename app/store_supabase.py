@@ -17,6 +17,7 @@ from app.models import (
     Settings,
     SyncState,
 )
+from app.config import is_production
 from app.store import CleanRunStore, seed_data, seed_settings
 from app.storage import normalize_photo
 from app.supabase_client import get_supabase_client
@@ -50,6 +51,9 @@ class SupabaseCleanRunStore(CleanRunStore):
     def __init__(self) -> None:
         self.lock = RLock()
         self.client = get_supabase_client()
+        if is_production():
+            logger.info("Skipping Supabase startup seed in production; migrations/admin setup own bootstrap data.")
+            return
         self._bootstrap_if_empty()
 
     def _bootstrap_if_empty(self) -> None:
