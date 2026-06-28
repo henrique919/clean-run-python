@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -66,6 +68,64 @@ class SettingsPayload(BaseModel):
     project_configs: dict[str, ProjectConfig] | None = None
 
 
+def _configured_project_context(project: str) -> dict:
+    data = store.snapshot()
+    cfg = data.settings.project_configs.get(project)
+    if not cfg:
+        raise HTTPException(status_code=400, detail="Unknown project for voice parsing")
+    return {
+        "project": project,
+        "buildings": cfg.buildings,
+        "levels": cfg.levels,
+        "units": cfg.units,
+        "rooms": cfg.rooms,
+        "trades": TRADES,
+        "subcontractors": data.settings.subcontractors,
+        "sub_profiles": {name: profile.model_dump() for name, profile in data.settings.sub_profiles.items()},
+        "item_types": ["defect", "incomplete", "client"],
+        "priorities": ["high", "urgent"],
+    }
+
+
+def _voice_item_schema() -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "project": {"type": ["string", "null"]},
+            "building": {"type": ["string", "null"]},
+            "level": {"type": ["string", "null"]},
+            "unit": {"type": ["string", "null"]},
+            "room": {"type": ["string", "null"]},
+            "trade": {"type": ["string", "null"]},
+            "subcontractor": {"type": ["string", "null"]},
+            "priority": {"type": "string", "enum": ["high", "urgent"]},
+            "type": {"type": "string", "enum": ["defect", "incomplete", "client"]},
+            "due_date": {"type": ["string", "null"]},
+            "description": {"type": "string"},
+            "raw_transcript": {"type": "string"},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "warnings": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [
+            "project",
+            "building",
+            "level",
+            "unit",
+            "room",
+            "trade",
+            "subcontractor",
+            "priority",
+            "type",
+            "due_date",
+            "description",
+            "raw_transcript",
+            "confidence",
+            "warnings",
+        ],
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     html = Path("app/static/index.html").read_text(encoding="utf-8")
@@ -106,6 +166,95 @@ def storage_status():
         "latest_photo_type": "storage_url" if latest_photo and str(latest_photo).startswith("http") else "base64_or_empty" if latest_photo else "none",
         "latest_photo_preview": str(latest_photo)[:80] if latest_photo else None,
     }
+
+
+@app.get("/api/voice/status")
+def voice_status() -> dict[str, bool | str]:
+    return {
+        "ai_voice_enabled": bool(os.getenv("OPENAI_API_KEY")),
+        "transcribe_model": os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"),
+        "parse_model": os.getenv("OPENAI_PARSE_MODEL", "gpt-4o-mini"),
+    }
+
+
+@app.post("/api/voice/parse")
+async def parse_voice_note(audio: UploadFile = File(...), project: str = Form(...)):
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=503, detail="AI voice parsing is not configured. Type the note and use Draft form from note.")
+
+    try:
+        from openai import OpenAI
+    except Exception as exc:
+        logger.exception("OpenAI SDK unavailable")
+        raise HTTPException(status_code=503, detail="AI voice parser dependency is unavailable.") from exc
+
+    context = _configured_project_context(project)
+    suffix = Path(audio.filename or "voice-note.webm").suffix or ".webm"
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Voice recording was empty. Retry or type the note.")
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+
+        with open(tmp_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"),
+                file=audio_file,
+                response_format="text",
+            )
+
+        transcript = transcription if isinstance(transcription, str) else getattr(transcription, "text", "")
+        transcript = str(transcript or "").strip()
+        if not transcript:
+            raise HTTPException(status_code=422, detail="No speech was detected. Retry or type the note.")
+
+        completion = client.chat.completions.create(
+            model=os.getenv("OPENAI_PARSE_MODEL", "gpt-4o-mini"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You convert Australian construction site voice notes into CleanRun IQ item fields. "
+                        "Use the allowed project context wherever possible. Do not invent locations, trades, or subcontractors. "
+                        "Preserve the full spoken note as raw_transcript, but keep description concise and remove structured location data. "
+                        "Example: 'Building 3, Unit 305, Balcony, on Level 1, tiling to be repaired.' becomes "
+                        "building B3/Building 3, unit U305/Unit 305, room Balcony, level Level 1, trade Tiling, "
+                        "description 'Tiling to be repaired.'"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps({"transcript": transcript, "allowed_context": context}),
+                },
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "cleanrun_voice_item",
+                    "strict": True,
+                    "schema": _voice_item_schema(),
+                },
+            },
+        )
+        parsed = json.loads(completion.choices[0].message.content or "{}")
+        parsed["raw_transcript"] = transcript
+        return {"transcript": transcript, "parsed": parsed, "source": "ai"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("AI voice parse failed")
+        raise HTTPException(status_code=502, detail="AI voice parsing failed. Retry or type the note.") from exc
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 @app.get("/api/bootstrap")
@@ -237,7 +386,7 @@ def report_html(report_type: str, project: str | None = Query(default=None)):
 def report_summary(report_type: str, project: str | None = Query(default=None)):
     data = store.snapshot()
     project_name = project or data.settings.active_project
-    items = filter_items([i for i in data.items if i.project == project_name], report_type)
+    items = filter_items([i for i in items if i.project == project_name], report_type)
     return {
         "report_type": report_type,
         "project": project_name,
