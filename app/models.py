@@ -146,10 +146,6 @@ class AuditEvent(BaseModel):
     action: str
     by: str | None = None
     note: str | None = None
-    user_id: str | None = None
-    email: str | None = None
-    role: str | None = None
-    context: dict[str, Any] | None = None
 
 
 class VoiceNote(BaseModel):
