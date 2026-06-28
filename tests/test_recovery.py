@@ -110,8 +110,12 @@ class RecoveryTests(unittest.TestCase):
 
         for element_id in ("statsBar", "searchInput", "statusFilter", "clearFilters", "saveBtn", "issueBtn"):
             self.assertIn(f'id="{element_id}"', html)
-        self.assertIn('type="module" src="/static/app.js"', html)
-        self.assertEqual(entry_script.strip(), 'import "./js/main.js";')
+        self.assertIn('<script src="/static/voice-parser.js?v=3"></script>', html)
+        self.assertIn('<script src="/static/voice-capture.js?v=3"></script>', html)
+        self.assertIn('<script src="/static/app.js?v=3"></script>', html)
+        self.assertEqual(entry_script.strip(), 'import("/static/js/main.js");')
+        self.assertIn("window.VoiceParser", (root / "app/static/voice-parser.js").read_text(encoding="utf-8"))
+        self.assertIn("voiceRecordBtn", html)
         for action in ("data-rectify", "data-reject", "data-close", "data-comment"):
             self.assertIn(action, script)
         self.assertEqual(script.count("function renderItems()"), 1)

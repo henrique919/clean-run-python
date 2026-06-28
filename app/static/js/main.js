@@ -354,20 +354,59 @@ async function handleCaptureFiles(files, input) {
   clearValidation();
 }
 
-function draftFromNote() {
-  const value = $("voiceNote").value.trim();
-  if (!value) return;
-  const lower = value.toLowerCase();
-  const cfg = projectConfig();
-  for (const building of cfg?.buildings || []) if (lower.includes(building.toLowerCase())) $("building").value = building;
-  for (const unit of cfg?.units || []) if (lower.includes(unit.toLowerCase())) $("unit").value = unit;
-  for (const room of cfg?.rooms || []) if (lower.includes(room.toLowerCase())) $("room").value = room;
-  for (const trade of state.trades) if (lower.includes(trade.toLowerCase())) $("trade").value = trade;
-  if (!$("description").value.trim()) $("description").value = value;
+function applyParsedFields(parsed) {
+  const warnings = [];
+  function applyField(fieldId, value, label) {
+    if (!value) return;
+    const el = $(fieldId);
+    if (!el) return;
+    if (!el.value.trim()) { el.value = value; }
+    else { warnings.push(`${label} already filled — voice result (${value}) not applied.`); }
+  }
+  applyField("building", parsed.building, "Building");
+  applyField("level", parsed.level, "Level");
+  applyField("unit", parsed.unit, "Unit");
+  applyField("room", parsed.room, "Room");
+  if (parsed.trade) {
+    const tradeEl = $("trade");
+    if (tradeEl && !tradeEl.value) {
+      const opt = [...tradeEl.options].find(o => o.value === parsed.trade);
+      if (opt) tradeEl.value = parsed.trade;
+    } else if (tradeEl && tradeEl.value) {
+      warnings.push(`Trade already selected — voice result (${parsed.trade}) not applied.`);
+    }
+  }
+  if (parsed.description) {
+    const descEl = $("description");
+    const currentDesc = descEl ? descEl.value.trim() : '';
+    const rawTranscript = (parsed.raw_transcript || '').trim();
+    if (descEl && (!currentDesc || currentDesc.toLowerCase() === rawTranscript.toLowerCase())) {
+      descEl.value = parsed.description;
+    }
+  }
   refreshSubcontractors();
   clearValidation();
-  toast("Drafted fields from note. Review before saving.");
+  toast(warnings.length ? warnings.join(" ") : "Fields drafted from note. Review before saving.");
 }
+
+function draftFromNote() {
+  const value = $("voiceNote").value.trim();
+  if (!value) { toast("Type or speak a note first."); return; }
+  if (!window.VoiceParser) { toast("Parser not loaded — refresh the page."); return; }
+  const cfg = projectConfig() || {};
+  const parsed = window.VoiceParser.parseVoiceNote(value, {
+    buildings: cfg.buildings || [],
+    levels: cfg.levels || [],
+    units: cfg.units || [],
+    rooms: cfg.rooms || [],
+    projectNames: state.settings ? state.settings.projects : [],
+  });
+  console.log('[CleanRun] parsed result:', JSON.stringify(parsed));
+  console.log('[CleanRun] cfg.units:', JSON.stringify(cfg.units || []));
+  applyParsedFields(parsed);
+}
+
+window.draftFromVoice = function (transcript) { draftFromNote(); };
 
 function payload() {
   const voiceText = $("voiceNote").value.trim();
