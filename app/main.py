@@ -286,6 +286,24 @@ def create_access_request(payload: AccessRequest):
         return store.create_access_request(payload)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Access request submission failed for %s", payload.email)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not submit request. Please email info@cleanruniq.com.",
+        ) from exc
+
+
+@app.get("/api/deploy")
+def deploy_status() -> dict[str, object]:
+    return {
+        "app": "cleanrun-iq",
+        "version": app.version,
+        "render_git_commit": os.getenv("RENDER_GIT_COMMIT"),
+        "render_service_name": os.getenv("RENDER_SERVICE_NAME"),
+        "storage": os.getenv("CLEANRUN_STORAGE", "local"),
+        "supabase_url_configured": bool(os.getenv("SUPABASE_URL")),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
