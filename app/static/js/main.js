@@ -135,6 +135,33 @@ async function loginWithToken(token) {
   await bootstrap();
 }
 
+function showAccessRequestPanel() {
+  $("accessRequestPanel")?.classList.toggle("hidden");
+}
+
+async function submitAccessRequest() {
+  const payload = {
+    full_name: $("requestFullName")?.value.trim(),
+    email: $("requestEmail")?.value.trim(),
+    company: $("requestCompany")?.value.trim(),
+    role_requested: $("requestRole")?.value.trim(),
+    project_site: $("requestProject")?.value.trim(),
+    message: $("requestMessage")?.value.trim(),
+  };
+  const missing = ["full_name", "email", "company", "role_requested", "project_site"].find((key) => !payload[key]);
+  if (missing) return toast("Complete the request access form.");
+  const res = await fetch("/api/access-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return toast("Could not submit access request.");
+  ["requestFullName", "requestEmail", "requestCompany", "requestRole", "requestProject", "requestMessage"].forEach((id) => {
+    if ($(id)) $(id).value = "";
+  });
+  toast("Request submitted. Admin approval is required before login.");
+}
+
 function logout() {
   setAuthToken("");
   state.user = null;
@@ -823,6 +850,8 @@ function bindKeyboardDone() { const done = $("keyboardDone"); if (!done) return;
 function bind() {
   $("loginBtn")?.addEventListener("click", loginWithPassword);
   $("tokenLoginBtn")?.addEventListener("click", () => loginWithToken($("authToken")?.value.trim()));
+  $("showAccessRequest")?.addEventListener("click", showAccessRequestPanel);
+  $("submitAccessRequest")?.addEventListener("click", submitAccessRequest);
   $("logoutBtn")?.addEventListener("click", logout);
   document.querySelectorAll("[data-dev-token]").forEach((button) => {
     button.addEventListener("click", () => loginWithToken(button.dataset.devToken));

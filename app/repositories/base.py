@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from app.models import (
+    AccessRequest,
     AppData,
     CloseoutEvidence,
     Comment,
@@ -42,5 +43,7 @@ class CleanRunRepository(Protocol):
     def add_comment(self, item_id: str, comment: Comment, *, actor: dict[str, Any] | None = None) -> Item: ...
 
     def update_settings(self, settings: Settings) -> Settings: ...
+
+    def create_access_request(self, payload: AccessRequest) -> AccessRequest: ...
 
     def reset_demo(self) -> AppData: ...

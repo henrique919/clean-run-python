@@ -9,6 +9,7 @@ from threading import RLock
 from typing import Any, Callable
 
 from app.models import (
+    AccessRequest,
     AppData,
     AuditEvent,
     CloseoutEvidence,
@@ -238,6 +239,12 @@ class CleanRunStore:
         data.settings = settings
         self._write(data)
         return data.settings
+
+    def create_access_request(self, payload: AccessRequest) -> AccessRequest:
+        data = self._read()
+        data.access_requests.insert(0, payload)
+        self._write(data)
+        return payload
 
     def _patch(self, item_id: str, mutator: Callable[[Item], Item]) -> Item:
         data = self._read()

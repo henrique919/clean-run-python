@@ -240,6 +240,40 @@ class SubProfile(BaseModel):
     phone: str | None = None
 
 
+class AccessRequest(BaseModel):
+    id: str = Field(default_factory=make_id)
+    full_name: str
+    email: str
+    company: str
+    role_requested: str
+    project_site: str
+    message: str | None = None
+    status: Literal["pending", "approved", "rejected"] = "pending"
+    created_at: str = Field(default_factory=now_iso)
+
+    @field_validator("full_name", "email", "company", "role_requested", "project_site")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Required field")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def email_shape(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or "." not in value.rsplit("@", 1)[-1]:
+            raise ValueError("Enter a valid email")
+        return value
+
+    @field_validator("message")
+    @classmethod
+    def optional_text(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
+
 class Settings(BaseModel):
     projects: list[str]
     project_configs: dict[str, ProjectConfig]
@@ -253,3 +287,4 @@ class Settings(BaseModel):
 class AppData(BaseModel):
     items: list[Item]
     settings: Settings
+    access_requests: list[AccessRequest] = Field(default_factory=list)

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from app.auth import RequestContext, get_request_context
 from app.config import app_env, is_production
 from app.db import build_repository
-from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, TRADES
+from app.models import AccessRequest, CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, TRADES
 from app.permissions import (
     require_close_item,
     require_comment_access,
@@ -278,6 +278,14 @@ def auth_config() -> dict[str, object]:
         "environment": os.getenv("CLEANRUN_ENV", "development"),
         "dev_tokens_enabled": not is_production(),
     }
+
+
+@app.post("/api/access-requests", status_code=201)
+def create_access_request(payload: AccessRequest):
+    try:
+        return store.create_access_request(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -8,6 +8,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from app.models import (
+    AccessRequest,
     AppData,
     AuditEvent,
     CloseoutEvidence,
@@ -447,6 +448,10 @@ class SupabaseCleanRunStore(CleanRunStore):
                 on_conflict="id",
             ).execute()
         return settings
+
+    def create_access_request(self, payload: AccessRequest) -> AccessRequest:
+        self.client.table("access_requests").insert(payload.model_dump(mode="json")).execute()
+        return payload
 
     def _read_settings(self) -> Settings:
         response = self.client.table("app_settings").select("payload").eq("id", SETTINGS_ID).limit(1).execute()

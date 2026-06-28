@@ -122,6 +122,23 @@ class AuthPermissionTests(unittest.TestCase):
         response = self.client.post("/api/items", json={})
         self.assertEqual(response.status_code, 401)
 
+    def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
+        response = self.client.post(
+            "/api/access-requests",
+            json={
+                "full_name": "Harry Site",
+                "email": "harry@example.com",
+                "company": "qld Built",
+                "role_requested": "Project Manager",
+                "project_site": "Jura Noosa",
+                "message": "Please approve access.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], "pending")
+        self.assertEqual(self.client.get("/api/bootstrap").status_code, 401)
+
     def test_project_scope_is_not_leaked_between_companies(self) -> None:
         other_item = self.create_direct_item(project="Other Project", subcontractor="Other Trade")
 

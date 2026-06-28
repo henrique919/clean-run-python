@@ -31,6 +31,16 @@
         <input id="authEmail" type="email" placeholder="Email" autocomplete="email" />
         <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password" />
         <button class="primary-btn" id="loginBtn" type="button">Login</button>
+        <button class="ghost-btn" id="showAccessRequest" type="button">Request access</button>
+      </div>
+      <div class="auth-grid hidden" id="accessRequestPanel">
+        <input id="requestFullName" placeholder="Full name" autocomplete="name" />
+        <input id="requestEmail" type="email" placeholder="Email" autocomplete="email" />
+        <input id="requestCompany" placeholder="Company" autocomplete="organization" />
+        <input id="requestRole" placeholder="Role requested" />
+        <input id="requestProject" placeholder="Project/site" />
+        <textarea id="requestMessage" placeholder="Message"></textarea>
+        <button class="primary-btn" id="submitAccessRequest" type="button">Submit request</button>
       </div>
       <div class="auth-grid auth-token-row">
         <input id="authToken" type="password" placeholder="Access token" autocomplete="off" />
