@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "test:voice": "node tests/voice-parser.test.js",
     "supabase": "supabase",
     "supabase:win": "set DOCKER_HOST=tcp://localhost:2375&& set PATH=%LOCALAPPDATA%\\Programs\\DockerDesktop\\resources\\bin;%LOCALAPPDATA%\\Programs\\DockerDesktop\\resources\\cli-plugins;%PATH%&& supabase",
     "supabase:types": "set DOCKER_HOST=tcp://localhost:2375&& set PATH=%LOCALAPPDATA%\\Programs\\DockerDesktop\\resources\\bin;%LOCALAPPDATA%\\Programs\\DockerDesktop\\resources\\cli-plugins;%PATH%&& supabase gen types typescript --db-url postgresql://postgres:postgres@localhost:54322/postgres --schema public,storage > supabase/types/database.types.ts"
