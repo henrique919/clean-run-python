@@ -1,4 +1,12 @@
 -- Explicit indexes for every foreign key plus high-cardinality register filters.
+alter table public.items
+  add column if not exists subcontractor_id uuid references public.subcontractors(id) on delete set null;
+alter table public.evidence
+  add column if not exists uploaded_by uuid references public.profiles(id) on delete set null;
+alter table public.comments
+  add column if not exists created_by uuid references public.profiles(id) on delete set null;
+alter table public.audit_events
+  add column if not exists created_by uuid references public.profiles(id) on delete set null;
 
 create index if not exists profiles_role_idx on public.profiles(role);
 

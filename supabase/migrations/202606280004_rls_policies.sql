@@ -1,4 +1,20 @@
 -- Default-deny RLS: every table has RLS enabled before policies are added.
+-- Some early live projects applied the core schema before created_by existed.
+-- Keep this migration repeatable so production can be brought forward safely.
+alter table public.projects
+  add column if not exists created_by uuid references public.profiles(id) on delete set null;
+alter table public.subcontractors
+  add column if not exists project_id uuid references public.projects(id) on delete cascade;
+alter table public.items
+  add column if not exists project_id uuid references public.projects(id) on delete restrict;
+alter table public.evidence
+  add column if not exists item_id uuid references public.items(id) on delete cascade;
+alter table public.comments
+  add column if not exists item_id uuid references public.items(id) on delete cascade;
+alter table public.audit_events
+  add column if not exists item_id uuid references public.items(id) on delete cascade;
+alter table public.app_settings
+  add column if not exists project_id uuid references public.projects(id) on delete cascade;
 
 alter table public.profiles enable row level security;
 alter table public.projects enable row level security;
