@@ -294,7 +294,12 @@ function applyParsedFields(parsed) {
   }
   if (parsed.description) {
     const descEl = $("description");
-    if (descEl && !descEl.value.trim()) descEl.value = parsed.description;
+    const currentDesc = descEl ? descEl.value.trim() : '';
+    const rawTranscript = (parsed.raw_transcript || '').trim();
+    // Set if empty, or if current value is just the raw transcript (old code filled it)
+    if (descEl && (!currentDesc || currentDesc.toLowerCase() === rawTranscript.toLowerCase())) {
+      descEl.value = parsed.description;
+    }
   }
   refreshSubcontractors();
   clearValidation();

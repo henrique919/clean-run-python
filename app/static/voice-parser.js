@@ -285,9 +285,13 @@
     const unit = detectUnit(original);
     if (unit) {
       const cfgUnits = config.units || [];
-      // Match by normalised form (strip leading U from both)
-      const norm = unit.replace(/^U/, '');
-      const match = cfgUnits.find(u => u === unit || u.replace(/^U/, '') === norm);
+      // Normalise to digits-only for comparison ("U203" → "203", "Unit 203" → "203")
+      const norm = unit.replace(/^U(?:nit\s*)?/i, '').trim();
+      const match = cfgUnits.find(function (u) {
+        if (u === unit) return true;
+        const uNorm = u.replace(/^U(?:nit\s*)?/i, '').trim();
+        return uNorm === norm;
+      });
       parsed.unit = match || unit;
     }
 
