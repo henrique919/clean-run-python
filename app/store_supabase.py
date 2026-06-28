@@ -450,7 +450,18 @@ class SupabaseCleanRunStore(CleanRunStore):
         return settings
 
     def create_access_request(self, payload: AccessRequest) -> AccessRequest:
-        self.client.table("access_requests").insert(payload.model_dump(mode="json"), returning="minimal").execute()
+        self.client.rpc(
+            "submit_access_request",
+            {
+                "p_id": payload.id,
+                "p_full_name": payload.full_name,
+                "p_email": payload.email,
+                "p_company": payload.company,
+                "p_role_requested": payload.role_requested,
+                "p_project_site": payload.project_site,
+                "p_message": payload.message,
+            },
+        ).execute()
         return payload
 
     def _read_settings(self) -> Settings:

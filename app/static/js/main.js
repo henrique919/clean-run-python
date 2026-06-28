@@ -155,7 +155,7 @@ async function submitAccessRequest() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) return toast("Could not submit access request.");
+  if (!res.ok) return toast("Could not submit access request. Email info@cleanruniq.com.");
   ["requestFullName", "requestEmail", "requestCompany", "requestRole", "requestProject", "requestMessage"].forEach((id) => {
     if ($(id)) $(id).value = "";
   });
