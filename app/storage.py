@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 BUCKET_NAME = os.getenv("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence")
 MAX_IMAGE_BYTES = int(os.getenv("CLEANRUN_MAX_IMAGE_BYTES", "8000000"))
+SIGNED_URL_TTL_SECONDS = int(os.getenv("CLEANRUN_STORAGE_SIGNED_URL_TTL_SECONDS", "604800"))
 
 CONTENT_TYPE_EXT = {
     "image/jpeg": ".jpg",
@@ -18,6 +19,10 @@ CONTENT_TYPE_EXT = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+
+
+def _is_production() -> bool:
+    return os.getenv("CLEANRUN_ENV", "development").lower() == "production"
 
 
 def is_data_url(value: str | None) -> bool:
@@ -35,12 +40,12 @@ def _split_data_url(value: str) -> tuple[str, bytes]:
     return content_type, data
 
 
-def _public_url(client, path: str) -> str:
-    result = client.storage.from_(BUCKET_NAME).get_public_url(path)
+def _signed_url(client, path: str) -> str:
+    result = client.storage.from_(BUCKET_NAME).create_signed_url(path, SIGNED_URL_TTL_SECONDS)
     if isinstance(result, str):
         return result
     if isinstance(result, dict):
-        return result.get("publicUrl") or result.get("public_url") or result.get("signedURL") or path
+        return result.get("signedURL") or result.get("signed_url") or path
     return str(result)
 
 
@@ -55,7 +60,7 @@ def _ensure_bucket(client) -> None:
         client.storage.create_bucket(
             BUCKET_NAME,
             options={
-                "public": True,
+                "public": False,
                 "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"],
                 "file_size_limit": MAX_IMAGE_BYTES,
             },
@@ -65,11 +70,20 @@ def _ensure_bucket(client) -> None:
         raise
 
 
+def _object_path(folder: str, ext: str) -> str:
+    prefix = os.getenv("CLEANRUN_STORAGE_PATH_PREFIX", "").strip().strip("/")
+    if not prefix:
+        if _is_production():
+            raise RuntimeError("CLEANRUN_STORAGE_PATH_PREFIX is required for private production storage uploads")
+        prefix = "local-dev/unlinked/unlinked"
+    return f"{prefix}/{folder}/{uuid4().hex}{ext}"
+
+
 def upload_data_url(value: str, *, folder: str = "evidence") -> str:
-    """Upload a browser data URL to Supabase Storage and return its public URL."""
+    """Upload a browser data URL to private Supabase Storage and return a signed URL."""
     content_type, data = _split_data_url(value)
     ext = CONTENT_TYPE_EXT[content_type]
-    path = f"{folder}/{uuid4().hex}{ext}"
+    path = _object_path(folder, ext)
     client = get_supabase_client()
     _ensure_bucket(client)
     client.storage.from_(BUCKET_NAME).upload(
@@ -81,7 +95,7 @@ def upload_data_url(value: str, *, folder: str = "evidence") -> str:
             "upsert": "false",
         },
     )
-    return _public_url(client, path)
+    return _signed_url(client, path)
 
 
 def normalize_photo(value: str | None, *, folder: str = "evidence") -> str | None:

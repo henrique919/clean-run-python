@@ -2,8 +2,11 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+node_modules/
 .env
 .DS_Store
 .cleanrun-data/
 .pytest_cache/
+supabase/.branches/
+supabase/.temp/
 .env
