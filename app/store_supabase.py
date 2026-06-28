@@ -50,11 +50,14 @@ class SupabaseCleanRunStore(CleanRunStore):
 
     def __init__(self) -> None:
         self.lock = RLock()
-        self.client = get_supabase_client()
         if is_production():
             logger.info("Skipping Supabase startup seed in production; migrations/admin setup own bootstrap data.")
             return
         self._bootstrap_if_empty()
+
+    @property
+    def client(self):
+        return get_supabase_client()
 
     def _bootstrap_if_empty(self) -> None:
         response = self.client.table("items").select("id").limit(1).execute()

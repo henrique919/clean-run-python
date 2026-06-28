@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import is_production
+from app.supabase_client import reset_supabase_access_token, set_supabase_access_token
 
 try:
     import jwt
@@ -38,6 +39,7 @@ class AuthUser:
 @dataclass(frozen=True)
 class RequestContext:
     user: AuthUser
+    access_token: str | None = None
 
 
 def _dev_users() -> dict[str, AuthUser]:
@@ -139,11 +141,13 @@ def _decode_supabase_jwt(token: str) -> AuthUser:
     return user
 
 
-def _authenticate(credentials: HTTPAuthorizationCredentials | None) -> AuthUser:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+def _request_token(request: Request, credentials: HTTPAuthorizationCredentials | None) -> str | None:
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        return credentials.credentials.strip()
+    return (request.cookies.get("cleanrun_access_token") or "").strip() or None
 
-    token = credentials.credentials.strip()
+
+def _authenticate(token: str | None) -> AuthUser:
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
@@ -153,13 +157,24 @@ def _authenticate(credentials: HTTPAuthorizationCredentials | None) -> AuthUser:
     return _decode_supabase_jwt(token)
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> AuthUser:
-    return _authenticate(credentials)
-
-
-def get_request_context(
+def get_current_user(
     request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> AuthUser:
+    return _authenticate(_request_token(request, credentials))
+
+
+async def get_request_context(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     user: AuthUser = Depends(get_current_user),
 ) -> RequestContext:
+    token = _request_token(request, credentials)
+    supabase_token = token if user.auth_method == "jwt" else None
+    context_token = set_supabase_access_token(supabase_token)
     request.state.user = user
-    return RequestContext(user=user)
+    request.state.supabase_access_token = supabase_token
+    try:
+        yield RequestContext(user=user, access_token=supabase_token)
+    finally:
+        reset_supabase_access_token(context_token)

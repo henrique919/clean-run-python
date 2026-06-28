@@ -82,6 +82,11 @@ class SettingsPayload(BaseModel):
     project_configs: dict[str, ProjectConfig] | None = None
 
 
+class LegacyParsePayload(BaseModel):
+    transcript: str | None = None
+    text: str | None = None
+
+
 def actor_label(ctx: RequestContext) -> str:
     return ctx.user.audit_label
 
@@ -116,6 +121,93 @@ def scoped_settings(settings: Settings, ctx: RequestContext) -> Settings:
             "prepared_by": ctx.user.audit_label,
         }
     )
+
+
+def camel_settings(settings: Settings) -> dict[str, object]:
+    payload = settings.model_dump(mode="json")
+    payload["activeProject"] = payload.pop("active_project", "")
+    payload["projectConfigs"] = payload.pop("project_configs", {})
+    payload["subProfiles"] = payload.pop("sub_profiles", {})
+    payload["preparedBy"] = payload.pop("prepared_by", "")
+    for config in payload["projectConfigs"].values():
+        if "default_due_days" in config:
+            config["defaultDueDays"] = config.pop("default_due_days")
+        if "preferred_items_view" in config:
+            config["preferredItemsView"] = config.pop("preferred_items_view")
+    return payload
+
+
+def camel_item(item) -> dict[str, object]:
+    payload = item.model_dump(mode="json")
+    rename = {
+        "due_date": "dueDate",
+        "original_photos": "originalPhotos",
+        "voice_transcript": "voiceTranscript",
+        "voice_note": "voiceNote",
+        "created_by": "createdBy",
+        "created_at": "createdAt",
+        "updated_at": "updatedAt",
+        "rectification_evidence": "rectificationEvidence",
+        "closeout_evidence": "closeoutEvidence",
+        "issue_history": "issueHistory",
+        "inspection_history": "inspectionHistory",
+        "audit_events": "auditEvents",
+        "issued_at": "issuedAt",
+        "in_progress_at": "inProgressAt",
+        "ready_for_review_at": "readyForReviewAt",
+        "under_inspection_at": "underInspectionAt",
+        "closed_at": "closedAt",
+        "rejection_reason": "rejectionReason",
+    }
+    for source, target in rename.items():
+        if source in payload:
+            payload[target] = payload.pop(source)
+    return payload
+
+
+def snake_item_payload(payload: dict[str, object]) -> dict[str, object]:
+    rename = {
+        "dueDate": "due_date",
+        "originalPhotos": "original_photos",
+        "voiceTranscript": "voice_transcript",
+        "voiceNote": "voice_note",
+        "createdBy": "created_by",
+        "raisedBy": "raised_by",
+    }
+    result = dict(payload)
+    for source, target in rename.items():
+        if source in result:
+            result[target] = result.pop(source)
+    return result
+
+
+def snake_settings_payload(payload: dict[str, object]) -> dict[str, object]:
+    result = dict(payload)
+    if "activeProject" in result:
+        result["active_project"] = result.pop("activeProject")
+    if "projectConfigs" in result:
+        result["project_configs"] = result.pop("projectConfigs")
+    if "subProfiles" in result:
+        result["sub_profiles"] = result.pop("subProfiles")
+    if "preparedBy" in result:
+        result["prepared_by"] = result.pop("preparedBy")
+    configs = result.get("project_configs")
+    if isinstance(configs, dict):
+        for config in configs.values():
+            if isinstance(config, dict):
+                if "defaultDueDays" in config:
+                    config["default_due_days"] = config.pop("defaultDueDays")
+                if "preferredItemsView" in config:
+                    config["preferred_items_view"] = config.pop("preferredItemsView")
+    return result
+
+
+def _match_config_value(text: str, values: list[str]) -> str | None:
+    lowered = text.lower()
+    for value in values:
+        if value and value.lower() in lowered:
+            return value
+    return None
 
 
 def configured_voice_context(project: str, ctx: RequestContext) -> dict[str, object]:
@@ -298,6 +390,30 @@ async def parse_voice_note(
                 pass
 
 
+@app.post("/api/parse")
+def legacy_parse_note(payload: LegacyParsePayload, ctx: RequestContext = Depends(get_request_context)):
+    text = (payload.transcript or payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Type or speak a note first.")
+
+    data = store.snapshot()
+    settings = scoped_settings(data.settings, ctx)
+    project = settings.active_project or (settings.projects[0] if settings.projects else "")
+    cfg = settings.project_configs.get(project)
+    parsed: dict[str, object] = {"description": text, "project": project}
+    if cfg:
+        parsed.update(
+            {
+                "building": _match_config_value(text, cfg.buildings),
+                "level": _match_config_value(text, cfg.levels),
+                "unit": _match_config_value(text, cfg.units),
+                "room": _match_config_value(text, cfg.rooms),
+            }
+        )
+    parsed["trade"] = _match_config_value(text, TRADES)
+    return {key: value for key, value in parsed.items() if value}
+
+
 @app.get("/api/storage-status")
 def storage_status(ctx: RequestContext = Depends(get_request_context)):
     require_storage_status_access(ctx.user)
@@ -337,6 +453,25 @@ def bootstrap(ctx: RequestContext = Depends(get_request_context)):
     }
 
 
+@app.get("/api/state")
+def legacy_state(ctx: RequestContext = Depends(get_request_context)):
+    data = store.snapshot()
+    settings = scoped_settings(data.settings, ctx)
+    return {
+        "settings": camel_settings(settings),
+        "items": [camel_item(item) for item in visible_items(ctx.user, data.items)],
+        "plans": [],
+        "trades": TRADES,
+        "raisedByOptions": RAISED_BY_OPTIONS,
+        "user": {
+            "id": ctx.user.id,
+            "email": ctx.user.email,
+            "companyRole": ctx.user.company_role,
+            "projectRoles": ctx.user.project_roles,
+        },
+    }
+
+
 @app.patch("/api/settings")
 def update_settings(payload: SettingsPayload, ctx: RequestContext = Depends(get_request_context)):
     require_storage_status_access(ctx.user)
@@ -345,6 +480,11 @@ def update_settings(payload: SettingsPayload, ctx: RequestContext = Depends(get_
     updates = payload.model_dump(exclude_unset=True)
     settings = Settings.model_validate({**current.model_dump(), **updates})
     return project_service.update_settings(store, settings)
+
+
+@app.post("/api/settings")
+def legacy_update_settings(payload: dict[str, object], ctx: RequestContext = Depends(get_request_context)):
+    return update_settings(SettingsPayload.model_validate(snake_settings_payload(payload)), ctx)
 
 
 @app.get("/api/items")
@@ -364,7 +504,8 @@ def get_item(item_id: str, ctx: RequestContext = Depends(get_request_context)):
 
 
 @app.post("/api/items", status_code=201)
-def create_item(payload: ItemCreate, issue_now: bool = Query(default=False), ctx: RequestContext = Depends(get_request_context)):
+def create_item(payload: dict[str, object], issue_now: bool = Query(default=False), ctx: RequestContext = Depends(get_request_context)):
+    payload = ItemCreate.model_validate(snake_item_payload(payload))
     require_create_item(ctx.user, payload.project)
     payload = payload.model_copy(update={"created_by": actor_label(ctx)})
     try:
@@ -374,7 +515,8 @@ def create_item(payload: ItemCreate, issue_now: bool = Query(default=False), ctx
 
 
 @app.patch("/api/items/{item_id}")
-def update_item(item_id: str, payload: ItemUpdate, by: str | None = Query(default=None), ctx: RequestContext = Depends(get_request_context)):
+def update_item(item_id: str, payload: dict[str, object], by: str | None = Query(default=None), ctx: RequestContext = Depends(get_request_context)):
+    payload = ItemUpdate.model_validate(snake_item_payload(payload))
     item = get_authorized_item(item_id, ctx)
     require_update_item(ctx.user, item)
     try:
@@ -383,6 +525,45 @@ def update_item(item_id: str, payload: ItemUpdate, by: str | None = Query(defaul
         raise HTTPException(status_code=404, detail="Item not found")
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/api/items/{item_id}/actions/{action}")
+def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ctx: RequestContext = Depends(get_request_context)):
+    item = get_authorized_item(item_id, ctx)
+    if action == "issue":
+        require_issue_item(ctx.user, item)
+        return camel_item(store.issue_item(item_id, to=str(payload.get("to") or item.subcontractor), by=actor_label(ctx), note=payload.get("note"), reissue=bool(payload.get("reissue")), actor=actor_context(ctx)))
+    if action == "start":
+        require_rectification_access(ctx.user, item)
+        return camel_item(store.mark_in_progress(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+    if action == "ready":
+        require_rectification_access(ctx.user, item)
+        return camel_item(store.mark_ready(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+    if action == "inspect":
+        require_close_item(ctx.user, item)
+        return camel_item(store.start_inspection(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+    if action == "reject":
+        require_close_item(ctx.user, item)
+        return camel_item(store.reject(item_id, by=actor_label(ctx), reason=str(payload.get("reason") or "Rejected"), actor=actor_context(ctx)))
+    if action == "close":
+        require_close_item(ctx.user, item)
+        evidence = CloseoutEvidence(
+            photo=payload.get("photo"),
+            by=actor_label(ctx),
+            role=str(payload.get("role") or "Supervisor"),
+            note=payload.get("note"),
+            confirmation=str(payload.get("confirmation") or payload.get("confirmed") or ""),
+        )
+        return camel_item(store.close_with_evidence(item_id, evidence, actor=actor_context(ctx)))
+    if action == "rectification":
+        require_rectification_access(ctx.user, item)
+        evidence = RectificationEvidence(photo=payload.get("photo"), comment=payload.get("comment"), by=actor_label(ctx))
+        return camel_item(store.add_rectification(item_id, evidence, advance_to_ready=bool(payload.get("advanceToReady") or payload.get("advance_to_ready")), actor=actor_context(ctx)))
+    if action == "comment":
+        require_comment_access(ctx.user, item)
+        comment = Comment(text=str(payload.get("text") or ""), by=actor_label(ctx))
+        return camel_item(store.add_comment(item_id, comment, actor=actor_context(ctx)))
+    raise HTTPException(status_code=404, detail="Unknown item action")
 
 
 @app.post("/api/items/{item_id}/issue")
