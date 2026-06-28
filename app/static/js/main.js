@@ -61,6 +61,9 @@ function setAuthToken(token) {
   state.authToken = token || "";
   if (state.authToken) localStorage.setItem(AUTH_TOKEN_KEY, state.authToken);
   else localStorage.removeItem(AUTH_TOKEN_KEY);
+  document.cookie = state.authToken
+    ? `cleanrun_access_token=${encodeURIComponent(state.authToken)}; Path=/; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`
+    : `cleanrun_access_token=; Path=/; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}; Max-Age=0`;
   updateAuthUi();
 }
 
@@ -77,7 +80,9 @@ async function apiFetch(url, options = {}) {
     setAuthToken("");
     state.user = null;
     updateAuthUi();
-    throw new Error("Login required.");
+    const error = new Error("Login required.");
+    error.authRequired = true;
+    throw error;
   }
   if (res.status === 403) throw new Error("You do not have permission for that action.");
   return res;
@@ -112,10 +117,16 @@ async function loginWithPassword() {
     headers: { "Content-Type": "application/json", apikey: cfg.supabase_publishable_key },
     body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) return toast("Login failed.");
+  if (!res.ok) {
+    setAuthToken("");
+    return toast("Invalid login credentials.");
+  }
   const data = await res.json();
   setAuthToken(data.access_token);
-  await bootstrap();
+  await bootstrap().catch((error) => {
+    if (error.authRequired) return;
+    showAppError(error.message || "The app could not initialise.");
+  });
 }
 
 async function loginWithToken(token) {
@@ -133,6 +144,13 @@ function logout() {
 }
 
 function showAppError(message) {
+  if (/login|required|credential|token|unauthor/i.test(String(message || ""))) {
+    setAuthToken("");
+    state.user = null;
+    updateAuthUi();
+    toast("Sign in to continue.");
+    return;
+  }
   const el = $("appError");
   if (!el) return toast(message);
   el.innerHTML = `<strong>Could not load CleanRun IQ</strong><span>${text(message)} Check your connection, then try again.</span><button type="button" id="retryBootstrap">Retry</button>`;
