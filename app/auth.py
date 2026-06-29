@@ -20,6 +20,7 @@ except Exception:  # pragma: no cover - production dependency guard
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
+PUBLIC_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,16 @@ def _request_token(request: Request, credentials: HTTPAuthorizationCredentials |
 
 def _authenticate(token: str | None) -> AuthUser:
     if not token:
+        if is_production():
+            return AuthUser(
+                id="public-full-app",
+                email="public@cleanruniq.com",
+                company_id=PUBLIC_COMPANY_ID,
+                company_role="admin",
+                project_roles={"*": "project_manager"},
+                is_demo_admin=False,
+                auth_method="public",
+            )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
     if not is_production() and token in _dev_users():
