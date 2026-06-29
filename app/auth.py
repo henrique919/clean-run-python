@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -121,24 +124,64 @@ def _user_from_claims(claims: dict[str, Any]) -> AuthUser:
 
 def _decode_supabase_jwt(token: str) -> AuthUser:
     jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
-    if not jwt_secret:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Auth is not configured")
-    if jwt is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JWT library is not installed")
-    try:
-        claims = jwt.decode(
-            token,
-            jwt_secret,
-            algorithms=["HS256"],
-            audience=os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated"),
-            options={"verify_aud": bool(os.getenv("SUPABASE_JWT_AUDIENCE"))},
-        )
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired access token")
+    if jwt_secret and jwt is not None:
+        try:
+            claims = jwt.decode(
+                token,
+                jwt_secret,
+                algorithms=["HS256"],
+                audience=os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated"),
+                options={"verify_aud": bool(os.getenv("SUPABASE_JWT_AUDIENCE"))},
+            )
+            user = _user_from_claims(claims)
+            if not user.id:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token")
+            return user
+        except HTTPException:
+            raise
+        except Exception:
+            # Fall through to Supabase's Auth API. This keeps production login
+            # working if the project rotates signing keys or Render has a stale
+            # JWT secret, without ever using a service-role key in the web app.
+            pass
+
+    claims = _fetch_supabase_auth_user(token)
     user = _user_from_claims(claims)
     if not user.id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token")
     return user
+
+
+def _fetch_supabase_auth_user(token: str) -> dict[str, Any]:
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    if not supabase_url or not publishable_key:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Auth is not configured")
+
+    request = UrlRequest(
+        f"{supabase_url}/auth/v1/user",
+        headers={
+            "apikey": publishable_key,
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired access token")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Auth provider rejected token verification")
+    except (URLError, TimeoutError, json.JSONDecodeError):
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Auth provider unavailable")
+
+    return {
+        "sub": payload.get("id"),
+        "email": payload.get("email"),
+        "app_metadata": payload.get("app_metadata") or {},
+        "user_metadata": payload.get("user_metadata") or {},
+    }
 
 
 def _request_token(request: Request, credentials: HTTPAuthorizationCredentials | None) -> str | None:
