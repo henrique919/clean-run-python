@@ -22,6 +22,10 @@ CONTENT_TYPE_EXT = {
 }
 
 
+class StorageUploadError(ValueError):
+    """Raised when browser evidence cannot be accepted by Supabase Storage."""
+
+
 def _is_production() -> bool:
     return os.getenv("CLEANRUN_ENV", "development").lower() == "production"
 
@@ -56,10 +60,10 @@ def _split_data_url(value: str) -> tuple[str, bytes]:
     header, encoded = value.split(",", 1)
     content_type = header.replace("data:", "").split(";", 1)[0].lower()
     if content_type not in CONTENT_TYPE_EXT:
-        raise ValueError(f"Unsupported image type: {content_type}")
+        raise StorageUploadError(f"Unsupported image type: {content_type}")
     data = base64.b64decode(encoded)
     if len(data) > MAX_IMAGE_BYTES:
-        raise ValueError("Image is too large for storage upload")
+        raise StorageUploadError("Image is too large for storage upload. Retake it or upload a smaller photo.")
     return content_type, data
 
 
