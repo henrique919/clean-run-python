@@ -29,5 +29,7 @@ services:
         sync: false
       - key: CLEANRUN_ENABLE_DEMO_RESET
         value: "false"
+      - key: CLEANRUN_LAUNCH_ADMIN_EMAILS
+        value: "info@cleanruniq.com,harrysfuel@outlook.com"
       - key: ALLOW_LOCAL_STORAGE_IN_PRODUCTION
         value: "false"

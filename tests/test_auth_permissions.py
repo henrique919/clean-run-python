@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from unittest.mock import patch
 
 from app import main as app_main
+from app.auth import _user_from_claims
 from app.models import ItemCreate
 from app.store import CleanRunStore
 
@@ -267,6 +268,21 @@ class AuthPermissionTests(unittest.TestCase):
             response = self.client.post("/api/reset-demo", headers=bearer(token))
 
         self.assertEqual(response.status_code, 403)
+
+    def test_launch_admin_email_gets_write_roles_from_auth_claim(self) -> None:
+        with patch.dict(os.environ, {"CLEANRUN_LAUNCH_ADMIN_EMAILS": "info@cleanruniq.com"}, clear=False):
+            user = _user_from_claims(
+                {
+                    "sub": "launch-admin-id",
+                    "email": "info@cleanruniq.com",
+                    "app_metadata": {},
+                }
+            )
+
+        self.assertEqual(user.company_id, "00000000-0000-0000-0000-000000000001")
+        self.assertEqual(user.company_role, "admin")
+        self.assertEqual(user.project_roles["*"], "project_manager")
+        self.assertTrue(user.is_demo_admin)
 
 
 if __name__ == "__main__":

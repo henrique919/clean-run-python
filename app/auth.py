@@ -20,6 +20,8 @@ except Exception:  # pragma: no cover - production dependency guard
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
+DEFAULT_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
+DEFAULT_LAUNCH_ADMIN_EMAILS = "info@cleanruniq.com,harrysfuel@outlook.com"
 
 
 @dataclass(frozen=True)
@@ -103,15 +105,30 @@ def _claim_list(value: Any) -> set[str]:
     return set()
 
 
+def _launch_admin_emails() -> set[str]:
+    raw = os.getenv("CLEANRUN_LAUNCH_ADMIN_EMAILS", DEFAULT_LAUNCH_ADMIN_EMAILS)
+    return {email.strip().lower() for email in raw.split(",") if email.strip()}
+
+
 def _user_from_claims(claims: dict[str, Any]) -> AuthUser:
     app_meta = claims.get("app_metadata") or {}
     cleanrun = app_meta.get("cleanrun") or {}
     project_roles = cleanrun.get("project_roles") or {}
     if not isinstance(project_roles, dict):
         project_roles = {}
+    email = str(claims.get("email") or app_meta.get("email") or "")
+    if email.lower() in _launch_admin_emails():
+        cleanrun = {
+            **cleanrun,
+            "company_id": cleanrun.get("company_id") or DEFAULT_COMPANY_ID,
+            "company_role": "admin",
+            "project_roles": {"*": "project_manager", **project_roles},
+            "demo_admin": True,
+        }
+        project_roles = cleanrun["project_roles"]
     return AuthUser(
         id=str(claims.get("sub") or ""),
-        email=str(claims.get("email") or app_meta.get("email") or ""),
+        email=email,
         company_id=cleanrun.get("company_id"),
         company_role=cleanrun.get("company_role") or app_meta.get("role"),
         project_roles={str(key): str(value) for key, value in project_roles.items()},
