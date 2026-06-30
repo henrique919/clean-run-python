@@ -34,7 +34,7 @@ from app.permissions import (
 from app.services import items as item_service
 from app.services import projects as project_service
 from app.services import reports as report_service
-from app.storage import resolve_photo_url
+from app.storage import StorageUploadError, resolve_photo_url
 from app.validation import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -723,6 +723,8 @@ def create_item(payload: dict[str, object], issue_now: bool = Query(default=Fals
         return item_service.create_item(store, payload, issue_now=issue_now, actor=actor_context(ctx))
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    except StorageUploadError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Item create failed for user=%s project=%s issue_now=%s", ctx.user.email, payload.project, issue_now)
         raise HTTPException(status_code=503, detail="Could not save item. Check Render logs for the Supabase write error.") from exc
@@ -781,6 +783,8 @@ def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ct
             comment = Comment(text=str(payload.get("text") or ""), by=actor_label(ctx))
             return camel_item(store.add_comment(item_id, comment, actor=actor_context(ctx)))
     except Exception as exc:
+        if isinstance(exc, StorageUploadError):
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
         logger.exception("Item action failed for user=%s item=%s action=%s", ctx.user.email, item_id, action)
         raise HTTPException(status_code=503, detail="Could not update item. Check Render logs for the Supabase write error.") from exc
     raise HTTPException(status_code=404, detail="Unknown item action")
