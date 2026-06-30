@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.auth import RequestContext, get_request_context
-from app.config import app_env, bool_env, is_production
+from app.config import app_env, is_production
 from app.db import build_repository
 from app.models import AccessRequest, CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
 from app.permissions import (
@@ -49,7 +49,7 @@ app = FastAPI(title="CleanRun IQ Python", version="0.1.0")
 store = build_repository()
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-if bool_env("CLEANRUN_SERVE_LEGACY_EXPORT") and LEGACY_ASSETS_DIR.exists():
+if LEGACY_ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(LEGACY_ASSETS_DIR)), name="assets")
 
 
@@ -399,13 +399,28 @@ def deploy_status() -> dict[str, object]:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    if bool_env("CLEANRUN_SERVE_LEGACY_EXPORT"):
-        legacy_app = LEGACY_EXPORT_DIR / "index.html"
-        if legacy_app.exists():
-            html = legacy_app.read_text(encoding="utf-8")
-            return HTMLResponse(html)
+    legacy_app = LEGACY_EXPORT_DIR / "index.html"
+    if legacy_app.exists():
+        html = legacy_app.read_text(encoding="utf-8")
+        return HTMLResponse(html)
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(html)
+
+
+@app.get("/manifest.webmanifest")
+def manifest() -> Response:
+    manifest_path = LEGACY_EXPORT_DIR / "manifest.webmanifest"
+    if not manifest_path.exists():
+        raise HTTPException(status_code=404, detail="Manifest not found")
+    return Response(manifest_path.read_text(encoding="utf-8"), media_type="application/manifest+json")
+
+
+@app.get("/service-worker.js")
+def service_worker() -> Response:
+    worker_path = LEGACY_EXPORT_DIR / "service-worker.js"
+    if not worker_path.exists():
+        raise HTTPException(status_code=404, detail="Service worker not found")
+    return Response(worker_path.read_text(encoding="utf-8"), media_type="application/javascript")
 
 
 @app.get("/health")

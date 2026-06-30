@@ -282,6 +282,18 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn(".action-bar", styles)
         self.assertIn("position: sticky", styles)
 
+    def test_root_serves_full_field_app_by_default(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        main = (root / "app/main.py").read_text(encoding="utf-8")
+        full_app = (root / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+
+        self.assertIn('app.mount("/assets"', main)
+        self.assertIn('legacy_app = LEGACY_EXPORT_DIR / "index.html"', main)
+        self.assertNotIn("CLEANRUN_SERVE_LEGACY_EXPORT", main)
+        self.assertIn("renderLogin", full_app)
+        self.assertIn("bottom-nav", full_app)
+        self.assertIn("enhancements.js?v=cards23", full_app)
+
 
 if __name__ == "__main__":
     unittest.main()
