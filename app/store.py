@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any, Callable
@@ -32,6 +32,7 @@ from app.validation import validate_capture, validate_update
 
 DATA_DIR = Path(os.getenv("CLEANRUN_DATA_DIR", ".cleanrun-data"))
 DATA_FILE = DATA_DIR / "cleanrun.json"
+DUPLICATE_CREATE_WINDOW_SECONDS = int(os.getenv("CLEANRUN_DUPLICATE_CREATE_WINDOW_SECONDS", "300"))
 SNAPSHOT_SEED_FILES = (
     Path(os.getenv("CLEANRUN_SEED_SNAPSHOT", "")) if os.getenv("CLEANRUN_SEED_SNAPSHOT") else None,
     Path("cleanrun_data.json"),
@@ -99,6 +100,37 @@ def _normalize_app_data_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def default_due(days: int = 7) -> str:
     return (date.today() + timedelta(days=days)).isoformat()
+
+
+def _normalized_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(getattr(value, "value", value)).strip().lower()
+
+
+def _capture_fingerprint(payload: ItemCreate | Item) -> tuple[str, ...]:
+    return (
+        _normalized_value(payload.type),
+        _normalized_value(payload.project),
+        _normalized_value(payload.building),
+        _normalized_value(payload.level),
+        _normalized_value(payload.unit),
+        _normalized_value(payload.room),
+        _normalized_value(payload.trade),
+        _normalized_value(payload.subcontractor),
+        _normalized_value(payload.due_date),
+        _normalized_value(payload.description),
+        _normalized_value(payload.created_by),
+    )
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def seed_settings() -> Settings:
@@ -225,6 +257,9 @@ class CleanRunStore:
         validate_capture(payload, for_issue=issue_now)
         data = self._read()
         now = now_iso()
+        duplicate = self._recent_duplicate(data.items, payload, now)
+        if duplicate:
+            return duplicate
         code = self.next_code(data.items, payload.type)
         payload_data = payload.model_dump(exclude={"status"})
         item = Item(
@@ -241,6 +276,27 @@ class CleanRunStore:
         data.items.insert(0, item)
         self._write(data)
         return item
+
+    def _recent_duplicate(self, items: list[Item], payload: ItemCreate, now: str) -> Item | None:
+        if DUPLICATE_CREATE_WINDOW_SECONDS <= 0:
+            return None
+        now_at = _parse_iso_datetime(now)
+        if not now_at:
+            return None
+        fingerprint = _capture_fingerprint(payload)
+        for item in sorted(items, key=lambda current: current.created_at, reverse=True):
+            created_at = _parse_iso_datetime(item.created_at)
+            if not created_at:
+                continue
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if now_at.tzinfo is None:
+                now_at = now_at.replace(tzinfo=timezone.utc)
+            if (now_at - created_at).total_seconds() > DUPLICATE_CREATE_WINDOW_SECONDS:
+                continue
+            if _capture_fingerprint(item) == fingerprint:
+                return item
+        return None
 
     def update_item(self, item_id: str, payload: ItemUpdate, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         validate_update(payload)

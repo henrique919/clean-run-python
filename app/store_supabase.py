@@ -53,8 +53,8 @@ class SupabaseCleanRunStore(CleanRunStore):
         self.lock = RLock()
         if is_production():
             if os.getenv("CLEANRUN_BOOTSTRAP_SEED_DATA", "true").lower() in {"1", "true", "yes", "on"}:
-                logger.info("Checking Supabase production bootstrap data.")
-                self._bootstrap_if_empty()
+                logger.info("Backfilling Supabase production bootstrap data.")
+                self._backfill_seed_data()
             else:
                 logger.info("Skipping Supabase startup seed in production; migrations/admin setup own bootstrap data.")
             return
@@ -68,6 +68,12 @@ class SupabaseCleanRunStore(CleanRunStore):
         response = self.client.table("items").select("id").limit(1).execute()
         if not response.data:
             self._write(seed_data())
+        self._ensure_settings()
+
+    def _backfill_seed_data(self) -> None:
+        data = seed_data()
+        for item in data.items:
+            self._upsert_item(item, data.settings)
         self._ensure_settings()
 
     def _ensure_settings(self) -> None:

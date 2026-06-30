@@ -76,6 +76,15 @@ class RecoveryTests(unittest.TestCase):
 
         self.assertEqual(saved.project_configs[saved.active_project].preferred_items_view, "subcontractor")
 
+    def test_repeated_capture_submit_returns_existing_item(self) -> None:
+        first = self.create_item()
+        second = self.create_item()
+        snapshot = self.store.snapshot()
+
+        self.assertEqual(second.id, first.id)
+        self.assertEqual(second.code, first.code)
+        self.assertEqual(len([item for item in snapshot.items if item.description == "Cracked tile beside vanity"]), 1)
+
     def test_project_config_rejects_unknown_items_view(self) -> None:
         with self.assertRaises(ValidationError):
             ProjectConfig(name="Bad View", preferred_items_view="surprise")
