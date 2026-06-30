@@ -457,6 +457,18 @@ class SupabaseCleanRunStore(CleanRunStore):
         ).execute()
         return subcontractor_id
 
+    def _insert_missing_child_rows(self, table: str, rows: list[dict[str, Any]], *, item_id: str) -> None:
+        if not rows:
+            return
+        row_ids = [str(row["id"]) for row in rows if row.get("id")]
+        existing_ids: set[str] = set()
+        if row_ids:
+            response = self.client.table(table).select("id").eq("item_id", item_id).in_("id", row_ids).execute()
+            existing_ids = {str(row["id"]) for row in (response.data or [])}
+        missing_rows = [row for row in rows if str(row.get("id")) not in existing_ids]
+        if missing_rows:
+            self.client.table(table).insert(missing_rows).execute()
+
     def _upsert_item_photos(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:
         rows: list[dict[str, Any]] = []
         for index, photo in enumerate(item.original_photos):
@@ -500,8 +512,7 @@ class SupabaseCleanRunStore(CleanRunStore):
                     evidence.at,
                 )
             )
-        if rows:
-            self.client.table("item_photos").upsert(rows, on_conflict="id").execute()
+        self._insert_missing_child_rows("item_photos", rows, item_id=item_id)
 
     def _photo_row(
         self,
@@ -542,8 +553,7 @@ class SupabaseCleanRunStore(CleanRunStore):
             }
             for index, comment in enumerate(item.comments)
         ]
-        if rows:
-            self.client.table("item_comments").upsert(rows, on_conflict="id").execute()
+        self._insert_missing_child_rows("item_comments", rows, item_id=item_id)
 
     def _upsert_audit_events(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:
         rows = [
@@ -561,8 +571,7 @@ class SupabaseCleanRunStore(CleanRunStore):
             }
             for index, event in enumerate(item.audit_events)
         ]
-        if rows:
-            self.client.table("item_audit_events").upsert(rows, on_conflict="id").execute()
+        self._insert_missing_child_rows("item_audit_events", rows, item_id=item_id)
 
     def update_settings(self, settings: Settings) -> Settings:
         with self.lock:

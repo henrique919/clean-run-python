@@ -243,7 +243,7 @@
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
     if(data.type==="client"&&!data.raisedBy){release();return toast("A Client Defect requires a Raised By / source.",true)}
     if(mode==="issue"&&(!data.trade||!data.subcontractor)){release();return toast("Issue Now requires a trade and subcontractor.",true)}
-    try{const item=await api("/api/items",{method:"POST",body:JSON.stringify(data)});if(mode==="issue")await api(`/api/items/${item.id}/actions/issue`,{method:"POST",body:JSON.stringify({to:data.subcontractor,by:data.createdBy})});capturePhotos=[];capturePhotoMeta=[];if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved · continue walk`)}else{await reload();route="items";render();toast(item.sync==="queued"?`${item.code} saved offline · queued to sync`:`${item.code} saved`)}}catch(err){toast(err.message,true)}
+    try{const path=mode==="issue"?"/api/items?issue_now=true":"/api/items";const item=await api(path,{method:"POST",body:JSON.stringify(data)});capturePhotos=[];capturePhotoMeta=[];if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved - continue walk`)}else{await reload();route="items";render();toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}}catch(err){toast(err.message,true)}finally{release()}
   };
 
   editItemForm=function(id){
@@ -285,10 +285,11 @@
     try{
       toast(capturePhotos.length?"Compressing and uploading evidence…":"Saving item…");
       if(mode==="issue"){data.issueOnCreate=true;data.issueTo=data.subcontractor}
-      const item=await api("/api/items",{method:"POST",body:JSON.stringify(data)});
+      const path=mode==="issue"?"/api/items?issue_now=true":"/api/items";
+      const item=await api(path,{method:"POST",body:JSON.stringify(data)});
       capturePhotos=[];capturePhotoMeta=[];
       if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved · continue walk`)}
-      else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline · queued to sync`:`${item.code} saved`)}
+      else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}
     }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
   };
 

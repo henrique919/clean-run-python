@@ -294,6 +294,15 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("bottom-nav", full_app)
         self.assertIn("enhancements.js?v=cards23", full_app)
 
+    def test_full_field_issue_now_uses_atomic_create(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")
+        full_app = (root / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+
+        for source in (enhancements, full_app):
+            self.assertIn("/api/items?issue_now=true", source)
+            self.assertNotIn('if(mode==="issue")await api(`/api/items/${item.id}/actions/issue`', source)
+
 
 if __name__ == "__main__":
     unittest.main()

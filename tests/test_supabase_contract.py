@@ -113,6 +113,16 @@ class SupabaseContractTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY=", text)
 
+    def test_append_only_child_tables_are_not_upserted(self) -> None:
+        store = (ROOT / "app/store_supabase.py").read_text(encoding="utf-8")
+
+        self.assertIn('self._insert_missing_child_rows("item_photos"', store)
+        self.assertIn('self._insert_missing_child_rows("item_comments"', store)
+        self.assertIn('self._insert_missing_child_rows("item_audit_events"', store)
+        self.assertNotIn('table("item_photos").upsert', store)
+        self.assertNotIn('table("item_comments").upsert', store)
+        self.assertNotIn('table("item_audit_events").upsert', store)
+
 
 if __name__ == "__main__":
     unittest.main()
