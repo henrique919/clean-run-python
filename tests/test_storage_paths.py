@@ -33,6 +33,8 @@ class StoragePathTests(unittest.TestCase):
 
         with patch.dict("os.environ", {"CLEANRUN_STORAGE_PATH_PREFIX": "projects/jura/items/def-1005"}, clear=False), patch(
             "app.storage.get_supabase_client", return_value=FakeClient()
+        ), patch(
+            "app.storage.get_public_supabase_client", return_value=FakeClient()
         ):
             path = upload_data_url("data:image/png;base64,aGVsbG8=", folder="original")
 

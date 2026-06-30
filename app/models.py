@@ -198,6 +198,7 @@ class ItemUpdate(BaseModel):
     due_date: str | None = None
     description: str | None = None
     raised_by: str | None = None
+    append_original_photos: list[str] | None = None
 
 
 class Item(ItemCreate):

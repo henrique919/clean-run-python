@@ -65,7 +65,12 @@ class RecoveryTests(unittest.TestCase):
         item = self.store.add_comment(item.id, Comment(text="Checked on site", by="Supervisor"))
         item = self.store.close_with_evidence(
             item.id,
-            CloseoutEvidence(by="Supervisor", note="Accepted", confirmation="Confirmed acceptable for closeout"),
+            CloseoutEvidence(
+                photo="seed://closeout/accepted",
+                by="Supervisor",
+                note="Accepted",
+                confirmation="Confirmed acceptable for closeout",
+            ),
         )
         self.assertEqual(item.status, ItemStatus.CLOSED)
         self.assertEqual(len(item.rectification_evidence), 1)
@@ -190,6 +195,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_report_renders_uploaded_evidence_images(self) -> None:
         item = self.create_item()
+        item = self.store.issue_item(item.id, to=item.subcontractor, by="Site Manager")
         data_url = "data:image/png;base64,iVBORw0KGgo="
         item = self.store.add_rectification(
             item.id,
@@ -293,6 +299,17 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("renderLogin", full_app)
         self.assertIn("bottom-nav", full_app)
         self.assertIn("enhancements.js?v=cards23", full_app)
+
+    def test_plans_navigation_is_disabled_in_production_ui(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+        enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")
+
+        self.assertIn('next==="plans"', index)
+        self.assertIn("Plans is coming soon", index)
+        self.assertNotIn('PDF plans & pinned issue locations","plans"]', index)
+        self.assertNotIn('["plans","Plans","⌖"]', enhancements)
+        self.assertNotIn('PDF plans & pinned issue locations","plans"]', enhancements)
 
     def test_full_field_issue_now_uses_atomic_create(self) -> None:
         root = Path(__file__).resolve().parents[1]

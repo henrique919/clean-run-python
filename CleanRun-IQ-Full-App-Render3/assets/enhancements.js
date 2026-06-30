@@ -308,12 +308,13 @@
   };
 
   itemAction=async function(id,act){
+    if(act==="reopen")return toast("Reopen is not available yet.",true);
     const i=state.items.find(x=>x.id===id),body={by:state.settings.preparedBy};
     const release=setBusyButton(document.activeElement,"Working…");
     if(act==="issue"){body.to=i.subcontractor||prompt("Subcontractor name:","");body.reissue=i.status==="rejected"}
-    if(act==="reject"||act==="reopen")body.reason=prompt(act==="reject"?"Why is this being rejected?":"Reason for reopening:","");
+    if(act==="reject")body.reason=prompt("Why is this being rejected?","");
     if(act==="issue"&&!body.to){release();return toast("Choose a subcontractor before issuing.",true)}
-    if((act==="reject"||act==="reopen")&&!body.reason){release();return toast(`${act==="reject"?"Rejection":"Reopen"} reason is required.`,true)}
+    if((act==="reject")&&!body.reason){release();return toast("Rejection reason is required.",true)}
     if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo&&!body.comment){release();return toast("Add a rectification photo or comment.",true)}body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
     if(act==="close"){body.role=prompt("Signed off by role:","Site Manager")||"Site Manager";body.note=prompt("Closeout note (optional):","");if(i.type!=="incomplete"){body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo){release();return toast("Closeout photo is required.",true)}}body.confirmed=confirm(`I confirm this item is rectified and accepted by ${state.settings.preparedBy}.`);if(!body.confirmed){release();return toast("Closeout confirmation cancelled.",true)}}
     try{await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});await reload();showItem(id);document.querySelector(".dialog")?.scrollTo?.(0,0);toast("Item updated")}catch(err){toast(err.message,true)}finally{release()}
@@ -517,9 +518,10 @@
     const s=state.settings;
     return `<section class="form-card subcontractor-admin"><div class="spread"><div><h2>Subcontractor database (${s.subcontractors.length})</h2><p class="meta">Company, trade, contact, email, mobile and multiple contacts.</p></div><button class="btn alt" type="button" onclick="addSubcontractor()">+ Add</button></div>${s.subcontractors.map(n=>{const p=subProfile(n);return `<button type="button" class="sub-profile-card" onclick="editSubcontractorProfile('${esc(n)}')"><b>${esc(p.companyName)}</b><span>${esc(p.tradeType||"No trade type")} · ${esc(p.contact||p.contacts[0]?.name||"No contact")}</span><small>${esc(p.email||p.contacts[0]?.email||"No email")} · ${esc(p.mobile||p.phone||p.contacts[0]?.mobile||"No mobile")} · ${p.contacts.length} contact${p.contacts.length===1?"":"s"}</small></button>`}).join("")}</section>`;
   }
-  settingsView=function(){const s=state.settings,theme=preferredTheme();return `${subHeader("Settings & Admin")}<form class="settings-scroll" onsubmit="saveSettings(event)"><section class="form-card"><h2>Company & branding</h2><div class="field-list"><label>Company name<input name="company" value="${esc(s.company)}"></label><label>Prepared by<input name="preparedBy" value="${esc(s.preparedBy)}"></label></div><p class="meta">Used on report headers and audit events.</p><button class="btn" style="margin-top:10px">Save</button></section><section class="form-card"><h2>Desktop appearance</h2><p class="meta">Dark mode is active across desktop/admin screens and stays saved.</p><button class="btn alt" type="button" onclick="toggleDesktopTheme()">Dark / night mode: ${theme==="dark"?"On":"Off"}</button></section><section class="form-card"><h2>Projects</h2>${s.projects.map(p=>`<div class="spread" style="padding:10px 0;border-bottom:1px solid var(--line)"><b>${esc(p)}</b>${p===s.activeProject?'<span class="badge complete">Active</span>':""}</div>`).join("")}<div class="actions" style="margin-top:12px"><input id="newProject" placeholder="Add a project…"><button class="btn" type="button" onclick="addProject()">+</button></div></section>${subcontractorAdminPanel()}<section class="form-card"><h2>Demo data</h2><button class="btn danger" type="button" onclick="resetDemo()">↻ Reset to demo data</button></section><div class="meta" style="text-align:center">CleanRun IQ Field App</div></form>`};
+  settingsView=function(){const s=state.settings,theme=preferredTheme();return `${subHeader("Settings & Admin")}<form class="settings-scroll" onsubmit="saveSettings(event)"><section class="form-card"><h2>Company & branding</h2><div class="field-list"><label>Company name<input name="company" value="${esc(s.company)}"></label><label>Prepared by<input name="preparedBy" value="${esc(s.preparedBy)}"></label></div><p class="meta">Used on report headers and audit events.</p><button class="btn" style="margin-top:10px">Save</button></section><section class="form-card"><h2>Desktop appearance</h2><p class="meta">Dark mode is active across desktop/admin screens and stays saved.</p><button class="btn alt" type="button" onclick="toggleDesktopTheme()">Dark / night mode: ${theme==="dark"?"On":"Off"}</button></section><section class="form-card"><h2>Projects</h2>${s.projects.map(p=>`<div class="spread" style="padding:10px 0;border-bottom:1px solid var(--line)"><b>${esc(p)}</b>${p===s.activeProject?'<span class="badge complete">Active</span>':""}</div>`).join("")}<div class="actions" style="margin-top:12px"><input id="newProject" placeholder="Add a project…"><button class="btn" type="button" onclick="addProject()">+</button></div></section>${subcontractorAdminPanel()}<section class="form-card"><h2>Session</h2><p class="meta">Sign out on shared devices when you are finished.</p><button class="btn alt" type="button" onclick="logout()">Sign out</button></section>${isProductionApp()?'<section class="form-card"><h2>Demo data</h2><p class="meta">Demo reset is disabled in production.</p></section>':'<section class="form-card"><h2>Demo data</h2><button class="btn danger" type="button" onclick="resetDemo()">↻ Reset to demo data</button></section>'}<div class="meta" style="text-align:center">CleanRun IQ Field App</div></form>`};
   const originalSubcontractorView=subcontractorView;
   subcontractorView=function(){
+    if(typeof isSubcontractorPortalUser==="function"&&isSubcontractorPortalUser())return originalSubcontractorView();
     const admin=`${subHeader("Subcontractors")}<div class="settings-scroll">${subcontractorAdminPanel()}<section class="form-card"><div class="spread"><div><h2>Assigned work mode</h2><p class="meta">Use this when a trade is uploading rectification evidence.</p></div><button class="btn alt" type="button" onclick="document.getElementById('subWorkMode')?.scrollIntoView({behavior:'smooth'})">Go to work mode</button></div></section><div id="subWorkMode">${originalSubcontractorView()}</div></div>`;
     return admin;
   };
@@ -536,14 +538,14 @@
 
   moreView=function(){
     const s=state.settings;
-    return `<header class="screen-header more-header"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><div style="color:#ffffffb3;margin-top:10px;font-size:13px">Field capture, review & closeout companion</div></header><div class="screen-scroll"><div class="native-card spread"><span style="font-size:22px;color:#16a34a">Sync</span><span style="flex:1"><b>Online</b><small class="meta" style="display:block">All field data synced</small></span><span class="badge"><b>${state.items.length}</b><br>items</span></div>${menuGroup("Closeout workflow",[["Review","Review Queue","Inspect ready work and close/reject","review"],["Plans","Plans","PDF plans & pinned issue locations","plans"]])}${menuGroup("Reporting",[["Report","Reports & Handover","Evidence-chain & closeout reports","reports"]])}${menuGroup("Field roles",[["Subs","Subcontractor Mode","Assigned items & rectification upload","subcontractor"]])}${menuGroup("Admin",[["Setup","Project Setup","Buildings, levels, units & rooms","setup"],["Admin","Settings & Admin","Company, subcontractors, demo data","settings"]])}<div class="meta" style="text-align:center">CleanRun IQ Field App - ${esc(s.company)}</div></div>`;
+    return `<header class="screen-header more-header"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><div style="color:#ffffffb3;margin-top:10px;font-size:13px">Field capture, review & closeout companion</div></header><div class="screen-scroll"><div class="native-card spread"><span style="font-size:22px;color:#16a34a">Sync</span><span style="flex:1"><b>Online</b><small class="meta" style="display:block">All field data synced</small></span><span class="badge"><b>${state.items.length}</b><br>items</span></div>${menuGroup("Closeout workflow",[["Review","Review Queue","Inspect ready work and close/reject","review"]])}${menuGroup("Reporting",[["Report","Reports & Handover","Evidence-chain & closeout reports","reports"]])}${menuGroup("Field roles",[["Subs","Subcontractor Mode","Assigned items & rectification upload","subcontractor"]])}${menuGroup("Admin",[["Setup","Project Setup","Buildings, levels, units & rooms","setup"],["Admin","Settings & Admin","Company, subcontractors, demo data","settings"]])}<div class="meta" style="text-align:center">CleanRun IQ Field App - ${esc(s.company)}</div></div>`;
   };
 
   function renderMobileNav(){
     if(matchMedia("(min-width:1024px)").matches)return;
     const ready=(state?.items||[]).filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).length;
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review",ready?`Review ${ready}`:"Review","✓"],["more","More",navIcon?.more||"•••"]];
-    const active=["reports","settings","setup","subcontractor","plans"].includes(route)?"more":route;
+    const active=["reports","settings","setup","subcontractor"].includes(route)?"more":route;
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
 
@@ -554,7 +556,6 @@
       ["items","Items",navIcon?.items||"▤"],
       ["capture","Capture","+"],
       ["review","Review","✓"],
-      ["plans","Plans","⌖"],
       ["more","More",navIcon?.more||"•••"]
     ];
     const active=["reports","setup","settings","subcontractor"].includes(route)?"more":route;
@@ -562,7 +563,7 @@
   }
   renderDesktopNav=function(){
     if(!matchMedia("(min-width:1024px)").matches)return;
-    const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["plans","Plans","⌖"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
+    const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   };
   const originalRender=render;

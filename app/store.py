@@ -29,7 +29,25 @@ from app.models import (
     CODE_PREFIX,
     now_iso,
 )
-from app.validation import validate_capture, validate_update
+from app.validation import (
+    validate_capture,
+    validate_closeout,
+    validate_issue_target,
+    validate_ready_for_review,
+    validate_rectification,
+    validate_reject_reason,
+    validate_update_merged,
+)
+from app.workflow import (
+    CLOSE_FROM,
+    IN_PROGRESS_FROM,
+    INSPECTION_FROM,
+    ISSUE_FROM,
+    REJECT_FROM,
+    RECTIFICATION_FROM,
+    READY_FROM,
+    require_status,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("CLEANRUN_DATA_DIR", ".cleanrun-data"))
@@ -315,58 +333,94 @@ class CleanRunStore:
         return None
 
     def update_item(self, item_id: str, payload: ItemUpdate, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
-        validate_update(payload)
-        return self._patch(item_id, lambda item: self._update_mutation(item, payload, by=by, actor=actor))
+        def mut(item: Item) -> Item:
+            validate_update_merged(item, payload)
+            return self._update_mutation(item, payload, by=by, actor=actor)
+
+        return self._patch(item_id, mut)
 
     def issue_item(self, item_id: str, *, to: str, by: str | None = None, note: str | None = None, reissue: bool = False, actor: dict[str, Any] | None = None) -> Item:
-        return self._patch(item_id, lambda item: self._issue_mutation(item, to=to, by=by, note=note, reissue=reissue, actor=actor))
+        def mut(item: Item) -> Item:
+            require_status(item, ISSUE_FROM, action="issue")
+            validate_issue_target(to=to, item=item)
+            return self._issue_mutation(item, to=to, by=by, note=note, reissue=reissue, actor=actor)
+
+        return self._patch(item_id, mut)
 
     def mark_in_progress(self, item_id: str, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
-        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"status": ItemStatus.IN_PROGRESS, "in_progress_at": item.in_progress_at or at}), "Marked in progress", by=by, at=at, actor=actor))
+
+        def mut(item: Item) -> Item:
+            require_status(item, IN_PROGRESS_FROM, action="mark in progress")
+            return self._audit(item.model_copy(update={"status": ItemStatus.IN_PROGRESS, "in_progress_at": item.in_progress_at or at}), "Marked in progress", by=by, at=at, actor=actor)
+
+        return self._patch(item_id, mut)
 
     def mark_ready(self, item_id: str, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
-        return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"status": ItemStatus.READY_FOR_REVIEW, "ready_for_review_at": at}), "Marked ready for review", by=by, at=at, actor=actor))
+
+        def mut(item: Item) -> Item:
+            require_status(item, READY_FROM, action="mark ready for review")
+            validate_ready_for_review(item)
+            return self._audit(item.model_copy(update={"status": ItemStatus.READY_FOR_REVIEW, "ready_for_review_at": at}), "Marked ready for review", by=by, at=at, actor=actor)
+
+        return self._patch(item_id, mut)
 
     def start_inspection(self, item_id: str, *, by: str, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
+
         def mut(item: Item) -> Item:
+            require_status(item, INSPECTION_FROM, action="start inspection")
             event = InspectionEvent(at=at, by=by, action="started")
             item = item.model_copy(update={"status": ItemStatus.UNDER_INSPECTION, "under_inspection_at": at, "inspection_history": [*item.inspection_history, event]})
             return self._audit(item, "Inspection started", by=by, at=at, actor=actor)
+
         return self._patch(item_id, mut)
 
     def reject(self, item_id: str, *, by: str, reason: str, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
+
         def mut(item: Item) -> Item:
+            require_status(item, REJECT_FROM, action="reject")
+            validate_reject_reason(reason)
             event = InspectionEvent(at=at, by=by, action="rejected", reason=reason)
             item = item.model_copy(update={"status": ItemStatus.REJECTED, "rejection_reason": reason, "inspection_history": [*item.inspection_history, event]})
             return self._audit(item, "Rejected on inspection", by=by, note=reason, at=at, actor=actor)
+
         return self._patch(item_id, mut)
 
     def close_with_evidence(self, item_id: str, evidence: CloseoutEvidence, *, actor: dict[str, Any] | None = None) -> Item:
         at = now_iso()
+
         def mut(item: Item) -> Item:
+            require_status(item, CLOSE_FROM, action="close out")
+            validate_closeout(item, evidence)
             status = ItemStatus.COMPLETE if item.type == "incomplete" else ItemStatus.CLOSED
             history = item.inspection_history
             if item.status == ItemStatus.UNDER_INSPECTION:
                 history = [*history, InspectionEvent(at=at, by=evidence.by, action="accepted")]
             item = item.model_copy(update={"status": status, "closed_at": at, "closeout_evidence": [*item.closeout_evidence, evidence], "inspection_history": history})
             return self._audit(item, "Closed with evidence", by=evidence.by, at=at, actor=actor)
+
         return self._patch(item_id, mut)
 
     def add_comment(self, item_id: str, comment: Comment, *, actor: dict[str, Any] | None = None) -> Item:
         return self._patch(item_id, lambda item: self._audit(item.model_copy(update={"comments": [*item.comments, comment]}), "Comment added", by=comment.by, note=comment.text, at=comment.at, actor=actor))
 
     def add_rectification(self, item_id: str, evidence: RectificationEvidence, *, advance_to_ready: bool = False, actor: dict[str, Any] | None = None) -> Item:
+        validate_rectification(evidence)
+
         def mut(item: Item) -> Item:
-            status = ItemStatus.IN_PROGRESS if item.status == ItemStatus.ISSUED else item.status
+            require_status(item, RECTIFICATION_FROM, action="add rectification")
+            status = ItemStatus.IN_PROGRESS if item.status in {ItemStatus.ISSUED, ItemStatus.REJECTED} else item.status
             item = item.model_copy(update={"status": status, "rectification_evidence": [*item.rectification_evidence, evidence]})
             item = self._audit(item, "Rectification evidence added", by=evidence.by, note=evidence.comment, at=evidence.at, actor=actor)
             if advance_to_ready:
+                require_status(item, READY_FROM, action="mark ready for review")
+                validate_ready_for_review(item)
                 item = item.model_copy(update={"status": ItemStatus.READY_FOR_REVIEW, "ready_for_review_at": now_iso()})
             return item
+
         return self._patch(item_id, mut)
 
     def reset_demo(self) -> AppData:
@@ -418,6 +472,9 @@ class CleanRunStore:
 
     def _update_mutation(self, item: Item, payload: ItemUpdate, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         updates = payload.model_dump(exclude_unset=True)
+        append_photos = updates.pop("append_original_photos", None)
+        if append_photos:
+            updates["original_photos"] = [*item.original_photos, *append_photos]
         item = item.model_copy(update=updates)
         return self._audit(item, "Item details edited", by=by, actor=actor)
 
