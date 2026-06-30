@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from app.models import CloseoutEvidence, Item, ItemCreate, ItemStatus
-from app.reporting import filter_items, is_exception_item
+from app.reporting import build_report_html, filter_items, image_html, is_exception_item
 from app.store import CleanRunStore
 
 
@@ -75,6 +76,31 @@ class ReportingFilterTests(unittest.TestCase):
         unknown = filter_items(items, "not-a-real-report")
         self.assertEqual(len(filtered), len(items))
         self.assertEqual(len(unknown), len(items))
+
+    def test_image_html_renders_placeholder_when_resolve_photo_url_fails(self) -> None:
+        with patch("app.reporting.resolve_photo_url", return_value=None):
+            html = image_html("projects/jura/items/def-1/original/photo.jpg", "DEF-1 original evidence")
+
+        self.assertIn("Evidence photo unavailable", html)
+        self.assertNotIn("<img", html)
+
+    def test_image_html_seed_placeholder_is_unaffected_by_signing_failure_handling(self) -> None:
+        html = image_html("seed://amber/Cracked tile", "Seed evidence")
+
+        self.assertEqual(html, "")
+        self.assertNotIn("Evidence photo unavailable", html)
+
+    def test_report_html_shows_placeholder_and_keeps_evidence_badge_on_signing_failure(self) -> None:
+        item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
+        settings = self.snapshot.settings
+
+        with patch("app.reporting.resolve_photo_url", return_value=None):
+            html = build_report_html([item], settings, report_type="register")
+
+        self.assertIn("Evidence photo unavailable", html)
+        self.assertNotIn("<img", html)
+        self.assertIn("Original 1", html)
+        self.assertIn(item.code, html)
 
 
 if __name__ == "__main__":

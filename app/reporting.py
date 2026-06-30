@@ -89,11 +89,11 @@ def evidence_badge(label: str, count: int, klass: str) -> str:
 def image_html(value: str | None, alt: str) -> str:
     if not value:
         return ""
-    value = resolve_photo_url(value)
-    if not value:
-        return ""
-    if value.startswith("http") or value.startswith("data:image/"):
-        return f'<img src="{escape(value)}" alt="{escape(alt)}" />'
+    resolved = resolve_photo_url(value)
+    if resolved is None:
+        return '<div class="none">Evidence photo unavailable</div>'
+    if resolved.startswith("http") or resolved.startswith("data:image/"):
+        return f'<img src="{escape(resolved)}" alt="{escape(alt)}" />'
     return ""
 
 

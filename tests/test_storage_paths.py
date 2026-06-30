@@ -60,6 +60,21 @@ class StoragePathTests(unittest.TestCase):
         with patch("app.storage.get_supabase_client", return_value=FakeClient()):
             self.assertEqual(resolve_photo_url(expired), "https://fresh.example/projects/jura/photo.jpg")
 
+    def test_resolve_photo_url_returns_none_when_signing_fails(self) -> None:
+        class FailingBucket:
+            def create_signed_url(self, path, ttl):
+                raise RuntimeError("signing failed")
+
+        class FailingStorage:
+            def from_(self, bucket):
+                return FailingBucket()
+
+        class FailingClient:
+            storage = FailingStorage()
+
+        with patch("app.storage.get_supabase_client", return_value=FailingClient()):
+            self.assertIsNone(resolve_photo_url("projects/jura/photo.jpg"))
+
     def test_storage_folder_includes_project_item_and_evidence_type(self) -> None:
         item = Item(
             id="item-1",
