@@ -269,6 +269,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("projectCodePrefix", html)
         self.assertIn("lockProjectCodePrefix", script)
         self.assertIn("uploadSettingsSheet", script)
+        self.assertIn('document.body.classList.toggle("signed-out"', script)
+        self.assertIn("body.signed-out .hero-card", styles)
         self.assertIn("project: projectName()", script)
         self.assertIn("groupedItems(items).forEach", script)
         self.assertNotIn("groupedItems(items.slice(0, 30))", script)

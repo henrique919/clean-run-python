@@ -100,6 +100,8 @@ async function loadAuthConfig() {
 
 function updateAuthUi() {
   const signedIn = !!state.authToken;
+  document.body.classList.toggle("signed-out", !signedIn);
+  document.body.classList.toggle("signed-in", signedIn);
   $("authPanel")?.classList.toggle("hidden", signedIn);
   $("logoutBtn")?.classList.toggle("hidden", !signedIn);
   if ($("currentUser")) $("currentUser").textContent = state.user?.email || "";
