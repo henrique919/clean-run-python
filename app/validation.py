@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.models import ItemCreate, ItemType, ItemUpdate
+from app.models import CloseoutEvidence, Item, ItemCreate, ItemType, ItemUpdate, RectificationEvidence
 
 
 class ValidationError(ValueError):
@@ -48,3 +48,47 @@ def validate_update(payload: ItemUpdate) -> None:
         raise ValidationError("Building cannot be blank.")
     if payload.unit is not None and _blank(payload.unit):
         raise ValidationError("Unit / Area cannot be blank.")
+
+
+def validate_update_merged(item: Item, payload: ItemUpdate) -> None:
+    validate_update(payload)
+    merged = item.model_copy(update=payload.model_dump(exclude_unset=True, exclude={"append_original_photos"}))
+    if payload.append_original_photos:
+        merged = merged.model_copy(update={"original_photos": [*item.original_photos, *payload.append_original_photos]})
+    if merged.type in {ItemType.DEFECT, ItemType.CLIENT} and len(merged.original_photos) == 0:
+        label = "Client Defect" if merged.type == ItemType.CLIENT else "Defect"
+        raise ValidationError(f"A {label} requires at least one original photo.")
+    if merged.type == ItemType.CLIENT and _blank(merged.raised_by):
+        raise ValidationError("Client Defects require a Raised By / source.")
+
+
+def validate_issue_target(*, to: str, item: Item) -> None:
+    target = (to or item.subcontractor or "").strip()
+    if not target:
+        raise ValidationError("Issue requires a subcontractor.")
+    if _blank(item.trade):
+        raise ValidationError("Issue requires a trade.")
+
+
+def validate_rectification(evidence: RectificationEvidence) -> None:
+    if _blank(evidence.photo) and _blank(evidence.comment):
+        raise ValidationError("Rectification requires a photo or comment.")
+
+
+def validate_ready_for_review(item: Item) -> None:
+    if not item.rectification_evidence:
+        raise ValidationError("Mark ready for review requires rectification evidence.")
+
+
+def validate_reject_reason(reason: str) -> None:
+    if _blank(reason):
+        raise ValidationError("Rejection reason is required.")
+
+
+def validate_closeout(item: Item, evidence: CloseoutEvidence) -> None:
+    if item.type == ItemType.INCOMPLETE:
+        return
+    if _blank(evidence.photo):
+        raise ValidationError("Closeout requires a photo for defects and client defects.")
+    if _blank(evidence.confirmation):
+        raise ValidationError("Closeout requires supervisor confirmation.")

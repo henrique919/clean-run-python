@@ -60,7 +60,11 @@ def _split_data_url(value: str) -> tuple[str, bytes]:
     header, encoded = value.split(",", 1)
     content_type = header.replace("data:", "").split(";", 1)[0].lower()
     if content_type not in CONTENT_TYPE_EXT:
-        raise StorageUploadError(f"Unsupported image type: {content_type}")
+        if content_type in {"image/heic", "image/heif"}:
+            raise StorageUploadError(
+                "HEIC photos are not supported. Change iPhone Camera settings to Most Compatible (JPEG) or export the photo as JPEG before uploading."
+            )
+        raise StorageUploadError(f"Unsupported image type: {content_type}. Use JPEG, PNG, or WebP.")
     data = base64.b64decode(encoded)
     if len(data) > MAX_IMAGE_BYTES:
         raise StorageUploadError("Image is too large for storage upload. Retake it or upload a smaller photo.")
