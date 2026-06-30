@@ -300,6 +300,17 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("bottom-nav", full_app)
         self.assertIn("enhancements.js?v=cards23", full_app)
 
+    def test_plans_navigation_is_disabled_in_production_ui(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+        enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")
+
+        self.assertIn('next==="plans"', index)
+        self.assertIn("Plans is coming soon", index)
+        self.assertNotIn('PDF plans & pinned issue locations","plans"]', index)
+        self.assertNotIn('["plans","Plans","⌖"]', enhancements)
+        self.assertNotIn('PDF plans & pinned issue locations","plans"]', enhancements)
+
     def test_full_field_issue_now_uses_atomic_create(self) -> None:
         root = Path(__file__).resolve().parents[1]
         enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")

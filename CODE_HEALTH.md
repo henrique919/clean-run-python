@@ -34,6 +34,8 @@ Treat these as reference material unless a deployment is explicitly pointed at o
 
 The current live app at `https://app.cleanruniq.com/` appears to serve a legacy inline app surface, while the root repo deployment config points at `app.main:app`. Deployment should stay on hold until the Render service is confirmed to deploy the intended root FastAPI surface.
 
+**Plans UI:** Intentionally hidden in Render3 (desktop nav and More menu). Deep links to `plans` show a coming-soon message. Backend `/api/plans` routes are not implemented yet; `/api/state` returns `"plans": []`.
+
 Expected root FastAPI checks:
 
 - `/health` returns `{"status":"ok"}`

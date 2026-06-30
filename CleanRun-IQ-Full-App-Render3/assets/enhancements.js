@@ -537,14 +537,14 @@
 
   moreView=function(){
     const s=state.settings;
-    return `<header class="screen-header more-header"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><div style="color:#ffffffb3;margin-top:10px;font-size:13px">Field capture, review & closeout companion</div></header><div class="screen-scroll"><div class="native-card spread"><span style="font-size:22px;color:#16a34a">Sync</span><span style="flex:1"><b>Online</b><small class="meta" style="display:block">All field data synced</small></span><span class="badge"><b>${state.items.length}</b><br>items</span></div>${menuGroup("Closeout workflow",[["Review","Review Queue","Inspect ready work and close/reject","review"],["Plans","Plans","PDF plans & pinned issue locations","plans"]])}${menuGroup("Reporting",[["Report","Reports & Handover","Evidence-chain & closeout reports","reports"]])}${menuGroup("Field roles",[["Subs","Subcontractor Mode","Assigned items & rectification upload","subcontractor"]])}${menuGroup("Admin",[["Setup","Project Setup","Buildings, levels, units & rooms","setup"],["Admin","Settings & Admin","Company, subcontractors, demo data","settings"]])}<div class="meta" style="text-align:center">CleanRun IQ Field App - ${esc(s.company)}</div></div>`;
+    return `<header class="screen-header more-header"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><div style="color:#ffffffb3;margin-top:10px;font-size:13px">Field capture, review & closeout companion</div></header><div class="screen-scroll"><div class="native-card spread"><span style="font-size:22px;color:#16a34a">Sync</span><span style="flex:1"><b>Online</b><small class="meta" style="display:block">All field data synced</small></span><span class="badge"><b>${state.items.length}</b><br>items</span></div>${menuGroup("Closeout workflow",[["Review","Review Queue","Inspect ready work and close/reject","review"]])}${menuGroup("Reporting",[["Report","Reports & Handover","Evidence-chain & closeout reports","reports"]])}${menuGroup("Field roles",[["Subs","Subcontractor Mode","Assigned items & rectification upload","subcontractor"]])}${menuGroup("Admin",[["Setup","Project Setup","Buildings, levels, units & rooms","setup"],["Admin","Settings & Admin","Company, subcontractors, demo data","settings"]])}<div class="meta" style="text-align:center">CleanRun IQ Field App - ${esc(s.company)}</div></div>`;
   };
 
   function renderMobileNav(){
     if(matchMedia("(min-width:1024px)").matches)return;
     const ready=(state?.items||[]).filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).length;
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review",ready?`Review ${ready}`:"Review","✓"],["more","More",navIcon?.more||"•••"]];
-    const active=["reports","settings","setup","subcontractor","plans"].includes(route)?"more":route;
+    const active=["reports","settings","setup","subcontractor"].includes(route)?"more":route;
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
 
@@ -555,7 +555,6 @@
       ["items","Items",navIcon?.items||"▤"],
       ["capture","Capture","+"],
       ["review","Review","✓"],
-      ["plans","Plans","⌖"],
       ["more","More",navIcon?.more||"•••"]
     ];
     const active=["reports","setup","settings","subcontractor"].includes(route)?"more":route;
@@ -563,7 +562,7 @@
   }
   renderDesktopNav=function(){
     if(!matchMedia("(min-width:1024px)").matches)return;
-    const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["plans","Plans","⌖"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
+    const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   };
   const originalRender=render;
