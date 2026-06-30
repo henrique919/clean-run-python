@@ -18,6 +18,7 @@ from app.models import (
     RectificationEvidence,
     Settings,
     SyncState,
+    now_iso,
 )
 from app.config import is_production
 from app.store import CleanRunStore, seed_data, seed_settings
@@ -366,7 +367,18 @@ class SupabaseCleanRunStore(CleanRunStore):
     def _upsert_item_photos(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:
         rows: list[dict[str, Any]] = []
         for index, photo in enumerate(item.original_photos):
-            rows.append(self._photo_row(company_id, project_id, item_id, "original", photo, index, item.created_by))
+            rows.append(
+                self._photo_row(
+                    company_id,
+                    project_id,
+                    item_id,
+                    "original",
+                    photo,
+                    index,
+                    item.created_by,
+                    at=item.created_at,
+                )
+            )
         for index, evidence in enumerate(item.rectification_evidence):
             rows.append(
                 self._photo_row(
@@ -420,10 +432,8 @@ class SupabaseCleanRunStore(CleanRunStore):
             "photo": photo if photo and str(photo).startswith("data:") else None,
             "caption": caption,
             "created_by_label": by,
-            "created_at": at,
+            "created_at": at or now_iso(),
         }
-        if row["created_at"] is None:
-            row.pop("created_at")
         return row
 
     def _upsert_comments(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:

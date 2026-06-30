@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.models import Item
-from app.store_supabase import _storage_folder
+from app.store_supabase import SupabaseCleanRunStore, _storage_folder
 
 
 class StoragePathTests(unittest.TestCase):
@@ -25,6 +25,21 @@ class StoragePathTests(unittest.TestCase):
         )
 
         self.assertEqual(_storage_folder(item, "original"), "projects/jura-noosa/items/def-1004/original")
+
+    def test_photo_row_always_has_created_at(self) -> None:
+        store = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore)
+
+        row = store._photo_row(
+            "00000000-0000-0000-0000-000000000001",
+            "project-id",
+            "item-id",
+            "original",
+            "seed://amber/Cracked tile",
+            0,
+            "Site Manager",
+        )
+
+        self.assertTrue(row["created_at"])
 
 
 if __name__ == "__main__":
