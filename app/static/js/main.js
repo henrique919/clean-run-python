@@ -351,6 +351,7 @@ function subcontractorsForTrade(trade) {
 
 function refreshSubcontractors() { setDatalist("subOptions", subcontractorsForTrade($("trade")?.value)); }
 function refreshEditSubcontractors() { setDatalist("editSubOptions", subcontractorsForTrade($("editTrade")?.value)); }
+function refreshReportSubcontractors() { setOptions($("reportSubcontractor"), state.settings?.subcontractors || [], "Subcontractor..."); }
 
 function dueDate(days = 7) {
   const d = new Date();
@@ -394,6 +395,7 @@ async function bootstrap() {
   refreshProjectCodePrefixSetting();
   refreshSubcontractors();
   refreshEditSubcontractors();
+  refreshReportSubcontractors();
   renderItems();
 }
 
@@ -686,7 +688,13 @@ async function quickAction(item, endpoint, success) { try { await action(item.id
 
 async function openReport(reportType) {
   try {
-    const res = await apiFetch(`/api/reports/${reportType}`);
+    const params = new URLSearchParams({ project: projectName() });
+    if (reportType === "subcontractor") {
+      const subcontractor = $("reportSubcontractor")?.value || "";
+      if (!subcontractor) return toast("Choose a subcontractor for the summary report.");
+      params.set("subcontractor", subcontractor);
+    }
+    const res = await apiFetch(`/api/reports/${reportType}?${params.toString()}`);
     if (!res.ok) throw new Error("Report failed");
     const html = await res.text();
     const reportWindow = window.open("", "_blank");
@@ -722,6 +730,31 @@ function itemCardMarkup(item) {
   const next = nextActionFor(item);
   const cardCode = displayItemCode(item);
   return `<div class="item-band"><div><div class="code" title="${text(item.code)}" data-full-code="${text(item.code)}">${text(cardCode)}</div><div class="item-type">${text(TYPE_LABELS[item.type] || item.type)}</div></div><span class="status ${text(item.status)}">${text(STATUS_LABELS[item.status] || item.status)}</span></div><div class="item-card-body"><aside class="item-evidence">${cardPhoto(item)}<div class="due-under-photo">Due ${text(item.due_date || "Not set")}</div></aside><div class="item-copy"><div class="location-line">${text(locationText(item))}</div><div class="desc">${text(item.description)}</div><div class="assignment-block"><div class="subcontractor-name">${text(item.subcontractor || "Unassigned subcontractor")}</div><div class="trade-name">${text(item.trade || "No trade")}</div></div><div class="evidence-counts"><span class="ev-chip original">Original ${counts.original}</span><span class="ev-chip rectification">Rectification ${counts.rectification}</span><span class="ev-chip closeout">Closeout ${counts.closeout}</span></div></div></div><div class="card-actions"><button type="button" class="quiet-action" data-edit>Edit</button><button type="button" class="next-action" data-next>${text(next.label)}</button><button type="button" class="more-action" data-more>More</button></div>`;
+}
+
+async function uploadSettingsSheet(target, input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("target", target);
+  form.append("project", projectName());
+  form.append("file", file);
+  try {
+    const res = await apiFetch("/api/settings/import", { method: "POST", body: form });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.detail || "Import failed");
+    state.settings = payload.settings;
+    refreshProjectConfig();
+    refreshEditProjectConfig(state.settings.active_project);
+    refreshSubcontractors();
+    refreshEditSubcontractors();
+    refreshReportSubcontractors();
+    toast(`${payload.imported || 0} records imported`);
+  } catch (error) {
+    toast(error.message || "Import failed");
+  } finally {
+    input.value = "";
+  }
 }
 
 /*
@@ -769,7 +802,7 @@ function renderItems() {
     list.appendChild(empty);
     return;
   }
-  groupedItems(items.slice(0, 30)).forEach(([label, group]) => {
+  groupedItems(items).forEach(([label, group]) => {
     if (label) {
       const heading = document.createElement("div");
       heading.className = "item-group-heading";
@@ -960,6 +993,8 @@ function bind() {
   $("lockProjectCodePrefix")?.addEventListener("click", async () => {
     try { await lockProjectCodePrefix(); toast("Project prefix locked"); } catch (error) { toast(error.message || "Could not lock project prefix"); }
   });
+  $("unitsImport")?.addEventListener("change", (event) => uploadSettingsSheet("units", event.target));
+  $("subcontractorsImport")?.addEventListener("change", (event) => uploadSettingsSheet("subcontractors", event.target));
   $("editClose").onclick = closeEdit;
   $("editCancel").onclick = closeEdit;
   $("editSave").onclick = saveEdit;

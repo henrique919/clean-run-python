@@ -4,6 +4,7 @@ from datetime import date
 from html import escape
 
 from app.models import Item, ItemStatus, Settings, STATUS_LABEL, TYPE_LABEL
+from app.storage import resolve_photo_url
 
 REPORT_TITLES = {
     "handover": "Closed / Handover Evidence",
@@ -58,6 +59,9 @@ def evidence_badge(label: str, count: int, klass: str) -> str:
 
 
 def image_html(value: str | None, alt: str) -> str:
+    if not value:
+        return ""
+    value = resolve_photo_url(value)
     if not value:
         return ""
     if value.startswith("http") or value.startswith("data:image/"):

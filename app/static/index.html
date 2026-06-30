@@ -99,11 +99,24 @@
           <p class="project-code-help" id="projectCodePrefixStatus"></p>
         </div>
       </div>
+      <div class="project-setting-row import-row">
+        <span>Spreadsheet import</span>
+        <div class="import-actions">
+          <label class="ghost-btn" for="unitsImport">Upload units / areas</label>
+          <input id="unitsImport" type="file" accept=".xlsx,.xlsm,.csv,.tsv" hidden />
+          <label class="ghost-btn" for="subcontractorsImport">Upload subcontractors</label>
+          <input id="subcontractorsImport" type="file" accept=".xlsx,.xlsm,.csv,.tsv" hidden />
+        </div>
+      </div>
       <div class="report-row">
         <a href="#" data-report="open">Open</a>
         <a href="#" data-report="overdue">Overdue</a>
         <a href="#" data-report="client">Client defects</a>
         <a href="#" data-report="incomplete">Incomplete</a>
+        <select id="reportSubcontractor" aria-label="Subcontractor report focus">
+          <option value="">Subcontractor...</option>
+        </select>
+        <a href="#" data-report="subcontractor">Subcontractor</a>
         <a href="#" data-report="handover">Handover</a>
       </div>
     </section>

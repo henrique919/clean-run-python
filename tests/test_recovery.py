@@ -255,9 +255,10 @@ class RecoveryTests(unittest.TestCase):
         entry_script = (root / "app/static/app.js").read_text(encoding="utf-8")
         script = (root / "app/static/js/main.js").read_text(encoding="utf-8")
         styles = (root / "app/static/styles.css").read_text(encoding="utf-8")
-        enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")
 
         for element_id in ("statsBar", "searchInput", "statusFilter", "clearFilters", "saveBtn", "issueBtn"):
+            self.assertIn(f'id="{element_id}"', html)
+        for element_id in ("unitsImport", "subcontractorsImport", "reportSubcontractor"):
             self.assertIn(f'id="{element_id}"', html)
         self.assertIn('<script src="/static/voice-parser.js?v=3"></script>', html)
         self.assertIn('<script src="/static/voice-capture.js?v=3"></script>', html)
@@ -266,9 +267,11 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("window.VoiceParser", (root / "app/static/voice-parser.js").read_text(encoding="utf-8"))
         self.assertIn("voiceRecordBtn", html)
         self.assertIn("projectCodePrefix", html)
-        self.assertIn("lockProjectCodePrefix", enhancements)
-        self.assertIn("uploadSettingsSheet", enhancements)
-        self.assertIn("openSubcontractorReportPicker", enhancements)
+        self.assertIn("lockProjectCodePrefix", script)
+        self.assertIn("uploadSettingsSheet", script)
+        self.assertIn("project: projectName()", script)
+        self.assertIn("groupedItems(items).forEach", script)
+        self.assertNotIn("groupedItems(items.slice(0, 30))", script)
         for action in ("data-rectify", "data-reject", "data-close", "data-comment"):
             self.assertIn(action, script)
         self.assertEqual(script.count("function renderItems()"), 1)

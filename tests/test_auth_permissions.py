@@ -122,6 +122,18 @@ class AuthPermissionTests(unittest.TestCase):
         response = self.client.post("/api/items", json={})
         self.assertEqual(response.status_code, 401)
 
+    def test_anonymous_production_requests_are_rejected(self) -> None:
+        with patch.dict(os.environ, {"APP_ENV": "production", "CLEANRUN_ENV": "production"}, clear=False):
+            self.assertEqual(self.client.get("/api/bootstrap").status_code, 401)
+
+    def test_root_route_serves_current_static_app(self) -> None:
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("/static/app.js", response.text)
+        self.assertIn("authPanel", response.text)
+        self.assertNotIn("ADMIN DESKTOP", response.text)
+
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
         response = self.client.post(
             "/api/access-requests",

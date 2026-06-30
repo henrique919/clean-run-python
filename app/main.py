@@ -9,12 +9,12 @@ from io import BytesIO, StringIO
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.auth import RequestContext, get_request_context
-from app.config import app_env, is_production
+from app.config import app_env, bool_env, is_production
 from app.db import build_repository
 from app.models import AccessRequest, CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
 from app.permissions import (
@@ -34,22 +34,23 @@ from app.permissions import (
 from app.services import items as item_service
 from app.services import projects as project_service
 from app.services import reports as report_service
+from app.storage import resolve_photo_url
 from app.validation import ValidationError
 
 logger = logging.getLogger(__name__)
 APP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
-FIELD_APP_DIR = REPO_ROOT / "CleanRun-IQ-Full-App-Render3"
-FIELD_ASSETS_DIR = FIELD_APP_DIR / "assets"
+LEGACY_EXPORT_DIR = REPO_ROOT / "CleanRun-IQ-Full-App-Render3"
+LEGACY_ASSETS_DIR = LEGACY_EXPORT_DIR / "assets"
 
 
 app = FastAPI(title="CleanRun IQ Python", version="0.1.0")
 store = build_repository()
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-if FIELD_ASSETS_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(FIELD_ASSETS_DIR)), name="assets")
+if bool_env("CLEANRUN_SERVE_LEGACY_EXPORT") and LEGACY_ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(LEGACY_ASSETS_DIR)), name="assets")
 
 
 class IssuePayload(BaseModel):
@@ -241,6 +242,11 @@ def camel_item(item) -> dict[str, object]:
     for source, target in rename.items():
         if source in payload:
             payload[target] = payload.pop(source)
+    payload["originalPhotos"] = [resolve_photo_url(photo) for photo in payload.get("originalPhotos", [])]
+    for key in ("rectificationEvidence", "closeoutEvidence"):
+        for evidence in payload.get(key, []):
+            if isinstance(evidence, dict) and evidence.get("photo"):
+                evidence["photo"] = resolve_photo_url(evidence["photo"])
     return payload
 
 
@@ -393,8 +399,12 @@ def deploy_status() -> dict[str, object]:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    field_app = FIELD_APP_DIR / "index.html"
-    html = (field_app if field_app.exists() else STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    if bool_env("CLEANRUN_SERVE_LEGACY_EXPORT"):
+        legacy_app = LEGACY_EXPORT_DIR / "index.html"
+        if legacy_app.exists():
+            html = legacy_app.read_text(encoding="utf-8")
+            return HTMLResponse(html)
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(html)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
 from app.supabase_client import get_supabase_client
@@ -49,6 +50,41 @@ def _signed_url(client, path: str) -> str:
     return str(result)
 
 
+def _path_from_signed_url(value: str) -> str | None:
+    parsed = urlsplit(value)
+    marker = f"/storage/v1/object/sign/{BUCKET_NAME}/"
+    if marker not in parsed.path:
+        return None
+    return unquote(parsed.path.split(marker, 1)[1])
+
+
+def storage_path_from_value(value: str | None) -> str | None:
+    if not value:
+        return value
+    if value.startswith("data:image/") or value.startswith("seed://"):
+        return value
+    if value.startswith("http"):
+        return _path_from_signed_url(value) or value
+    return value
+
+
+def resolve_photo_url(value: str | None) -> str | None:
+    if not value:
+        return value
+    if value.startswith(("data:image/", "seed://")):
+        return value
+    if value.startswith("http"):
+        path = _path_from_signed_url(value)
+        if not path:
+            return value
+        value = path
+    try:
+        return _signed_url(get_supabase_client(), value)
+    except Exception:
+        logger.exception("Could not create signed URL for Supabase Storage object %s", value)
+        return value
+
+
 def _ensure_bucket(client) -> None:
     try:
         client.storage.get_bucket(BUCKET_NAME)
@@ -84,7 +120,7 @@ def _object_path(folder: str, ext: str) -> str:
 
 
 def upload_data_url(value: str, *, folder: str = "evidence") -> str:
-    """Upload a browser data URL to private Supabase Storage and return a signed URL."""
+    """Upload a browser data URL to private Supabase Storage and return the stable object path."""
     content_type, data = _split_data_url(value)
     ext = CONTENT_TYPE_EXT[content_type]
     path = _object_path(folder, ext)
@@ -99,7 +135,7 @@ def upload_data_url(value: str, *, folder: str = "evidence") -> str:
             "upsert": "false",
         },
     )
-    return _signed_url(client, path)
+    return path
 
 
 def normalize_photo(value: str | None, *, folder: str = "evidence") -> str | None:
@@ -107,4 +143,4 @@ def normalize_photo(value: str | None, *, folder: str = "evidence") -> str | Non
         return value
     if is_data_url(value):
         return upload_data_url(value, folder=folder)
-    return value
+    return storage_path_from_value(value)

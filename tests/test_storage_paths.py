@@ -2,13 +2,62 @@ from __future__ import annotations
 
 import unittest
 from threading import RLock
+from unittest.mock import patch
 
 from app.models import AppData, Item, ItemCreate
+from app.storage import normalize_photo, resolve_photo_url, upload_data_url
 from app.store import seed_settings
 from app.store_supabase import SupabaseCleanRunStore, _child_db_id, _item_db_id, _stable_uuid, _storage_folder
 
 
 class StoragePathTests(unittest.TestCase):
+    def test_storage_upload_returns_object_path_not_signed_url(self) -> None:
+        uploaded = {}
+
+        class FakeBucket:
+            def upload(self, *, path, file, file_options):
+                uploaded["path"] = path
+
+            def create_signed_url(self, path, ttl):
+                return {"signedURL": f"https://signed.example/{path}?ttl={ttl}"}
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+            def get_bucket(self, bucket):
+                return {"id": bucket}
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        with patch.dict("os.environ", {"CLEANRUN_STORAGE_PATH_PREFIX": "projects/jura/items/def-1005"}, clear=False), patch(
+            "app.storage.get_supabase_client", return_value=FakeClient()
+        ):
+            path = upload_data_url("data:image/png;base64,aGVsbG8=", folder="original")
+
+        self.assertEqual(path, uploaded["path"])
+        self.assertTrue(path.startswith("projects/jura/items/def-1005/original/"))
+        self.assertNotIn("signed.example", path)
+
+    def test_signed_storage_urls_are_normalized_and_resigned(self) -> None:
+        class FakeBucket:
+            def create_signed_url(self, path, ttl):
+                return {"signedURL": f"https://fresh.example/{path}"}
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        expired = "https://project.supabase.co/storage/v1/object/sign/cleanrun-evidence/projects/jura/photo.jpg?token=old"
+
+        self.assertEqual(normalize_photo(expired), "projects/jura/photo.jpg")
+        with patch("app.storage.get_supabase_client", return_value=FakeClient()):
+            self.assertEqual(resolve_photo_url(expired), "https://fresh.example/projects/jura/photo.jpg")
+
     def test_storage_folder_includes_project_item_and_evidence_type(self) -> None:
         item = Item(
             id="item-1",
