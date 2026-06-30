@@ -200,6 +200,27 @@ function projectDefaultView(project = projectName()) {
   return selectedProjectConfig(project)?.preferred_items_view || "standard";
 }
 
+function suggestedProjectCodePrefix(project) {
+  const firstWord = String(project || "").match(/[A-Za-z0-9]+/)?.[0] || "";
+  return firstWord.slice(0, 3).toUpperCase();
+}
+
+function sanitizeProjectCodePrefix(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+}
+
+function cardCodePrefix(item) {
+  const cfg = selectedProjectConfig(item.project);
+  if (!cfg?.code_prefix_locked || !cfg?.code_prefix_hidden_on_cards || !cfg.code_prefix) return "";
+  return cfg.code_prefix;
+}
+
+function displayItemCode(item) {
+  const prefix = cardCodePrefix(item);
+  if (prefix && item.code?.toUpperCase().startsWith(`${prefix}-`)) return item.code.slice(prefix.length + 1);
+  return item.code;
+}
+
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 function isClosed(item) { return item.status === "closed" || item.status === "complete"; }
 function isOverdue(item) { return !isClosed(item) && item.due_date && item.due_date < todayIso(); }
@@ -284,6 +305,24 @@ function setItemViewOptions(select) {
   });
 }
 
+function refreshProjectCodePrefixSetting() {
+  const project = state.settings?.active_project || "";
+  const cfg = selectedProjectConfig(project) || {};
+  const input = $("projectCodePrefix");
+  const button = $("lockProjectCodePrefix");
+  const status = $("projectCodePrefixStatus");
+  if (!input || !button || !status) return;
+  const locked = !!cfg.code_prefix_locked;
+  const prefix = cfg.code_prefix || suggestedProjectCodePrefix(project);
+  input.value = prefix;
+  input.disabled = locked;
+  button.disabled = locked;
+  button.textContent = locked ? "Locked" : "Lock prefix";
+  status.textContent = locked
+    ? `Locked as ${prefix}. Item cards show DEF-1001 while reports keep ${prefix}-DEF-1001.`
+    : "Choose once for this project. It cannot be changed after locking.";
+}
+
 function refreshProjectConfig(projectName) {
   const project = projectName || $("project")?.value || state.settings.active_project;
   const cfg = projectConfig(project);
@@ -352,6 +391,7 @@ async function bootstrap() {
   if ($("dueDate")) $("dueDate").value = dueDate(7);
   refreshProjectConfig();
   refreshEditProjectConfig(state.settings.active_project);
+  refreshProjectCodePrefixSetting();
   refreshSubcontractors();
   refreshEditSubcontractors();
   renderItems();
@@ -555,7 +595,7 @@ async function action(id, endpoint, body = {}) {
 
 function evidenceCounts(item) { return { original: item.original_photos?.length || 0, rectification: item.rectification_evidence?.length || 0, closeout: item.closeout_evidence?.length || 0 }; }
 function locationText(item) { return [item.building, item.level, item.unit, item.room].filter(Boolean).join(" / ") || "Unassigned location"; }
-function saveConfirmation(item) { return `${item.code} ${item.status === "issued" ? "issued" : "saved"} to ${locationText(item)}. Capture another here?`; }
+function saveConfirmation(item) { return `${displayItemCode(item)} ${item.status === "issued" ? "issued" : "saved"} to ${locationText(item)}. Capture another here?`; }
 
 function visibleItems() {
   const status = $("statusFilter")?.value || "all";
@@ -563,7 +603,7 @@ function visibleItems() {
   return state.items.filter((item) => {
     if (status !== "all" && item.status !== status) return false;
     if (!query) return true;
-    const haystack = [item.code, TYPE_LABELS[item.type], STATUS_LABELS[item.status], item.description, item.trade, item.subcontractor, locationText(item)].join(" ").toLowerCase();
+    const haystack = [item.code, displayItemCode(item), TYPE_LABELS[item.type], STATUS_LABELS[item.status], item.description, item.trade, item.subcontractor, locationText(item)].join(" ").toLowerCase();
     return haystack.includes(query);
   });
 }
@@ -585,6 +625,27 @@ async function savePreferredItemsView(value) {
   const res = await apiFetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_configs }) });
   if (!res.ok) throw new Error("Could not save project setting");
   state.settings = await res.json();
+}
+
+async function lockProjectCodePrefix() {
+  const project = state.settings.active_project;
+  const prefix = sanitizeProjectCodePrefix($("projectCodePrefix")?.value || suggestedProjectCodePrefix(project));
+  if (!prefix) return toast("Add a project prefix before locking.");
+  const project_configs = JSON.parse(JSON.stringify(state.settings.project_configs));
+  project_configs[project] = {
+    ...project_configs[project],
+    code_prefix: prefix,
+    code_prefix_locked: true,
+    code_prefix_hidden_on_cards: true,
+  };
+  const res = await apiFetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_configs }) });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Could not lock project prefix");
+  }
+  state.settings = await res.json();
+  refreshProjectCodePrefixSetting();
+  renderItems();
 }
 
 function groupLabel(item, view) {
@@ -659,7 +720,8 @@ function cardPhoto(item) {
 function itemCardMarkup(item) {
   const counts = evidenceCounts(item);
   const next = nextActionFor(item);
-  return `<div class="item-band"><div><div class="code">${text(item.code)}</div><div class="item-type">${text(TYPE_LABELS[item.type] || item.type)}</div></div><span class="status ${text(item.status)}">${text(STATUS_LABELS[item.status] || item.status)}</span></div><div class="item-card-body"><aside class="item-evidence">${cardPhoto(item)}<div class="due-under-photo">Due ${text(item.due_date || "Not set")}</div></aside><div class="item-copy"><div class="location-line">${text(locationText(item))}</div><div class="desc">${text(item.description)}</div><div class="assignment-block"><div class="subcontractor-name">${text(item.subcontractor || "Unassigned subcontractor")}</div><div class="trade-name">${text(item.trade || "No trade")}</div></div><div class="evidence-counts"><span class="ev-chip original">Original ${counts.original}</span><span class="ev-chip rectification">Rectification ${counts.rectification}</span><span class="ev-chip closeout">Closeout ${counts.closeout}</span></div></div></div><div class="card-actions"><button type="button" class="quiet-action" data-edit>Edit</button><button type="button" class="next-action" data-next>${text(next.label)}</button><button type="button" class="more-action" data-more>More</button></div>`;
+  const cardCode = displayItemCode(item);
+  return `<div class="item-band"><div><div class="code" title="${text(item.code)}" data-full-code="${text(item.code)}">${text(cardCode)}</div><div class="item-type">${text(TYPE_LABELS[item.type] || item.type)}</div></div><span class="status ${text(item.status)}">${text(STATUS_LABELS[item.status] || item.status)}</span></div><div class="item-card-body"><aside class="item-evidence">${cardPhoto(item)}<div class="due-under-photo">Due ${text(item.due_date || "Not set")}</div></aside><div class="item-copy"><div class="location-line">${text(locationText(item))}</div><div class="desc">${text(item.description)}</div><div class="assignment-block"><div class="subcontractor-name">${text(item.subcontractor || "Unassigned subcontractor")}</div><div class="trade-name">${text(item.trade || "No trade")}</div></div><div class="evidence-counts"><span class="ev-chip original">Original ${counts.original}</span><span class="ev-chip rectification">Rectification ${counts.rectification}</span><span class="ev-chip closeout">Closeout ${counts.closeout}</span></div></div></div><div class="card-actions"><button type="button" class="quiet-action" data-edit>Edit</button><button type="button" class="next-action" data-next>${text(next.label)}</button><button type="button" class="more-action" data-more>More</button></div>`;
 }
 
 /*
@@ -891,6 +953,12 @@ function bind() {
     if ($("itemsView")) $("itemsView").value = state.itemView;
     renderItems();
     try { await savePreferredItemsView(state.itemView); toast("Project Items view saved"); } catch (error) { toast(error.message || "Could not save setting"); }
+  });
+  $("projectCodePrefix")?.addEventListener("input", () => {
+    $("projectCodePrefix").value = sanitizeProjectCodePrefix($("projectCodePrefix").value);
+  });
+  $("lockProjectCodePrefix")?.addEventListener("click", async () => {
+    try { await lockProjectCodePrefix(); toast("Project prefix locked"); } catch (error) { toast(error.message || "Could not lock project prefix"); }
   });
   $("editClose").onclick = closeEdit;
   $("editCancel").onclick = closeEdit;

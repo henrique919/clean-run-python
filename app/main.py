@@ -134,6 +134,12 @@ def camel_settings(settings: Settings) -> dict[str, object]:
             config["defaultDueDays"] = config.pop("default_due_days")
         if "preferred_items_view" in config:
             config["preferredItemsView"] = config.pop("preferred_items_view")
+        if "code_prefix" in config:
+            config["codePrefix"] = config.pop("code_prefix")
+        if "code_prefix_locked" in config:
+            config["codePrefixLocked"] = config.pop("code_prefix_locked")
+        if "code_prefix_hidden_on_cards" in config:
+            config["codePrefixHiddenOnCards"] = config.pop("code_prefix_hidden_on_cards")
     return payload
 
 
@@ -199,6 +205,12 @@ def snake_settings_payload(payload: dict[str, object]) -> dict[str, object]:
                     config["default_due_days"] = config.pop("defaultDueDays")
                 if "preferredItemsView" in config:
                     config["preferred_items_view"] = config.pop("preferredItemsView")
+                if "codePrefix" in config:
+                    config["code_prefix"] = config.pop("codePrefix")
+                if "codePrefixLocked" in config:
+                    config["code_prefix_locked"] = config.pop("codePrefixLocked")
+                if "codePrefixHiddenOnCards" in config:
+                    config["code_prefix_hidden_on_cards"] = config.pop("codePrefixHiddenOnCards")
     return result
 
 
@@ -505,7 +517,10 @@ def update_settings(payload: SettingsPayload, ctx: RequestContext = Depends(get_
     current = data.settings
     updates = payload.model_dump(exclude_unset=True)
     settings = Settings.model_validate({**current.model_dump(), **updates})
-    return project_service.update_settings(store, settings)
+    try:
+        return project_service.update_settings(store, settings)
+    except project_service.SettingsLockError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/settings")

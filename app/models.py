@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ItemType(StrEnum):
@@ -230,6 +230,23 @@ class ProjectConfig(BaseModel):
     rooms: list[str] = Field(default_factory=list)
     default_due_days: int = 7
     preferred_items_view: Literal["standard", "building", "level", "unit", "room", "trade", "subcontractor", "status"] = "standard"
+    code_prefix: str = ""
+    code_prefix_locked: bool = False
+    code_prefix_hidden_on_cards: bool = True
+
+    @field_validator("code_prefix")
+    @classmethod
+    def code_prefix_clean(cls, value: str) -> str:
+        cleaned = "".join(char for char in (value or "").strip().upper() if char.isalnum())
+        if len(cleaned) > 6:
+            raise ValueError("Project code prefix must be 6 characters or fewer")
+        return cleaned
+
+    @model_validator(mode="after")
+    def locked_prefix_requires_value(self) -> "ProjectConfig":
+        if self.code_prefix_locked and not self.code_prefix:
+            raise ValueError("Project code prefix is required before it can be locked")
+        return self
 
 
 class SubProfile(BaseModel):

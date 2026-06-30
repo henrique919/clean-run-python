@@ -20,6 +20,7 @@ from app.models import (
     ItemCreate,
     ItemStatus,
     ItemUpdate,
+    ItemType,
     ProjectConfig,
     RectificationEvidence,
     Settings,
@@ -88,6 +89,12 @@ def _snake_settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
                     config["default_due_days"] = config.pop("defaultDueDays")
                 if "preferredItemsView" in config:
                     config["preferred_items_view"] = config.pop("preferredItemsView")
+                if "codePrefix" in config:
+                    config["code_prefix"] = config.pop("codePrefix")
+                if "codePrefixLocked" in config:
+                    config["code_prefix_locked"] = config.pop("codePrefixLocked")
+                if "codePrefixHiddenOnCards" in config:
+                    config["code_prefix_hidden_on_cards"] = config.pop("codePrefixHiddenOnCards")
     return result
 
 
@@ -243,16 +250,24 @@ class CleanRunStore:
             raise KeyError(item_id)
         return item
 
-    def next_code(self, items: list[Item], item_type: str) -> str:
-        prefix = CODE_PREFIX[item_type]
+    def next_code(self, items: list[Item], item_type: str, *, project: str | None = None, settings: Settings | None = None) -> str:
+        type_prefix = CODE_PREFIX[ItemType(item_type)]
+        project_prefix = ""
+        if project and settings:
+            cfg = settings.project_configs.get(project)
+            if cfg and cfg.code_prefix_locked and cfg.code_prefix:
+                project_prefix = cfg.code_prefix
+        code_stem = f"{project_prefix}-{type_prefix}" if project_prefix else type_prefix
         numbers: list[int] = []
         for item in items:
-            if item.code.startswith(f"{prefix}-"):
+            if project_prefix and item.project != project:
+                continue
+            if item.code.startswith(f"{code_stem}-"):
                 try:
-                    numbers.append(int(item.code.split("-", 1)[1]))
+                    numbers.append(int(item.code.rsplit("-", 1)[1]))
                 except ValueError:
                     pass
-        return f"{prefix}-{(max(numbers) if numbers else 1000) + 1}"
+        return f"{code_stem}-{(max(numbers) if numbers else 1000) + 1}"
 
     def create_item(self, payload: ItemCreate, *, issue_now: bool = False, actor: dict[str, Any] | None = None) -> Item:
         validate_capture(payload, for_issue=issue_now)
@@ -261,7 +276,7 @@ class CleanRunStore:
         duplicate = self._recent_duplicate(data.items, payload, now)
         if duplicate:
             return duplicate
-        code = self.next_code(data.items, payload.type)
+        code = self.next_code(data.items, payload.type, project=payload.project, settings=data.settings)
         payload_data = payload.model_dump(exclude={"status"})
         item = Item(
             **payload_data,

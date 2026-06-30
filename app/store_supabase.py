@@ -297,7 +297,7 @@ class SupabaseCleanRunStore(CleanRunStore):
         duplicate = self._recent_duplicate(data.items, payload, now)
         if duplicate:
             return duplicate
-        code = self.next_code(data.items, payload.type)
+        code = self.next_code(data.items, payload.type, project=payload.project, settings=data.settings)
         payload_data = payload.model_dump(exclude={"status"})
         item = Item(
             **payload_data,

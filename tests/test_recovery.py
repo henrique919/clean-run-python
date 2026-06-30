@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ProjectConfig, RectificationEvidence
 from app.reporting import build_report_html
+from app.services.projects import SettingsLockError, validate_settings_update
 from app.store import CleanRunStore, seed_data
 
 
@@ -88,6 +89,82 @@ class RecoveryTests(unittest.TestCase):
 
         self.assertEqual(saved.project_configs[saved.active_project].preferred_items_view, "subcontractor")
 
+    def test_project_code_prefix_numbers_are_project_scoped(self) -> None:
+        settings = self.store.snapshot().settings
+        updated_configs = dict(settings.project_configs)
+        updated_configs["Jura Noosa"] = updated_configs["Jura Noosa"].model_copy(
+            update={"code_prefix": "JUR", "code_prefix_locked": True}
+        )
+        updated_configs["Meta Street"] = updated_configs["Meta Street"].model_copy(
+            update={"code_prefix": "MET", "code_prefix_locked": True}
+        )
+        self.store.update_settings(settings.model_copy(update={"project_configs": updated_configs}))
+
+        first_jura = self.create_item()
+        second_jura = self.store.create_item(
+            ItemCreate(
+                project="Jura Noosa",
+                building="Block B",
+                level="L02",
+                unit="B-205",
+                room="Bathroom",
+                trade="Tiling",
+                subcontractor="Sterling Tiling",
+                due_date="2026-07-01",
+                description="Second Jura defect",
+                original_photos=["seed://amber/Second"],
+                created_by="Site Manager",
+            )
+        )
+        first_meta = self.store.create_item(
+            ItemCreate(
+                project="Meta Street",
+                building="Main Building",
+                level="Ground",
+                unit="Unit 1",
+                room="Kitchen",
+                trade="Painting",
+                subcontractor="CLP Painting",
+                due_date="2026-07-02",
+                description="First Meta defect",
+                original_photos=["seed://amber/Meta"],
+                created_by="Site Manager",
+            )
+        )
+        first_jura_incomplete = self.store.create_item(
+            ItemCreate(
+                type="incomplete",
+                project="Jura Noosa",
+                building="Block B",
+                level="L02",
+                unit="B-206",
+                room="Bedroom",
+                trade="Joinery",
+                subcontractor="TrueLine Joinery",
+                due_date="2026-07-03",
+                description="First Jura incomplete work",
+                created_by="Site Manager",
+            )
+        )
+
+        self.assertEqual(first_jura.code, "JUR-DEF-1001")
+        self.assertEqual(second_jura.code, "JUR-DEF-1002")
+        self.assertEqual(first_meta.code, "MET-DEF-1001")
+        self.assertEqual(first_jura_incomplete.code, "JUR-INC-1001")
+
+    def test_locked_project_code_prefix_cannot_change(self) -> None:
+        settings = self.store.snapshot().settings
+        current_configs = dict(settings.project_configs)
+        current_configs["Jura Noosa"] = current_configs["Jura Noosa"].model_copy(
+            update={"code_prefix": "JUR", "code_prefix_locked": True}
+        )
+        current = settings.model_copy(update={"project_configs": current_configs})
+        proposed_configs = dict(current.project_configs)
+        proposed_configs["Jura Noosa"] = proposed_configs["Jura Noosa"].model_copy(update={"code_prefix": "JNO"})
+
+        with self.assertRaises(SettingsLockError):
+            validate_settings_update(current, current.model_copy(update={"project_configs": proposed_configs}))
+
     def test_repeated_capture_submit_returns_existing_item(self) -> None:
         first = self.create_item()
         second = self.create_item()
@@ -145,6 +222,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(entry_script.strip(), 'import("/static/js/main.js");')
         self.assertIn("window.VoiceParser", (root / "app/static/voice-parser.js").read_text(encoding="utf-8"))
         self.assertIn("voiceRecordBtn", html)
+        self.assertIn("projectCodePrefix", html)
+        self.assertIn("lockProjectCodePrefix", (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8"))
         for action in ("data-rectify", "data-reject", "data-close", "data-comment"):
             self.assertIn(action, script)
         self.assertEqual(script.count("function renderItems()"), 1)

@@ -245,6 +245,9 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 
 .focus-controls{display:grid;grid-template-columns:minmax(180px,260px) minmax(180px,260px) minmax(220px,360px);gap:8px;padding-top:10px}
 .focus-controls select{min-height:42px;border:1px solid #D0D5DD;border-radius:10px;background:#fff;color:#121619;padding:8px 10px;font-weight:800}
+.project-code-card{border-left:4px solid #20C55E}
+.project-code-lock{display:grid;grid-template-columns:minmax(90px,1fr) auto;gap:8px;align-items:center;margin-top:6px}
+.project-code-lock input{font-family:var(--font-heading);font-weight:900;letter-spacing:.1em;text-transform:uppercase}
 .plan{overflow:hidden;background-repeat:no-repeat;background-position:center;background-size:contain}
 .plan.pdf{background:#202326}
 .plan.pdf .plan-pdf{inset:0;width:100%;height:100%;border:0;background:#fff;pointer-events:none;transform-origin:center center;transition:transform .12s ease}

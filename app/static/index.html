@@ -89,6 +89,16 @@
         <label for="preferredItemsView">Project settings: preferred Items view</label>
         <select id="preferredItemsView" aria-label="Preferred Items page view"></select>
       </div>
+      <div class="project-setting-row project-code-row">
+        <label for="projectCodePrefix">Project code prefix</label>
+        <div class="code-prefix-control">
+          <div class="code-prefix-entry">
+            <input id="projectCodePrefix" maxlength="6" placeholder="JUR" aria-label="Project code prefix" />
+            <button class="ghost-btn" id="lockProjectCodePrefix" type="button">Lock prefix</button>
+          </div>
+          <p class="project-code-help" id="projectCodePrefixStatus"></p>
+        </div>
+      </div>
       <div class="report-row">
         <a href="#" data-report="open">Open</a>
         <a href="#" data-report="overdue">Overdue</a>
