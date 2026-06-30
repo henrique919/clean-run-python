@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import secrets
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -22,6 +23,7 @@ except Exception:  # pragma: no cover - production dependency guard
 bearer_scheme = HTTPBearer(auto_error=False)
 DEFAULT_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
 DEFAULT_LAUNCH_ADMIN_EMAILS = "info@cleanruniq.com,harrysfuel@outlook.com"
+QA_TOKEN_PREFIX = "qa:"
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,48 @@ def _dev_users() -> dict[str, AuthUser]:
             auth_method="dev",
         ),
     }
+
+
+def qa_access_enabled() -> bool:
+    enabled = os.getenv("CLEANRUN_ENABLE_QA_ACCESS", "").lower() in {"1", "true", "yes", "on"}
+    return bool(enabled and os.getenv("CLEANRUN_QA_ACCESS_TOKEN"))
+
+
+def _qa_projects() -> list[str]:
+    raw = os.getenv("CLEANRUN_QA_PROJECTS", "Jura Noosa")
+    return [project.strip() for project in raw.split(",") if project.strip()]
+
+
+def _qa_user() -> AuthUser:
+    projects = _qa_projects()
+    return AuthUser(
+        id="qa-site-manager",
+        email=os.getenv("CLEANRUN_QA_EMAIL", "qa.site.manager@cleanrun.local"),
+        company_id=DEFAULT_COMPANY_ID,
+        company_role="project_manager",
+        project_roles={project: "site_manager" for project in projects},
+        auth_method="qa",
+    )
+
+
+def issue_qa_access_token(candidate: str | None) -> str:
+    if not qa_access_enabled():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QA access is not enabled")
+    expected = os.getenv("CLEANRUN_QA_ACCESS_TOKEN") or ""
+    supplied = (candidate or "").strip()
+    if not supplied or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid QA access token")
+    return f"{QA_TOKEN_PREFIX}{expected}"
+
+
+def _authenticate_qa_token(token: str) -> AuthUser:
+    if not qa_access_enabled():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token")
+    expected = os.getenv("CLEANRUN_QA_ACCESS_TOKEN") or ""
+    supplied = token.removeprefix(QA_TOKEN_PREFIX)
+    if not supplied or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token")
+    return _qa_user()
 
 
 def _claim_list(value: Any) -> set[str]:
@@ -210,6 +254,9 @@ def _request_token(request: Request, credentials: HTTPAuthorizationCredentials |
 def _authenticate(token: str | None) -> AuthUser:
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    if token.startswith(QA_TOKEN_PREFIX):
+        return _authenticate_qa_token(token)
 
     if not is_production() and token in _dev_users():
         return _dev_users()[token]

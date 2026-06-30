@@ -569,7 +569,7 @@
   const originalRender=render;
   render=function(){
     document.body.dataset.route=route;applyTheme();
-    if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();updateOfflinePill();return}
+    if(route==="review"){$("#app").innerHTML=(typeof qaBanner==="function"?qaBanner():"")+reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();updateOfflinePill();return}
     originalRender();renderMobileNav();renderDesktopNav();
     if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");renderCapturePreviews()}
     updateOfflinePill();

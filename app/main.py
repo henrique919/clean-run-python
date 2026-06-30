@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.auth import RequestContext, get_request_context
+from app.auth import RequestContext, get_request_context, issue_qa_access_token, qa_access_enabled
 from app.config import app_env, is_production
 from app.db import build_repository
 from app.models import AccessRequest, CloseoutEvidence, Comment, Item, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
@@ -64,6 +64,10 @@ class IssuePayload(BaseModel):
 class ActorPayload(BaseModel):
     by: str = "Site Team"
     note: str | None = None
+
+
+class QAAccessPayload(BaseModel):
+    token: str
 
 
 class RejectPayload(BaseModel):
@@ -284,6 +288,7 @@ def user_payload(ctx: RequestContext, *, camel: bool = False) -> dict[str, objec
             "companyRole": ctx.user.company_role,
             "projectRoles": ctx.user.project_roles,
             "subcontractors": sorted(ctx.user.subcontractors),
+            "authMethod": ctx.user.auth_method,
         }
     return {
         "id": ctx.user.id,
@@ -291,6 +296,7 @@ def user_payload(ctx: RequestContext, *, camel: bool = False) -> dict[str, objec
         "company_role": ctx.user.company_role,
         "project_roles": ctx.user.project_roles,
         "subcontractors": sorted(ctx.user.subcontractors),
+        "auth_method": ctx.user.auth_method,
     }
 
 
@@ -423,7 +429,15 @@ def auth_config() -> dict[str, object]:
         "supabase_publishable_key": os.getenv("SUPABASE_PUBLISHABLE_KEY"),
         "environment": os.getenv("CLEANRUN_ENV", "development"),
         "dev_tokens_enabled": not is_production(),
+        "qa_access_enabled": qa_access_enabled(),
     }
+
+
+@app.post("/api/auth/qa")
+def qa_access(payload: QAAccessPayload) -> dict[str, object]:
+    token = issue_qa_access_token(payload.token)
+    logger.warning("Temporary QA access issued for controlled test identity")
+    return {"access_token": token, "token_type": "bearer", "qa_access": True}
 
 
 @app.post("/api/access-requests", status_code=201)
