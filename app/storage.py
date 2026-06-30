@@ -6,7 +6,7 @@ import os
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
-from app.supabase_client import get_supabase_client
+from app.supabase_client import get_public_supabase_client, get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,28 @@ CONTENT_TYPE_EXT = {
 
 def _is_production() -> bool:
     return os.getenv("CLEANRUN_ENV", "development").lower() == "production"
+
+
+def _storage_path_prefix() -> str:
+    prefix = os.getenv("CLEANRUN_STORAGE_PATH_PREFIX", "").strip().strip("/")
+    if prefix:
+        return prefix
+    return "cleanrun/public" if _is_production() else "local-dev/unlinked/unlinked"
+
+
+def _uses_public_launch_prefix(path: str | None) -> bool:
+    if not path:
+        return False
+    prefix = _storage_path_prefix()
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
+def _client_for_storage_path(path: str):
+    # Launch mode stores browser evidence under cleanrun/public/* with anon-only
+    # RLS. Do not attach the user's JWT for these temporary public-mode paths.
+    if _uses_public_launch_prefix(path):
+        return get_public_supabase_client()
+    return get_supabase_client()
 
 
 def is_data_url(value: str | None) -> bool:
@@ -79,7 +101,7 @@ def resolve_photo_url(value: str | None) -> str | None:
             return value
         value = path
     try:
-        return _signed_url(get_supabase_client(), value)
+        return _signed_url(_client_for_storage_path(value), value)
     except Exception:
         logger.exception("Could not create signed URL for Supabase Storage object %s", value)
         return value
@@ -113,10 +135,7 @@ def _ensure_bucket(client) -> None:
 
 
 def _object_path(folder: str, ext: str) -> str:
-    prefix = os.getenv("CLEANRUN_STORAGE_PATH_PREFIX", "").strip().strip("/")
-    if not prefix:
-        prefix = "cleanrun/public" if _is_production() else "local-dev/unlinked/unlinked"
-    return f"{prefix}/{folder}/{uuid4().hex}{ext}"
+    return f"{_storage_path_prefix()}/{folder}/{uuid4().hex}{ext}"
 
 
 def upload_data_url(value: str, *, folder: str = "evidence") -> str:
@@ -124,7 +143,7 @@ def upload_data_url(value: str, *, folder: str = "evidence") -> str:
     content_type, data = _split_data_url(value)
     ext = CONTENT_TYPE_EXT[content_type]
     path = _object_path(folder, ext)
-    client = get_supabase_client()
+    client = _client_for_storage_path(path)
     _ensure_bucket(client)
     client.storage.from_(BUCKET_NAME).upload(
         path=path,

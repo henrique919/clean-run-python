@@ -642,6 +642,9 @@ def update_settings(payload: SettingsPayload, ctx: RequestContext = Depends(get_
         return project_service.update_settings(store, settings)
     except project_service.SettingsLockError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Settings save failed for user=%s", ctx.user.email)
+        raise HTTPException(status_code=503, detail="Could not save settings. Check Render logs for the Supabase write error.") from exc
 
 
 @app.post("/api/settings")
@@ -720,6 +723,9 @@ def create_item(payload: dict[str, object], issue_now: bool = Query(default=Fals
         return item_service.create_item(store, payload, issue_now=issue_now, actor=actor_context(ctx))
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Item create failed for user=%s project=%s issue_now=%s", ctx.user.email, payload.project, issue_now)
+        raise HTTPException(status_code=503, detail="Could not save item. Check Render logs for the Supabase write error.") from exc
 
 
 @app.patch("/api/items/{item_id}")
@@ -740,39 +746,43 @@ def update_item(item_id: str, payload: dict[str, object], by: str | None = Query
 @app.post("/api/items/{item_id}/actions/{action}")
 def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ctx: RequestContext = Depends(get_request_context)):
     item = get_authorized_item(item_id, ctx)
-    if action == "issue":
-        require_issue_item(ctx.user, item)
-        return camel_item(store.issue_item(item_id, to=str(payload.get("to") or item.subcontractor), by=actor_label(ctx), note=payload.get("note"), reissue=bool(payload.get("reissue")), actor=actor_context(ctx)))
-    if action == "start":
-        require_rectification_access(ctx.user, item)
-        return camel_item(store.mark_in_progress(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
-    if action == "ready":
-        require_rectification_access(ctx.user, item)
-        return camel_item(store.mark_ready(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
-    if action == "inspect":
-        require_close_item(ctx.user, item)
-        return camel_item(store.start_inspection(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
-    if action == "reject":
-        require_close_item(ctx.user, item)
-        return camel_item(store.reject(item_id, by=actor_label(ctx), reason=str(payload.get("reason") or "Rejected"), actor=actor_context(ctx)))
-    if action == "close":
-        require_close_item(ctx.user, item)
-        evidence = CloseoutEvidence(
-            photo=payload.get("photo"),
-            by=actor_label(ctx),
-            role=str(payload.get("role") or "Supervisor"),
-            note=payload.get("note"),
-            confirmation=str(payload.get("confirmation") or payload.get("confirmed") or ""),
-        )
-        return camel_item(store.close_with_evidence(item_id, evidence, actor=actor_context(ctx)))
-    if action == "rectification":
-        require_rectification_access(ctx.user, item)
-        evidence = RectificationEvidence(photo=payload.get("photo"), comment=payload.get("comment"), by=actor_label(ctx))
-        return camel_item(store.add_rectification(item_id, evidence, advance_to_ready=bool(payload.get("advanceToReady") or payload.get("advance_to_ready")), actor=actor_context(ctx)))
-    if action == "comment":
-        require_comment_access(ctx.user, item)
-        comment = Comment(text=str(payload.get("text") or ""), by=actor_label(ctx))
-        return camel_item(store.add_comment(item_id, comment, actor=actor_context(ctx)))
+    try:
+        if action == "issue":
+            require_issue_item(ctx.user, item)
+            return camel_item(store.issue_item(item_id, to=str(payload.get("to") or item.subcontractor), by=actor_label(ctx), note=payload.get("note"), reissue=bool(payload.get("reissue")), actor=actor_context(ctx)))
+        if action == "start":
+            require_rectification_access(ctx.user, item)
+            return camel_item(store.mark_in_progress(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+        if action == "ready":
+            require_rectification_access(ctx.user, item)
+            return camel_item(store.mark_ready(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+        if action == "inspect":
+            require_close_item(ctx.user, item)
+            return camel_item(store.start_inspection(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+        if action == "reject":
+            require_close_item(ctx.user, item)
+            return camel_item(store.reject(item_id, by=actor_label(ctx), reason=str(payload.get("reason") or "Rejected"), actor=actor_context(ctx)))
+        if action == "close":
+            require_close_item(ctx.user, item)
+            evidence = CloseoutEvidence(
+                photo=payload.get("photo"),
+                by=actor_label(ctx),
+                role=str(payload.get("role") or "Supervisor"),
+                note=payload.get("note"),
+                confirmation=str(payload.get("confirmation") or payload.get("confirmed") or ""),
+            )
+            return camel_item(store.close_with_evidence(item_id, evidence, actor=actor_context(ctx)))
+        if action == "rectification":
+            require_rectification_access(ctx.user, item)
+            evidence = RectificationEvidence(photo=payload.get("photo"), comment=payload.get("comment"), by=actor_label(ctx))
+            return camel_item(store.add_rectification(item_id, evidence, advance_to_ready=bool(payload.get("advanceToReady") or payload.get("advance_to_ready")), actor=actor_context(ctx)))
+        if action == "comment":
+            require_comment_access(ctx.user, item)
+            comment = Comment(text=str(payload.get("text") or ""), by=actor_label(ctx))
+            return camel_item(store.add_comment(item_id, comment, actor=actor_context(ctx)))
+    except Exception as exc:
+        logger.exception("Item action failed for user=%s item=%s action=%s", ctx.user.email, item_id, action)
+        raise HTTPException(status_code=503, detail="Could not update item. Check Render logs for the Supabase write error.") from exc
     raise HTTPException(status_code=404, detail="Unknown item action")
 
 
@@ -899,3 +909,8 @@ def report_summary(
 def reset_demo(ctx: RequestContext = Depends(get_request_context)):
     require_demo_reset(ctx.user)
     return store.reset_demo()
+
+
+@app.post("/api/reset")
+def legacy_reset_demo(ctx: RequestContext = Depends(get_request_context)):
+    return reset_demo(ctx)
