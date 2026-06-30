@@ -6,6 +6,7 @@ import re
 from collections import defaultdict
 from threading import RLock
 from typing import Any
+from uuid import UUID
 from uuid import NAMESPACE_URL, uuid5
 
 from app.models import (
@@ -36,6 +37,20 @@ def _enum_value(value: Any) -> Any:
 
 def _stable_uuid(*parts: Any) -> str:
     return str(uuid5(NAMESPACE_URL, ":".join(str(part) for part in parts if part is not None)))
+
+
+def _is_uuid(value: Any) -> bool:
+    try:
+        UUID(str(value))
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _item_db_id(item: Item) -> str:
+    if _is_uuid(item.id):
+        return str(item.id)
+    return _stable_uuid("item", item.id or item.code)
 
 
 def _first_id(response: Any) -> str | None:
@@ -240,7 +255,7 @@ class SupabaseCleanRunStore(CleanRunStore):
         project_id = self._ensure_project(company_id, item.project, settings)
         location_id = self._ensure_location(company_id, project_id, item)
         subcontractor_id = self._ensure_subcontractor(company_id, project_id, item)
-        db_item_id = _stable_uuid("item", item.id or item.code)
+        db_item_id = _item_db_id(item)
         item = self._with_storage_photos(item)
         row = {
             "id": db_item_id,
