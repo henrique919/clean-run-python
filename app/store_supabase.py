@@ -15,6 +15,8 @@ from app.models import (
     AuditEvent,
     CloseoutEvidence,
     Comment,
+    InspectionEvent,
+    IssueEvent,
     Item,
     ItemCreate,
     ItemStatus,
@@ -252,6 +254,17 @@ class SupabaseCleanRunStore(CleanRunStore):
             )
             for event in audit_rows
         ]
+        payload = row.get("payload") or {}
+        issue_history = [
+            IssueEvent.model_validate(event)
+            for event in payload.get("issue_history", [])
+            if isinstance(event, dict)
+        ]
+        inspection_history = [
+            InspectionEvent.model_validate(event)
+            for event in payload.get("inspection_history", [])
+            if isinstance(event, dict)
+        ]
         return Item(
             id=str(row["id"]),
             code=row["code"],
@@ -282,6 +295,8 @@ class SupabaseCleanRunStore(CleanRunStore):
             closeout_evidence=closeout_evidence,
             comments=comments,
             audit_events=events,
+            issue_history=issue_history,
+            inspection_history=inspection_history,
             sync=SyncState.SYNCED,
         )
 

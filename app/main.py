@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from app.auth import RequestContext, get_request_context
 from app.config import app_env, is_production
 from app.db import build_repository
-from app.models import AccessRequest, CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
+from app.models import AccessRequest, CloseoutEvidence, Comment, Item, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
 from app.permissions import (
     require_close_item,
     require_comment_access,
@@ -217,8 +217,31 @@ def camel_settings(settings: Settings) -> dict[str, object]:
     return payload
 
 
+def sign_item_photos(item: Item) -> Item:
+    original_photos = [resolve_photo_url(photo) or photo for photo in item.original_photos]
+    rectification_evidence = [
+        evidence.model_copy(
+            update={"photo": resolve_photo_url(evidence.photo) if evidence.photo else evidence.photo}
+        )
+        for evidence in item.rectification_evidence
+    ]
+    closeout_evidence = [
+        evidence.model_copy(
+            update={"photo": resolve_photo_url(evidence.photo) if evidence.photo else evidence.photo}
+        )
+        for evidence in item.closeout_evidence
+    ]
+    return item.model_copy(
+        update={
+            "original_photos": original_photos,
+            "rectification_evidence": rectification_evidence,
+            "closeout_evidence": closeout_evidence,
+        }
+    )
+
+
 def camel_item(item) -> dict[str, object]:
-    payload = item.model_dump(mode="json")
+    payload = sign_item_photos(item).model_dump(mode="json")
     rename = {
         "due_date": "dueDate",
         "original_photos": "originalPhotos",
@@ -242,12 +265,12 @@ def camel_item(item) -> dict[str, object]:
     for source, target in rename.items():
         if source in payload:
             payload[target] = payload.pop(source)
-    payload["originalPhotos"] = [resolve_photo_url(photo) for photo in payload.get("originalPhotos", [])]
-    for key in ("rectificationEvidence", "closeoutEvidence"):
-        for evidence in payload.get(key, []):
-            if isinstance(evidence, dict) and evidence.get("photo"):
-                evidence["photo"] = resolve_photo_url(evidence["photo"])
     return payload
+
+
+def visible_project_items(ctx: RequestContext, items: list[Item], project_name: str) -> list[Item]:
+    project_items = [item for item in items if item.project == project_name]
+    return visible_items(ctx.user, project_items)
 
 
 def snake_item_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -577,7 +600,7 @@ def bootstrap(ctx: RequestContext = Depends(get_request_context)):
     items = visible_items(ctx.user, data.items)
     return {
         "settings": scoped_settings(data.settings, ctx),
-        "items": items,
+        "items": [sign_item_photos(item) for item in items],
         "trades": TRADES,
         "raised_by_options": RAISED_BY_OPTIONS,
         "user": {
@@ -704,6 +727,8 @@ def update_item(item_id: str, payload: dict[str, object], by: str | None = Query
     payload = ItemUpdate.model_validate(snake_item_payload(payload))
     item = get_authorized_item(item_id, ctx)
     require_update_item(ctx.user, item)
+    if payload.project is not None and payload.project != item.project:
+        require_create_item(ctx.user, payload.project)
     try:
         return item_service.update_item(store, item_id, payload, by=actor_label(ctx), actor=actor_context(ctx))
     except KeyError:
@@ -844,7 +869,7 @@ def report_html(
     data = store.snapshot()
     project_name = project or data.settings.active_project
     require_report_access(ctx.user, project_name)
-    items = [i for i in data.items if i.project == project_name]
+    items = visible_project_items(ctx, data.items, project_name)
     settings = data.settings.model_copy(update={"active_project": project_name})
     html = report_service.build_report(items, settings, report_type=report_type, subcontractor=subcontractor)
     return HTMLResponse(html)
@@ -860,7 +885,7 @@ def report_summary(
     data = store.snapshot()
     project_name = project or data.settings.active_project
     require_report_access(ctx.user, project_name)
-    items = report_service.report_items([i for i in data.items if i.project == project_name], report_type, subcontractor=subcontractor)
+    items = report_service.report_items(visible_project_items(ctx, data.items, project_name), report_type, subcontractor=subcontractor)
     return {
         "report_type": report_type,
         "project": project_name,

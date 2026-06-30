@@ -83,12 +83,17 @@ def require_close_item(user: AuthUser, item: Item) -> None:
 
 def require_rectification_access(user: AuthUser, item: Item) -> None:
     require_item_access(user, item)
-    if project_role(user, item.project) == "subcontractor" and item.subcontractor not in user.subcontractors:
-        not_found()
+    role = project_role(user, item.project)
+    if role == "subcontractor":
+        if item.subcontractor not in user.subcontractors:
+            not_found()
+        return
+    require_project_access(user, item.project, PROJECT_WRITE_ROLES)
 
 
 def require_comment_access(user: AuthUser, item: Item) -> None:
     require_item_access(user, item)
+    require_project_access(user, item.project, PROJECT_WRITE_ROLES)
 
 
 def require_report_access(user: AuthUser, project: str) -> None:

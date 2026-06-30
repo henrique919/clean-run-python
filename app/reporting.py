@@ -13,6 +13,8 @@ REPORT_TITLES = {
     "subcontractor": "Subcontractor Summary",
     "client": "Client Defects",
     "incomplete": "Incomplete Works",
+    "register": "Project Defect Register",
+    "exceptions": "Exceptions Report",
 }
 
 CLOSED_STATUSES = {ItemStatus.CLOSED, ItemStatus.COMPLETE}
@@ -20,6 +22,28 @@ CLOSED_STATUSES = {ItemStatus.CLOSED, ItemStatus.COMPLETE}
 
 def is_overdue(item: Item) -> bool:
     return item.status not in CLOSED_STATUSES and item.due_date < date.today().isoformat()
+
+
+def missing_original_photo(item: Item) -> bool:
+    return item.type in {"defect", "client"} and len(item.original_photos) == 0
+
+
+def missing_rectification_evidence(item: Item) -> bool:
+    return item.status not in CLOSED_STATUSES and len(item.rectification_evidence) == 0
+
+
+def missing_closeout_evidence(item: Item) -> bool:
+    return item.status in CLOSED_STATUSES and len(item.closeout_evidence) == 0
+
+
+def is_exception_item(item: Item) -> bool:
+    return (
+        is_overdue(item)
+        or item.status == ItemStatus.REJECTED
+        or missing_original_photo(item)
+        or missing_rectification_evidence(item)
+        or missing_closeout_evidence(item)
+    )
 
 
 def filter_items(items: list[Item], report_type: str, *, subcontractor: str | None = None) -> list[Item]:
@@ -33,6 +57,10 @@ def filter_items(items: list[Item], report_type: str, *, subcontractor: str | No
         filtered = [i for i in items if i.type == "client"]
     elif report_type == "incomplete":
         filtered = [i for i in items if i.type == "incomplete"]
+    elif report_type == "register":
+        filtered = sorted(items, key=lambda i: (i.updated_at, i.code), reverse=True)
+    elif report_type == "exceptions":
+        filtered = [i for i in items if is_exception_item(i)]
     elif report_type == "handover":
         filtered = sorted(items, key=lambda i: (i.status not in CLOSED_STATUSES, i.updated_at))
     else:

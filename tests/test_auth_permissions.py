@@ -238,6 +238,85 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertEqual(viewer.status_code, 200)
         self.assertEqual(other_company.status_code, 403)
 
+    def test_report_route_applies_visible_item_scope(self) -> None:
+        assigned = self.store.snapshot().items[0]
+        hidden = self.create_direct_item(subcontractor="H&L Roofing")
+        visible_ids = {assigned.id}
+        original_visible_items = app_main.visible_items
+
+        def fake_visible_items(user, items):
+            return [item for item in original_visible_items(user, items) if item.id in visible_ids]
+
+        with patch.object(app_main, "visible_items", fake_visible_items):
+            report = self.client.get("/api/reports/handover", headers=bearer("dev-site-manager"))
+            summary = self.client.get("/api/reports/handover/summary", headers=bearer("dev-site-manager"))
+
+        self.assertEqual(report.status_code, 200)
+        self.assertIn(assigned.code, report.text)
+        self.assertNotIn(hidden.code, report.text)
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.json()["count"], 1)
+
+    def test_viewer_cannot_add_rectification_or_comment(self) -> None:
+        item = self.store.snapshot().items[0]
+
+        rectification = self.client.post(
+            f"/api/items/{item.id}/rectification",
+            headers=bearer("dev-viewer"),
+            json={"comment": "Viewer attempt"},
+        )
+        comment = self.client.post(
+            f"/api/items/{item.id}/comments",
+            headers=bearer("dev-viewer"),
+            json={"text": "Viewer comment", "by": "Viewer"},
+        )
+
+        self.assertEqual(rectification.status_code, 403)
+        self.assertEqual(comment.status_code, 403)
+
+    def test_cannot_move_item_to_unauthorized_project(self) -> None:
+        item = self.store.snapshot().items[0]
+
+        response = self.client.patch(
+            f"/api/items/{item.id}",
+            headers=bearer("dev-site-manager"),
+            json={"project": "Other Project"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_bootstrap_signs_storage_paths(self) -> None:
+        item = self.store.snapshot().items[0]
+        item.original_photos = ["cleanrun/public/projects/demo/items/def-1001/original/photo.jpg"]
+        self.store._write(self.store._read().model_copy(update={"items": [item]}))
+
+        with patch("app.main.resolve_photo_url", side_effect=lambda value: f"https://signed.example/{value}"):
+            response = self.client.get("/api/bootstrap", headers=bearer("dev-site-manager"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["items"][0]["original_photos"][0].startswith("https://signed.example/"))
+
+    def test_register_and_exceptions_reports_filter_items(self) -> None:
+        overdue = self.create_direct_item(subcontractor="H&L Roofing")
+        data = self.store._read()
+        updated_items = []
+        for current in data.items:
+            if current.id == overdue.id:
+                updated_items.append(current.model_copy(update={"due_date": "2020-01-01", "status": "issued"}))
+            else:
+                updated_items.append(current)
+        self.store._write(data.model_copy(update={"items": updated_items}))
+
+        register = self.client.get("/api/reports/register", headers=bearer("dev-site-manager"))
+        exceptions = self.client.get("/api/reports/exceptions", headers=bearer("dev-site-manager"))
+
+        self.assertEqual(register.status_code, 200)
+        self.assertEqual(exceptions.status_code, 200)
+        self.assertIn("Project Defect Register", register.text)
+        self.assertIn("Exceptions Report", exceptions.text)
+        self.assertIn(overdue.code, exceptions.text)
+
     def test_demo_reset_is_blocked_in_production_without_permission(self) -> None:
         token = "prod-token"
         claims = {
