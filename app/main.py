@@ -4,6 +4,8 @@ import logging
 import os
 import json
 import tempfile
+import csv
+from io import BytesIO, StringIO
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
@@ -14,7 +16,7 @@ from pydantic import BaseModel
 from app.auth import RequestContext, get_request_context
 from app.config import app_env, is_production
 from app.db import build_repository
-from app.models import AccessRequest, CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, TRADES
+from app.models import AccessRequest, CloseoutEvidence, Comment, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
 from app.permissions import (
     require_close_item,
     require_comment_access,
@@ -85,6 +87,77 @@ class SettingsPayload(BaseModel):
 class LegacyParsePayload(BaseModel):
     transcript: str | None = None
     text: str | None = None
+
+
+def _normalise_header(value: object) -> str:
+    return "".join(ch for ch in str(value or "").strip().lower() if ch.isalnum())
+
+
+async def spreadsheet_rows(file: UploadFile) -> list[list[str]]:
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=422, detail="Spreadsheet is empty")
+    filename = (file.filename or "").lower()
+    if filename.endswith((".xlsx", ".xlsm")):
+        try:
+            from openpyxl import load_workbook
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Excel import dependency is unavailable") from exc
+        workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        sheet = workbook.active
+        rows = [[str(cell or "").strip() for cell in row] for row in sheet.iter_rows(values_only=True)]
+        return [row for row in rows if any(row)]
+    text = raw.decode("utf-8-sig", errors="replace")
+    delimiter = "\t" if filename.endswith(".tsv") else ","
+    rows = [[cell.strip() for cell in row] for row in csv.reader(StringIO(text), delimiter=delimiter)]
+    return [row for row in rows if any(row)]
+
+
+def import_units_from_rows(rows: list[list[str]]) -> list[str]:
+    if not rows:
+        return []
+    headers = [_normalise_header(cell) for cell in rows[0]]
+    unit_indexes = [idx for idx, header in enumerate(headers) if header in {"unit", "units", "area", "areas", "unitarea", "unitareas", "apartment", "apartments", "lot", "lots"}]
+    data_rows = rows[1:] if unit_indexes else rows
+    indexes = unit_indexes or list(range(max(len(row) for row in rows)))
+    values: list[str] = []
+    for row in data_rows:
+        for idx in indexes:
+            if idx < len(row) and row[idx].strip():
+                values.append(row[idx].strip())
+    return sorted(set(values), key=lambda value: value.lower())
+
+
+def import_subcontractors_from_rows(rows: list[list[str]]) -> tuple[list[str], dict[str, SubProfile]]:
+    if not rows:
+        return [], {}
+    headers = [_normalise_header(cell) for cell in rows[0]]
+    name_headers = {"name", "subcontractor", "subcontractors", "company", "business", "contractor"}
+    header_map = {header: idx for idx, header in enumerate(headers)}
+    name_idx = next((idx for idx, header in enumerate(headers) if header in name_headers), None)
+    has_headers = name_idx is not None
+    data_rows = rows[1:] if has_headers else rows
+    profiles: dict[str, SubProfile] = {}
+
+    def cell(row: list[str], *names: str) -> str | None:
+        for name in names:
+            idx = header_map.get(name)
+            if idx is not None and idx < len(row) and row[idx].strip():
+                return row[idx].strip()
+        return None
+
+    for row in data_rows:
+        name = row[name_idx].strip() if has_headers and name_idx is not None and name_idx < len(row) else (row[0].strip() if row else "")
+        if not name:
+            continue
+        profiles[name] = SubProfile(
+            name=name,
+            trade=cell(row, "trade", "discipline", "category"),
+            contact=cell(row, "contact", "contactname", "representative"),
+            email=cell(row, "email", "emailaddress"),
+            phone=cell(row, "phone", "mobile", "telephone"),
+        )
+    return sorted(profiles, key=lambda value: value.lower()), profiles
 
 
 def actor_label(ctx: RequestContext) -> str:
@@ -528,6 +601,52 @@ def legacy_update_settings(payload: dict[str, object], ctx: RequestContext = Dep
     return update_settings(SettingsPayload.model_validate(snake_settings_payload(payload)), ctx)
 
 
+@app.post("/api/settings/import")
+async def import_settings_spreadsheet(
+    target: str = Form(...),
+    project: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    ctx: RequestContext = Depends(get_request_context),
+):
+    require_storage_status_access(ctx.user)
+    data = store.snapshot()
+    settings = data.settings
+    rows = await spreadsheet_rows(file)
+    target_key = target.strip().lower()
+    updates: dict[str, object]
+    imported = 0
+
+    if target_key in {"units", "unit", "areas", "unit_areas"}:
+        project_name = project or settings.active_project
+        cfg = settings.project_configs.get(project_name)
+        if not cfg:
+            raise HTTPException(status_code=404, detail="Project not found")
+        values = import_units_from_rows(rows)
+        merged = sorted(set([*cfg.units, *values]), key=lambda value: value.lower())
+        project_configs = dict(settings.project_configs)
+        project_configs[project_name] = cfg.model_copy(update={"units": merged})
+        updates = {"project_configs": project_configs}
+        imported = len([value for value in values if value not in cfg.units])
+    elif target_key in {"subcontractors", "subcontractor", "subs"}:
+        names, profiles = import_subcontractors_from_rows(rows)
+        existing_names = set(settings.subcontractors)
+        sub_profiles = dict(settings.sub_profiles)
+        for name, profile in profiles.items():
+            current = sub_profiles.get(name)
+            sub_profiles[name] = profile if not current else current.model_copy(
+                update={key: value for key, value in profile.model_dump().items() if value}
+            )
+        subcontractors = sorted(set([*settings.subcontractors, *names]), key=lambda value: value.lower())
+        updates = {"subcontractors": subcontractors, "sub_profiles": sub_profiles}
+        imported = len([name for name in names if name not in existing_names])
+    else:
+        raise HTTPException(status_code=422, detail="Import target must be units or subcontractors")
+
+    next_settings = Settings.model_validate({**settings.model_dump(), **updates})
+    saved = project_service.update_settings(store, next_settings)
+    return {"settings": saved, "imported": imported, "target": target_key}
+
+
 @app.get("/api/items")
 def list_items(
     project: str | None = Query(default=None),
@@ -691,21 +810,32 @@ def add_comment(item_id: str, payload: Comment, ctx: RequestContext = Depends(ge
 
 
 @app.get("/api/reports/{report_type}", response_class=HTMLResponse)
-def report_html(report_type: str, project: str | None = Query(default=None), ctx: RequestContext = Depends(get_request_context)):
+def report_html(
+    report_type: str,
+    project: str | None = Query(default=None),
+    subcontractor: str | None = Query(default=None),
+    ctx: RequestContext = Depends(get_request_context),
+):
     data = store.snapshot()
     project_name = project or data.settings.active_project
     require_report_access(ctx.user, project_name)
     items = [i for i in data.items if i.project == project_name]
-    html = report_service.build_report(items, data.settings, report_type=report_type)
+    settings = data.settings.model_copy(update={"active_project": project_name})
+    html = report_service.build_report(items, settings, report_type=report_type, subcontractor=subcontractor)
     return HTMLResponse(html)
 
 
 @app.get("/api/reports/{report_type}/summary")
-def report_summary(report_type: str, project: str | None = Query(default=None), ctx: RequestContext = Depends(get_request_context)):
+def report_summary(
+    report_type: str,
+    project: str | None = Query(default=None),
+    subcontractor: str | None = Query(default=None),
+    ctx: RequestContext = Depends(get_request_context),
+):
     data = store.snapshot()
     project_name = project or data.settings.active_project
     require_report_access(ctx.user, project_name)
-    items = report_service.report_items([i for i in data.items if i.project == project_name], report_type)
+    items = report_service.report_items([i for i in data.items if i.project == project_name], report_type, subcontractor=subcontractor)
     return {
         "report_type": report_type,
         "project": project_name,

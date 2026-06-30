@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from app.main import import_subcontractors_from_rows, import_units_from_rows
 from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ProjectConfig, RectificationEvidence
 from app.reporting import build_report_html
 from app.services.projects import SettingsLockError, validate_settings_update
@@ -75,7 +76,8 @@ class RecoveryTests(unittest.TestCase):
         report = build_report_html(snapshot.items, snapshot.settings, "handover")
         self.assertIn("Site QA Control", report)
         self.assertIn(item.code, report)
-        self.assertIn("Closed / Complete Evidence", report)
+        self.assertIn("Print Report", report)
+        self.assertIn("Closeout / signed-off evidence", report)
 
     def test_settings_preferred_items_view_persists(self) -> None:
         settings = self.store.snapshot().settings
@@ -207,12 +209,53 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("Rectification photo / trade evidence", report)
         self.assertIn("Closeout / signed-off evidence", report)
 
+    def test_spreadsheet_import_helpers_parse_units_and_subcontractors(self) -> None:
+        units = import_units_from_rows([["Unit", "Ignore"], ["U101", "x"], ["U102", "y"]])
+        names, profiles = import_subcontractors_from_rows(
+            [["Subcontractor", "Trade", "Contact", "Email", "Phone"], ["Acme Tiling", "Tiling", "A. Contact", "acme@example.com", "0400 000 000"]]
+        )
+
+        self.assertEqual(units, ["U101", "U102"])
+        self.assertEqual(names, ["Acme Tiling"])
+        self.assertEqual(profiles["Acme Tiling"].trade, "Tiling")
+        self.assertEqual(profiles["Acme Tiling"].email, "acme@example.com")
+
+    def test_report_actions_heading_layout_and_subcontractor_filter(self) -> None:
+        item = self.create_item()
+        other = self.store.create_item(
+            ItemCreate(
+                project="Jura Noosa",
+                building="Block B",
+                level="L02",
+                unit="B-205",
+                room="Bathroom",
+                trade="Joinery",
+                subcontractor="TrueLine Joinery",
+                due_date="2026-07-01",
+                description="Joinery item for another subcontractor",
+                original_photos=["seed://amber/Joinery"],
+                created_by="Site Manager",
+            )
+        )
+        snapshot = self.store.snapshot()
+
+        report = build_report_html(snapshot.items, snapshot.settings, "subcontractor", subcontractor="Sterling Tiling")
+
+        self.assertIn("Return to reports", report)
+        self.assertIn("Print Report", report)
+        self.assertIn("Jura Noosa", report)
+        self.assertIn("Noosa Heads", report)
+        self.assertIn(item.code, report)
+        self.assertNotIn(other.code, report)
+        self.assertNotIn("<h2>Subcontractor Summary</h2>", report)
+
     def test_restored_ui_contains_register_tools_and_lifecycle_actions(self) -> None:
         root = Path(__file__).resolve().parents[1]
         html = (root / "app/static/index.html").read_text(encoding="utf-8")
         entry_script = (root / "app/static/app.js").read_text(encoding="utf-8")
         script = (root / "app/static/js/main.js").read_text(encoding="utf-8")
         styles = (root / "app/static/styles.css").read_text(encoding="utf-8")
+        enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")
 
         for element_id in ("statsBar", "searchInput", "statusFilter", "clearFilters", "saveBtn", "issueBtn"):
             self.assertIn(f'id="{element_id}"', html)
@@ -223,7 +266,9 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("window.VoiceParser", (root / "app/static/voice-parser.js").read_text(encoding="utf-8"))
         self.assertIn("voiceRecordBtn", html)
         self.assertIn("projectCodePrefix", html)
-        self.assertIn("lockProjectCodePrefix", (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8"))
+        self.assertIn("lockProjectCodePrefix", enhancements)
+        self.assertIn("uploadSettingsSheet", enhancements)
+        self.assertIn("openSubcontractorReportPicker", enhancements)
         for action in ("data-rectify", "data-reject", "data-close", "data-comment"):
             self.assertIn(action, script)
         self.assertEqual(script.count("function renderItems()"), 1)
