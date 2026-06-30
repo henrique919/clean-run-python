@@ -83,6 +83,8 @@ class SettingsPayload(BaseModel):
     prepared_by: str | None = None
     projects: list[str] | None = None
     project_configs: dict[str, ProjectConfig] | None = None
+    subcontractors: list[str] | None = None
+    sub_profiles: dict[str, SubProfile] | None = None
 
 
 class LegacyParsePayload(BaseModel):
