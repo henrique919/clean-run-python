@@ -54,7 +54,13 @@ def _ensure_bucket(client) -> None:
         client.storage.get_bucket(BUCKET_NAME)
         return
     except Exception:
-        pass
+        if _is_production():
+            logger.info(
+                "Skipping Supabase Storage bucket creation check in production; "
+                "bucket %s must be managed by migrations.",
+                BUCKET_NAME,
+            )
+            return
 
     try:
         client.storage.create_bucket(

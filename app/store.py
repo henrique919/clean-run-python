@@ -32,6 +32,69 @@ from app.validation import validate_capture, validate_update
 
 DATA_DIR = Path(os.getenv("CLEANRUN_DATA_DIR", ".cleanrun-data"))
 DATA_FILE = DATA_DIR / "cleanrun.json"
+SNAPSHOT_SEED_FILES = (
+    Path(os.getenv("CLEANRUN_SEED_SNAPSHOT", "")) if os.getenv("CLEANRUN_SEED_SNAPSHOT") else None,
+    Path("cleanrun_data.json"),
+)
+
+
+def _snake_item_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    rename = {
+        "dueDate": "due_date",
+        "originalPhotos": "original_photos",
+        "voiceTranscript": "voice_transcript",
+        "voiceNote": "voice_note",
+        "createdBy": "created_by",
+        "createdAt": "created_at",
+        "updatedAt": "updated_at",
+        "rectificationEvidence": "rectification_evidence",
+        "closeoutEvidence": "closeout_evidence",
+        "issueHistory": "issue_history",
+        "inspectionHistory": "inspection_history",
+        "auditEvents": "audit_events",
+        "issuedAt": "issued_at",
+        "inProgressAt": "in_progress_at",
+        "readyForReviewAt": "ready_for_review_at",
+        "underInspectionAt": "under_inspection_at",
+        "closedAt": "closed_at",
+        "rejectionReason": "rejection_reason",
+        "raisedBy": "raised_by",
+    }
+    result = dict(payload)
+    for source, target in rename.items():
+        if source in result:
+            result[target] = result.pop(source)
+    return result
+
+
+def _snake_settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    result = dict(payload)
+    if "activeProject" in result:
+        result["active_project"] = result.pop("activeProject")
+    if "projectConfigs" in result:
+        result["project_configs"] = result.pop("projectConfigs")
+    if "subProfiles" in result:
+        result["sub_profiles"] = result.pop("subProfiles")
+    if "preparedBy" in result:
+        result["prepared_by"] = result.pop("preparedBy")
+
+    configs = result.get("project_configs")
+    if isinstance(configs, dict):
+        for config in configs.values():
+            if isinstance(config, dict):
+                if "defaultDueDays" in config:
+                    config["default_due_days"] = config.pop("defaultDueDays")
+                if "preferredItemsView" in config:
+                    config["preferred_items_view"] = config.pop("preferredItemsView")
+    return result
+
+
+def _normalize_app_data_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    result = dict(payload)
+    result["items"] = [_snake_item_payload(item) for item in result.get("items", [])]
+    if isinstance(result.get("settings"), dict):
+        result["settings"] = _snake_settings_payload(result["settings"])
+    return result
 
 
 def default_due(days: int = 7) -> str:
@@ -76,6 +139,11 @@ def seed_settings() -> Settings:
 
 
 def seed_data() -> AppData:
+    for path in SNAPSHOT_SEED_FILES:
+        if path and path.exists():
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return AppData.model_validate(_normalize_app_data_payload(payload))
+
     settings = seed_settings()
     now = now_iso()
     item = Item(

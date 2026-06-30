@@ -52,7 +52,11 @@ class SupabaseCleanRunStore(CleanRunStore):
     def __init__(self) -> None:
         self.lock = RLock()
         if is_production():
-            logger.info("Skipping Supabase startup seed in production; migrations/admin setup own bootstrap data.")
+            if os.getenv("CLEANRUN_BOOTSTRAP_SEED_DATA", "true").lower() in {"1", "true", "yes", "on"}:
+                logger.info("Checking Supabase production bootstrap data.")
+                self._bootstrap_if_empty()
+            else:
+                logger.info("Skipping Supabase startup seed in production; migrations/admin setup own bootstrap data.")
             return
         self._bootstrap_if_empty()
 

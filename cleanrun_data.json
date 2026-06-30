@@ -1,0 +1,875 @@
+{
+  "version": 3,
+  "items": [
+    {
+      "id": "demo-def-open-jura",
+      "code": "DEF-001",
+      "type": "defect",
+      "project": "Jura Noosa",
+      "building": "Block B",
+      "level": "L02",
+      "unit": "B-204",
+      "room": "Bathroom",
+      "trade": "Tiling",
+      "subcontractor": "Sterling Tiling",
+      "priority": "high",
+      "dueDate": "2026-06-30",
+      "description": "Cracked floor tile beside vanity unit. Chip on adjacent skirting tile.",
+      "status": "open",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://amber/Cracked tile",
+        "seed://amber/Skirting chip"
+      ],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-001)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced"
+    },
+    {
+      "id": "demo-def-issued-jura",
+      "code": "DEF-002",
+      "type": "defect",
+      "project": "Jura Noosa",
+      "building": "Block A",
+      "level": "L03",
+      "unit": "A-305",
+      "room": "Ensuite",
+      "trade": "Waterproofing",
+      "subcontractor": "AquaSeal Waterproofing",
+      "priority": "urgent",
+      "dueDate": "2026-06-29",
+      "description": "Active moisture behind shower wall — membrane suspected compromised.",
+      "status": "issued",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://red/Moisture stain"
+      ],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "AquaSeal Waterproofing"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-002)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-def-inprogress-meta",
+      "code": "DEF-003",
+      "type": "defect",
+      "project": "Meta Street",
+      "building": "Tower 1",
+      "level": "L05",
+      "unit": "T1-502",
+      "room": "Kitchen",
+      "trade": "Tiling",
+      "subcontractor": "Sterling Tiling",
+      "priority": "high",
+      "dueDate": "2026-07-02",
+      "description": "Lippage on splashback tiles exceeds tolerance near rangehood.",
+      "status": "in_progress",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://amber/Tile lippage"
+      ],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Sterling Tiling"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-003)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "inProgressAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-def-ready-jura",
+      "code": "DEF-004",
+      "type": "defect",
+      "project": "Jura Noosa",
+      "building": "Block A",
+      "level": "L03",
+      "unit": "A-304",
+      "room": "Bathroom",
+      "trade": "Tiling",
+      "subcontractor": "Sterling Tiling",
+      "priority": "high",
+      "dueDate": "2026-06-29",
+      "description": "Grout discolouration along bath hob, re-grout required.",
+      "status": "ready_for_review",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://amber/Grout staining"
+      ],
+      "rectificationEvidence": [
+        {
+          "id": "3801f729-3c90-4060-9355-7c6651ae1561",
+          "photo": "seed://green/Rectification photo",
+          "comment": "Rectification complete.",
+          "by": "Sterling Tiling",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Sterling Tiling"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-004)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "inProgressAt": "2026-06-26T16:27:10.480146Z",
+      "readyForReviewAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-def-inspection-meta",
+      "code": "DEF-005",
+      "type": "defect",
+      "project": "Meta Street",
+      "building": "Tower 1",
+      "level": "L08",
+      "unit": "T1-803",
+      "room": "Living",
+      "trade": "Windows / Aluminium",
+      "subcontractor": "Skyline Glazing",
+      "priority": "high",
+      "dueDate": "2026-06-28",
+      "description": "Scratch on living room window glass, full pane replacement.",
+      "status": "under_inspection",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://amber/Scratched glass"
+      ],
+      "rectificationEvidence": [
+        {
+          "id": "422cc465-1a37-40ad-ae8c-24b03f9efd64",
+          "photo": "seed://green/Rectification photo",
+          "comment": "Rectification complete.",
+          "by": "Skyline Glazing",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Skyline Glazing"
+        }
+      ],
+      "inspectionHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "action": "started"
+        }
+      ],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-005)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "inProgressAt": "2026-06-26T16:27:10.480146Z",
+      "readyForReviewAt": "2026-06-26T16:27:10.480146Z",
+      "underInspectionAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-def-rejected-jura",
+      "code": "DEF-006",
+      "type": "defect",
+      "project": "Jura Noosa",
+      "building": "Block B",
+      "level": "L01",
+      "unit": "B-112",
+      "room": "Ensuite",
+      "trade": "Tiling",
+      "subcontractor": "Sterling Tiling",
+      "priority": "urgent",
+      "dueDate": "2026-06-27",
+      "description": "Hollow tiles to ensuite floor, multiple drummy areas.",
+      "status": "rejected",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://red/Drummy tiles"
+      ],
+      "rectificationEvidence": [
+        {
+          "id": "11fdccde-b5ce-4464-806f-27149f41434d",
+          "photo": "seed://amber/Re-fixed tiles",
+          "comment": "Re-fixed two tiles.",
+          "by": "Sterling Tiling",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Sterling Tiling"
+        }
+      ],
+      "inspectionHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "action": "started"
+        },
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "action": "rejected",
+          "reason": "Two tiles still drummy near drain. Re-fix and re-present."
+        }
+      ],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-006)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "rejectionReason": "Two tiles still drummy near drain. Re-fix and re-present.",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "inProgressAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-def-closed-jura",
+      "code": "DEF-007",
+      "type": "defect",
+      "project": "Jura Noosa",
+      "building": "Block A",
+      "level": "L03",
+      "unit": "A-304",
+      "room": "Kitchen",
+      "trade": "Painting",
+      "subcontractor": "Coastline Painting",
+      "priority": "high",
+      "dueDate": "2026-06-26",
+      "description": "Paint scuff and roller marks to kitchen feature wall.",
+      "status": "closed",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://amber/Roller marks"
+      ],
+      "rectificationEvidence": [
+        {
+          "id": "8131ab53-c775-4f20-981b-9dcfa9cbd6fc",
+          "photo": "seed://green/Repainted wall",
+          "comment": "Cut in and rolled two coats. Wall consistent.",
+          "by": "Coastline Painting",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "closeoutEvidence": [
+        {
+          "id": "bcd55473-202c-4a32-b864-b9e4dfedf67c",
+          "photo": "seed://green/Closeout photo",
+          "by": "Site Manager",
+          "role": "Site Manager",
+          "note": "Checked and accepted.",
+          "confirmation": "I confirm the work is complete and acceptable.",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Coastline Painting"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-007)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "closedAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-inc-open-jura",
+      "code": "INC-001",
+      "type": "incomplete",
+      "project": "Jura Noosa",
+      "building": "Block A",
+      "level": "L03",
+      "unit": "A-305",
+      "room": "Laundry",
+      "trade": "Joinery",
+      "subcontractor": "TrueLine Joinery",
+      "priority": "high",
+      "dueDate": "2026-07-03",
+      "description": "Laundry overhead cabinet doors not yet hung. Hinges on site.",
+      "status": "open",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://sky/Missing doors"
+      ],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (INC-001)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced"
+    },
+    {
+      "id": "demo-inc-complete-meta",
+      "code": "INC-002",
+      "type": "incomplete",
+      "project": "Meta Street",
+      "building": "Tower 1",
+      "level": "L10",
+      "unit": "T1-1004",
+      "room": "Bedroom 1",
+      "trade": "Flooring",
+      "subcontractor": "Premier Flooring",
+      "priority": "high",
+      "dueDate": "2026-06-25",
+      "description": "Carpet edge trim to bedroom doorway not installed.",
+      "status": "complete",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Premier Flooring"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (INC-002)",
+          "by": "Site Manager"
+        },
+        {
+          "at": "2026-06-27T16:27:10.480Z",
+          "action": "Completed (no photo required)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "closedAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-inc-complete-jura",
+      "code": "INC-003",
+      "type": "incomplete",
+      "project": "Jura Noosa",
+      "building": "Block B",
+      "level": "L02",
+      "unit": "B-204",
+      "room": "Living",
+      "trade": "Electrical",
+      "subcontractor": "Northline Electrical",
+      "priority": "high",
+      "dueDate": "2026-06-27",
+      "description": "Two GPO face plates pending in living area.",
+      "status": "complete",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Northline Electrical"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (INC-003)",
+          "by": "Site Manager"
+        },
+        {
+          "at": "2026-06-27T16:27:10.480Z",
+          "action": "Completed (no photo required)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "closedAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-cld-ready-meta",
+      "code": "CLD-001",
+      "type": "client",
+      "project": "Meta Street",
+      "building": "Tower 1",
+      "level": "L02",
+      "unit": "T1-502",
+      "room": "Balcony",
+      "trade": "Cleaning",
+      "subcontractor": "Endeavour Cleaning",
+      "priority": "high",
+      "dueDate": "2026-06-29",
+      "description": "Superintendent flagged paint overspray on balcony glass balustrade.",
+      "status": "ready_for_review",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://violet/Overspray"
+      ],
+      "rectificationEvidence": [
+        {
+          "id": "004acdf7-161d-490a-85fb-c20f752613f9",
+          "photo": "seed://green/Rectification photo",
+          "comment": "Rectification complete.",
+          "by": "Endeavour Cleaning",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Endeavour Cleaning"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (CLD-001)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "raisedBy": "Superintendent",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "inProgressAt": "2026-06-26T16:27:10.480146Z",
+      "readyForReviewAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-cld-closed-meta",
+      "code": "CLD-002",
+      "type": "client",
+      "project": "Meta Street",
+      "building": "Tower 1",
+      "level": "L05",
+      "unit": "T1-502",
+      "room": "Bathroom",
+      "trade": "Hydraulic",
+      "subcontractor": "Pacific Plumbing",
+      "priority": "urgent",
+      "dueDate": "2026-06-24",
+      "description": "Client PM raised slow-draining basin in main bathroom.",
+      "status": "closed",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://violet/Slow drain"
+      ],
+      "rectificationEvidence": [
+        {
+          "id": "e783138c-ae5f-430e-80c0-9aa70fc7bff2",
+          "photo": "seed://green/Cleared trap",
+          "comment": "Cleared trap, re-tested flow. Draining freely.",
+          "by": "Pacific Plumbing",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "closeoutEvidence": [
+        {
+          "id": "1e9f52af-c2f4-41b0-9267-a90784961a23",
+          "photo": "seed://green/Closeout photo",
+          "by": "Site Manager",
+          "role": "Site Manager",
+          "note": "Checked and accepted.",
+          "confirmation": "I confirm the work is complete and acceptable.",
+          "at": "2026-06-26T16:27:10.480146Z"
+        }
+      ],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Pacific Plumbing"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (CLD-002)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "raisedBy": "Client PM",
+      "issuedAt": "2026-06-26T16:27:10.480146Z",
+      "closedAt": "2026-06-26T16:27:10.480146Z"
+    },
+    {
+      "id": "demo-def-voice-jura",
+      "code": "DEF-008",
+      "type": "defect",
+      "project": "Jura Noosa",
+      "building": "Block B",
+      "level": "L02",
+      "unit": "B-204",
+      "room": "Bathroom",
+      "trade": "Tiling",
+      "subcontractor": "Sterling Tiling",
+      "priority": "high",
+      "dueDate": "2026-07-02",
+      "description": "Damaged tile beside vanity in Block B level two, unit B-204 bathroom.",
+      "status": "open",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://amber/Damaged tile"
+      ],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-008)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "voiceTranscript": "Block B, level two, unit B-204 bathroom. Damaged tile beside vanity. Assign to Sterling Tiling. Medium priority. Due Friday."
+    },
+    {
+      "id": "demo-def-issued-meta",
+      "code": "DEF-009",
+      "type": "defect",
+      "project": "Meta Street",
+      "building": "Tower 1",
+      "level": "L01",
+      "unit": "T1-502",
+      "room": "Hallway",
+      "trade": "Plastering",
+      "subcontractor": "Apex Plastering",
+      "priority": "high",
+      "dueDate": "2026-07-01",
+      "description": "Cornice crack to hallway ceiling, approx 600mm.",
+      "status": "issued",
+      "createdAt": "2026-06-26T16:27:10.480146Z",
+      "updatedAt": "2026-06-26T16:27:10.480146Z",
+      "createdBy": "Site Manager",
+      "originalPhotos": [
+        "seed://amber/Cornice crack"
+      ],
+      "rectificationEvidence": [],
+      "closeoutEvidence": [],
+      "comments": [],
+      "issueHistory": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "by": "Site Manager",
+          "to": "Apex Plastering"
+        }
+      ],
+      "inspectionHistory": [],
+      "auditEvents": [
+        {
+          "at": "2026-06-26T16:27:10.480146Z",
+          "action": "Created (DEF-009)",
+          "by": "Site Manager"
+        }
+      ],
+      "sync": "synced",
+      "issuedAt": "2026-06-26T16:27:10.480146Z"
+    }
+  ],
+  "settings": {
+    "projects": [
+      "Jura Noosa",
+      "Meta Street"
+    ],
+    "projectConfigs": {
+      "Jura Noosa": {
+        "name": "Jura Noosa",
+        "address": "Jura · Noosa Heads QLD",
+        "buildings": [
+          "Block A",
+          "Block B"
+        ],
+        "levels": [
+          "L01",
+          "L02",
+          "L03"
+        ],
+        "units": [
+          "A-304",
+          "A-305",
+          "B-112",
+          "B-204"
+        ],
+        "rooms": [
+          "Kitchen",
+          "Living",
+          "Bathroom",
+          "Ensuite",
+          "Bedroom 1",
+          "Bedroom 2",
+          "Laundry",
+          "Balcony",
+          "Hallway",
+          "Garage"
+        ],
+        "defaultDueDays": 7
+      },
+      "Meta Street": {
+        "name": "Meta Street",
+        "address": "Meta Street · Mooloolaba QLD",
+        "buildings": [
+          "Tower 1"
+        ],
+        "levels": [
+          "L01",
+          "L02",
+          "L05",
+          "L08",
+          "L10"
+        ],
+        "units": [
+          "T1-502",
+          "T1-803",
+          "T1-1004"
+        ],
+        "rooms": [
+          "Kitchen",
+          "Living",
+          "Bathroom",
+          "Ensuite",
+          "Bedroom 1",
+          "Bedroom 2",
+          "Laundry",
+          "Balcony",
+          "Hallway",
+          "Garage"
+        ],
+        "defaultDueDays": 7
+      }
+    },
+    "subcontractors": [
+      "Apex Plastering",
+      "AquaSeal Waterproofing",
+      "Coastline Painting",
+      "Endeavour Cleaning",
+      "Northline Electrical",
+      "Pacific Plumbing",
+      "Premier Flooring",
+      "Skyline Glazing",
+      "Sterling Tiling",
+      "TrueLine Joinery"
+    ],
+    "subProfiles": {
+      "Apex Plastering": {
+        "name": "Apex Plastering",
+        "trade": "Plastering",
+        "contact": "Site Contact",
+        "email": "apexplastering@example.com",
+        "phone": "0400 000 000"
+      },
+      "AquaSeal Waterproofing": {
+        "name": "AquaSeal Waterproofing",
+        "trade": "Waterproofing",
+        "contact": "Site Contact",
+        "email": "aquasealwaterproofing@example.com",
+        "phone": "0400 000 000"
+      },
+      "Coastline Painting": {
+        "name": "Coastline Painting",
+        "trade": "Painting",
+        "contact": "Site Contact",
+        "email": "coastlinepainting@example.com",
+        "phone": "0400 000 000"
+      },
+      "Endeavour Cleaning": {
+        "name": "Endeavour Cleaning",
+        "trade": "Cleaning",
+        "contact": "Site Contact",
+        "email": "endeavourcleaning@example.com",
+        "phone": "0400 000 000"
+      },
+      "Northline Electrical": {
+        "name": "Northline Electrical",
+        "trade": "Electrical",
+        "contact": "Site Contact",
+        "email": "northlineelectrical@example.com",
+        "phone": "0400 000 000"
+      },
+      "Pacific Plumbing": {
+        "name": "Pacific Plumbing",
+        "trade": "Hydraulic",
+        "contact": "Site Contact",
+        "email": "pacificplumbing@example.com",
+        "phone": "0400 000 000"
+      },
+      "Premier Flooring": {
+        "name": "Premier Flooring",
+        "trade": "Flooring",
+        "contact": "Site Contact",
+        "email": "premierflooring@example.com",
+        "phone": "0400 000 000"
+      },
+      "Skyline Glazing": {
+        "name": "Skyline Glazing",
+        "trade": "Windows / Aluminium",
+        "contact": "Site Contact",
+        "email": "skylineglazing@example.com",
+        "phone": "0400 000 000"
+      },
+      "Sterling Tiling": {
+        "name": "Sterling Tiling",
+        "trade": "Tiling",
+        "contact": "Site Contact",
+        "email": "sterlingtiling@example.com",
+        "phone": "0400 000 000"
+      },
+      "TrueLine Joinery": {
+        "name": "TrueLine Joinery",
+        "trade": "Joinery",
+        "contact": "Site Contact",
+        "email": "truelinejoinery@example.com",
+        "phone": "0400 000 000"
+      }
+    },
+    "activeProject": "Jura Noosa",
+    "company": "CleanRun Construction",
+    "preparedBy": "Site Manager"
+  },
+  "plans": [
+    {
+      "id": "demo-plan-jura-a-l03",
+      "project": "Jura Noosa",
+      "building": "Block A",
+      "level": "L03",
+      "name": "Block A · Level 3 floor plan",
+      "image": "seed-plan://jura-a-l03",
+      "pins": [
+        {
+          "id": "pin-1",
+          "x": 0.7,
+          "y": 0.34,
+          "itemId": "demo-def-ready-jura",
+          "label": "DEF-004"
+        },
+        {
+          "id": "pin-2",
+          "x": 0.32,
+          "y": 0.46,
+          "itemId": "demo-def-closed-jura",
+          "label": "DEF-007"
+        },
+        {
+          "id": "pin-3",
+          "x": 0.5,
+          "y": 0.7,
+          "itemId": "demo-inc-open-jura",
+          "label": "INC-001"
+        }
+      ],
+      "createdAt": "2026-06-27T16:27:10.480Z"
+    }
+  ]
+}
