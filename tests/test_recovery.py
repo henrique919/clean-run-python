@@ -2,13 +2,25 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import contextmanager
+from os import chdir
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from app.models import CloseoutEvidence, Comment, ItemCreate, ItemStatus, ProjectConfig, RectificationEvidence
 from app.reporting import build_report_html
-from app.store import CleanRunStore
+from app.store import CleanRunStore, seed_data
+
+
+@contextmanager
+def changed_directory(path: Path):
+    original = Path.cwd()
+    chdir(path)
+    try:
+        yield
+    finally:
+        chdir(original)
 
 
 class RecoveryTests(unittest.TestCase):
@@ -84,6 +96,14 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(second.id, first.id)
         self.assertEqual(second.code, first.code)
         self.assertEqual(len([item for item in snapshot.items if item.description == "Cracked tile beside vanity"]), 1)
+
+    def test_seed_data_loads_snapshot_outside_repo_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as other_dir:
+            with changed_directory(Path(other_dir)):
+                data = seed_data()
+
+        self.assertEqual(len(data.items), 14)
+        self.assertEqual(data.items[0].code, "DEF-001")
 
     def test_project_config_rejects_unknown_items_view(self) -> None:
         with self.assertRaises(ValidationError):

@@ -30,12 +30,13 @@ from app.models import (
 )
 from app.validation import validate_capture, validate_update
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("CLEANRUN_DATA_DIR", ".cleanrun-data"))
 DATA_FILE = DATA_DIR / "cleanrun.json"
 DUPLICATE_CREATE_WINDOW_SECONDS = int(os.getenv("CLEANRUN_DUPLICATE_CREATE_WINDOW_SECONDS", "300"))
 SNAPSHOT_SEED_FILES = (
     Path(os.getenv("CLEANRUN_SEED_SNAPSHOT", "")) if os.getenv("CLEANRUN_SEED_SNAPSHOT") else None,
-    Path("cleanrun_data.json"),
+    REPO_ROOT / "cleanrun_data.json",
 )
 
 
