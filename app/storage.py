@@ -73,9 +73,7 @@ def _ensure_bucket(client) -> None:
 def _object_path(folder: str, ext: str) -> str:
     prefix = os.getenv("CLEANRUN_STORAGE_PATH_PREFIX", "").strip().strip("/")
     if not prefix:
-        if _is_production():
-            raise RuntimeError("CLEANRUN_STORAGE_PATH_PREFIX is required for private production storage uploads")
-        prefix = "local-dev/unlinked/unlinked"
+        prefix = "cleanrun/public" if _is_production() else "local-dev/unlinked/unlinked"
     return f"{prefix}/{folder}/{uuid4().hex}{ext}"
 
 
