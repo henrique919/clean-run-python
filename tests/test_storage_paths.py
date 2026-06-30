@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.models import Item
-from app.store_supabase import SupabaseCleanRunStore, _item_db_id, _stable_uuid, _storage_folder
+from app.store_supabase import SupabaseCleanRunStore, _child_db_id, _item_db_id, _stable_uuid, _storage_folder
 
 
 class StoragePathTests(unittest.TestCase):
@@ -78,6 +78,34 @@ class StoragePathTests(unittest.TestCase):
         )
 
         self.assertEqual(_item_db_id(item), _stable_uuid("item", item.id))
+
+    def test_existing_child_uuid_is_not_rewritten(self) -> None:
+        child_id = "efe41cea-5849-53bd-a215-6748fc643b3e"
+
+        self.assertEqual(_child_db_id("photo", "item-id", child_id, "rectification"), child_id)
+
+    def test_duplicate_photo_rows_are_collapsed_on_read(self) -> None:
+        store = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore)
+        rows = [
+            {
+                "id": "efe41cea-5849-53bd-a215-6748fc643b3e",
+                "photo_type": "rectification",
+                "storage_path": "seed://green/Rectification photo",
+                "caption": "Rectification complete.",
+                "created_by_label": "Sterling Tiling",
+                "created_at": "2026-06-26T16:27:10.480146+00:00",
+            },
+            {
+                "id": "b78f5708-9796-58de-9e6e-7e030deb5c83",
+                "photo_type": "rectification",
+                "storage_path": "seed://green/Rectification photo",
+                "caption": "Rectification complete.",
+                "created_by_label": "Sterling Tiling",
+                "created_at": "2026-06-26T16:27:10.480146+00:00",
+            },
+        ]
+
+        self.assertEqual(len(store._dedupe_child_rows("item_photos", rows)), 1)
 
 
 if __name__ == "__main__":

@@ -53,6 +53,13 @@ def _item_db_id(item: Item) -> str:
     return _stable_uuid("item", item.id or item.code)
 
 
+def _child_db_id(kind: str, item_id: str, *parts: Any) -> str:
+    key = parts[0] if parts else None
+    if _is_uuid(key):
+        return str(key)
+    return _stable_uuid(kind, item_id, *parts)
+
+
 def _first_id(response: Any) -> str | None:
     data = getattr(response, "data", None) or []
     return data[0].get("id") if data else None
@@ -154,7 +161,37 @@ class SupabaseCleanRunStore(CleanRunStore):
         grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
             grouped[row["item_id"]].append(row)
-        return grouped
+        return {item_id: self._dedupe_child_rows(table, child_rows) for item_id, child_rows in grouped.items()}
+
+    def _dedupe_child_rows(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen: set[tuple[Any, ...]] = set()
+        deduped: list[dict[str, Any]] = []
+        for row in rows:
+            if table == "item_photos":
+                key = (
+                    row.get("photo_type"),
+                    row.get("storage_path") or row.get("photo"),
+                    row.get("caption"),
+                    row.get("created_by_label"),
+                    row.get("created_at"),
+                )
+            elif table == "item_comments":
+                key = (row.get("text"), row.get("created_by_label"), row.get("created_at"))
+            elif table == "item_audit_events":
+                key = (
+                    row.get("message") or row.get("event_type"),
+                    row.get("note"),
+                    row.get("created_by_label"),
+                    row.get("created_at"),
+                )
+            else:
+                key = (row.get("id"),)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(row)
+        return deduped
+
 
     def _item_from_rows(
         self,
@@ -438,7 +475,7 @@ class SupabaseCleanRunStore(CleanRunStore):
         at: str | None = None,
     ) -> dict[str, Any]:
         row = {
-            "id": _stable_uuid("photo", item_id, photo_type, key),
+            "id": _child_db_id("photo", item_id, key, photo_type),
             "company_id": company_id,
             "project_id": project_id,
             "item_id": item_id,
@@ -454,7 +491,7 @@ class SupabaseCleanRunStore(CleanRunStore):
     def _upsert_comments(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:
         rows = [
             {
-                "id": _stable_uuid("comment", item_id, comment.id or index),
+                "id": _child_db_id("comment", item_id, comment.id or index),
                 "company_id": company_id,
                 "project_id": project_id,
                 "item_id": item_id,
