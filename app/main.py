@@ -770,6 +770,8 @@ def update_item(item_id: str, payload: dict[str, object], by: str | None = Query
 @app.post("/api/items/{item_id}/actions/{action}")
 def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ctx: RequestContext = Depends(get_request_context)):
     item = get_authorized_item(item_id, ctx)
+    if action == "in-progress":
+        action = "start"
     try:
         if action == "issue":
             require_issue_item(ctx.user, item)
