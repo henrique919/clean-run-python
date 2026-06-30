@@ -65,7 +65,12 @@ class RecoveryTests(unittest.TestCase):
         item = self.store.add_comment(item.id, Comment(text="Checked on site", by="Supervisor"))
         item = self.store.close_with_evidence(
             item.id,
-            CloseoutEvidence(by="Supervisor", note="Accepted", confirmation="Confirmed acceptable for closeout"),
+            CloseoutEvidence(
+                photo="seed://closeout/accepted",
+                by="Supervisor",
+                note="Accepted",
+                confirmation="Confirmed acceptable for closeout",
+            ),
         )
         self.assertEqual(item.status, ItemStatus.CLOSED)
         self.assertEqual(len(item.rectification_evidence), 1)
@@ -190,6 +195,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_report_renders_uploaded_evidence_images(self) -> None:
         item = self.create_item()
+        item = self.store.issue_item(item.id, to=item.subcontractor, by="Site Manager")
         data_url = "data:image/png;base64,iVBORw0KGgo="
         item = self.store.add_rectification(
             item.id,

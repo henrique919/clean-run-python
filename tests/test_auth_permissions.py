@@ -191,6 +191,7 @@ class AuthPermissionTests(unittest.TestCase):
 
     def test_assigned_subcontractor_can_add_rectification_evidence(self) -> None:
         item = self.store.snapshot().items[0]
+        item = self.store.issue_item(item.id, to=item.subcontractor, by="Site Manager")
 
         response = self.client.post(
             f"/api/items/{item.id}/rectification",

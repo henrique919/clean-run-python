@@ -36,6 +36,7 @@ from app.services import projects as project_service
 from app.services import reports as report_service
 from app.storage import StorageUploadError, resolve_photo_url
 from app.validation import ValidationError
+from app.workflow import WorkflowError
 
 logger = logging.getLogger(__name__)
 APP_DIR = Path(__file__).resolve().parent
@@ -273,6 +274,34 @@ def visible_project_items(ctx: RequestContext, items: list[Item], project_name: 
     return visible_items(ctx.user, project_items)
 
 
+def user_payload(ctx: RequestContext, *, camel: bool = False) -> dict[str, object]:
+    if camel:
+        return {
+            "id": ctx.user.id,
+            "email": ctx.user.email,
+            "companyRole": ctx.user.company_role,
+            "projectRoles": ctx.user.project_roles,
+            "subcontractors": sorted(ctx.user.subcontractors),
+        }
+    return {
+        "id": ctx.user.id,
+        "email": ctx.user.email,
+        "company_role": ctx.user.company_role,
+        "project_roles": ctx.user.project_roles,
+        "subcontractors": sorted(ctx.user.subcontractors),
+    }
+
+
+def workflow_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, WorkflowError):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, ValidationError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, StorageUploadError):
+        return HTTPException(status_code=413, detail=str(exc))
+    raise exc
+
+
 def snake_item_payload(payload: dict[str, object]) -> dict[str, object]:
     rename = {
         "dueDate": "due_date",
@@ -281,6 +310,7 @@ def snake_item_payload(payload: dict[str, object]) -> dict[str, object]:
         "voiceNote": "voice_note",
         "createdBy": "created_by",
         "raisedBy": "raised_by",
+        "appendOriginalPhotos": "append_original_photos",
     }
     result = dict(payload)
     for source, target in rename.items():
@@ -603,12 +633,7 @@ def bootstrap(ctx: RequestContext = Depends(get_request_context)):
         "items": [sign_item_photos(item) for item in items],
         "trades": TRADES,
         "raised_by_options": RAISED_BY_OPTIONS,
-        "user": {
-            "id": ctx.user.id,
-            "email": ctx.user.email,
-            "company_role": ctx.user.company_role,
-            "project_roles": ctx.user.project_roles,
-        },
+        "user": user_payload(ctx),
     }
 
 
@@ -622,12 +647,7 @@ def legacy_state(ctx: RequestContext = Depends(get_request_context)):
         "plans": [],
         "trades": TRADES,
         "raisedByOptions": RAISED_BY_OPTIONS,
-        "user": {
-            "id": ctx.user.id,
-            "email": ctx.user.email,
-            "companyRole": ctx.user.company_role,
-            "projectRoles": ctx.user.project_roles,
-        },
+        "user": user_payload(ctx, camel=True),
     }
 
 
@@ -741,8 +761,8 @@ def update_item(item_id: str, payload: dict[str, object], by: str | None = Query
         return item_service.update_item(store, item_id, payload, by=actor_label(ctx), actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/actions/{action}")
@@ -763,7 +783,7 @@ def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ct
             return camel_item(store.start_inspection(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
         if action == "reject":
             require_close_item(ctx.user, item)
-            return camel_item(store.reject(item_id, by=actor_label(ctx), reason=str(payload.get("reason") or "Rejected"), actor=actor_context(ctx)))
+            return camel_item(store.reject(item_id, by=actor_label(ctx), reason=str(payload.get("reason") or ""), actor=actor_context(ctx)))
         if action == "close":
             require_close_item(ctx.user, item)
             evidence = CloseoutEvidence(
@@ -782,9 +802,11 @@ def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ct
             require_comment_access(ctx.user, item)
             comment = Comment(text=str(payload.get("text") or ""), by=actor_label(ctx))
             return camel_item(store.add_comment(item_id, comment, actor=actor_context(ctx)))
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
+    except StorageUploadError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except Exception as exc:
-        if isinstance(exc, StorageUploadError):
-            raise HTTPException(status_code=413, detail=str(exc)) from exc
         logger.exception("Item action failed for user=%s item=%s action=%s", ctx.user.email, item_id, action)
         raise HTTPException(status_code=503, detail="Could not update item. Check Render logs for the Supabase write error.") from exc
     raise HTTPException(status_code=404, detail="Unknown item action")
@@ -798,6 +820,8 @@ def issue_item(item_id: str, payload: IssuePayload, ctx: RequestContext = Depend
         return store.issue_item(item_id, to=payload.to, by=actor_label(ctx), note=payload.note, reissue=payload.reissue, actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/in-progress")
@@ -808,6 +832,8 @@ def mark_in_progress(item_id: str, payload: ActorPayload, ctx: RequestContext = 
         return store.mark_in_progress(item_id, by=actor_label(ctx), actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/ready")
@@ -818,6 +844,8 @@ def mark_ready(item_id: str, payload: ActorPayload, ctx: RequestContext = Depend
         return store.mark_ready(item_id, by=actor_label(ctx), actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/inspection/start")
@@ -828,6 +856,8 @@ def start_inspection(item_id: str, payload: ActorPayload, ctx: RequestContext = 
         return store.start_inspection(item_id, by=actor_label(ctx), actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/inspection/reject")
@@ -838,6 +868,8 @@ def reject_item(item_id: str, payload: RejectPayload, ctx: RequestContext = Depe
         return store.reject(item_id, by=actor_label(ctx), reason=payload.reason, actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/closeout")
@@ -849,6 +881,8 @@ def closeout_item(item_id: str, payload: CloseoutEvidence, ctx: RequestContext =
         return store.close_with_evidence(item_id, payload, actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/rectification")
@@ -860,6 +894,8 @@ def add_rectification(item_id: str, payload: RectificationPayload, ctx: RequestC
         return store.add_rectification(item_id, evidence, advance_to_ready=payload.advance_to_ready, actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
+    except (WorkflowError, ValidationError) as exc:
+        raise workflow_http_error(exc)
 
 
 @app.post("/api/items/{item_id}/comments")
