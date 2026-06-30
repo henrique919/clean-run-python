@@ -5,7 +5,7 @@ import os
 import re
 from collections import defaultdict
 from threading import RLock
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 from uuid import NAMESPACE_URL, uuid5
 
@@ -16,6 +16,8 @@ from app.models import (
     CloseoutEvidence,
     Comment,
     Item,
+    ItemCreate,
+    ItemStatus,
     RectificationEvidence,
     Settings,
     SyncState,
@@ -25,6 +27,7 @@ from app.config import is_production
 from app.store import CleanRunStore, seed_data, seed_settings
 from app.storage import normalize_photo
 from app.supabase_client import get_supabase_client
+from app.validation import validate_capture
 
 logger = logging.getLogger(__name__)
 SETTINGS_ID = "default"
@@ -286,6 +289,44 @@ class SupabaseCleanRunStore(CleanRunStore):
         with self.lock:
             for item in data.items:
                 self._upsert_item(item, data.settings)
+
+    def create_item(self, payload: ItemCreate, *, issue_now: bool = False, actor: dict[str, Any] | None = None) -> Item:
+        validate_capture(payload, for_issue=issue_now)
+        data = self._read()
+        now = now_iso()
+        duplicate = self._recent_duplicate(data.items, payload, now)
+        if duplicate:
+            return duplicate
+        code = self.next_code(data.items, payload.type)
+        payload_data = payload.model_dump(exclude={"status"})
+        item = Item(
+            **payload_data,
+            code=code,
+            status=ItemStatus.OPEN,
+            created_at=now,
+            updated_at=now,
+            sync=SyncState.SYNCED,
+        )
+        item = self._audit(item, f"Created ({code})", by=payload.created_by, at=now, actor=actor)
+        if issue_now:
+            item = self._issue_mutation(item, to=payload.subcontractor, by=payload.created_by, actor=actor)
+        with self.lock:
+            self._upsert_item(item, data.settings)
+        return item
+
+    def _patch(self, item_id: str, mutator: Callable[[Item], Item]) -> Item:
+        data = self._read()
+        changed: Item | None = None
+        for item in data.items:
+            if item.id == item_id:
+                changed = mutator(item)
+                changed.updated_at = now_iso()
+                break
+        if changed is None:
+            raise KeyError(item_id)
+        with self.lock:
+            self._upsert_item(changed, data.settings)
+        return changed
 
     def _upsert_item(self, item: Item, settings: Settings) -> str:
         company_id = self._ensure_company(settings.company)

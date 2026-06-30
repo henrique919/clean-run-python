@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from threading import RLock
 
-from app.models import Item
+from app.models import AppData, Item, ItemCreate
+from app.store import seed_settings
 from app.store_supabase import SupabaseCleanRunStore, _child_db_id, _item_db_id, _stable_uuid, _storage_folder
 
 
@@ -106,6 +108,52 @@ class StoragePathTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(store._dedupe_child_rows("item_photos", rows)), 1)
+
+    def test_patch_upserts_only_changed_item(self) -> None:
+        store = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore)
+        settings = seed_settings()
+        items = [
+            Item(code="DEF-1001", project="Jura Noosa", due_date="2026-07-07", description="One"),
+            Item(code="DEF-1002", project="Jura Noosa", due_date="2026-07-07", description="Two"),
+        ]
+        calls = []
+        store.lock = RLock()
+        store._read = lambda: AppData(items=items, settings=settings)
+        store._upsert_item = lambda item, current_settings: calls.append((item.code, current_settings))
+
+        changed = store._patch(items[1].id, lambda item: item.model_copy(update={"description": "Changed"}))
+
+        self.assertEqual(changed.description, "Changed")
+        self.assertEqual([code for code, _settings in calls], ["DEF-1002"])
+        self.assertIs(calls[0][1], settings)
+
+    def test_create_item_upserts_only_new_item(self) -> None:
+        store = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore)
+        settings = seed_settings()
+        existing = Item(code="DEF-1001", project="Jura Noosa", due_date="2026-07-07", description="One")
+        calls = []
+        store.lock = RLock()
+        store._read = lambda: AppData(items=[existing], settings=settings)
+        store._upsert_item = lambda item, current_settings: calls.append((item.code, current_settings))
+
+        created = store.create_item(
+            ItemCreate(
+                project="Jura Noosa",
+                building="B5",
+                level="Ground",
+                unit="U101",
+                room="Bathroom",
+                trade="Waterproofing",
+                subcontractor="CLP Painting",
+                due_date="2026-07-07",
+                description="New defect",
+                original_photos=["seed://photo"],
+            )
+        )
+
+        self.assertEqual(created.code, "DEF-1002")
+        self.assertEqual([code for code, _settings in calls], ["DEF-1002"])
+        self.assertIs(calls[0][1], settings)
 
 
 if __name__ == "__main__":
