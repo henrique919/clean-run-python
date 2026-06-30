@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections import defaultdict
 from threading import RLock
 from typing import Any
@@ -39,6 +40,17 @@ def _stable_uuid(*parts: Any) -> str:
 def _first_id(response: Any) -> str | None:
     data = getattr(response, "data", None) or []
     return data[0].get("id") if data else None
+
+
+def _storage_slug(value: str | None, fallback: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")
+    return slug or fallback
+
+
+def _storage_folder(item: Item, evidence_type: str) -> str:
+    project = _storage_slug(item.project, "unknown-project")
+    item_key = _storage_slug(item.code or item.id, "unassigned-item")
+    return f"projects/{project}/items/{item_key}/{evidence_type}"
 
 
 class SupabaseCleanRunStore(CleanRunStore):
@@ -267,13 +279,16 @@ class SupabaseCleanRunStore(CleanRunStore):
         return db_item_id
 
     def _with_storage_photos(self, item: Item) -> Item:
-        original_photos = [normalize_photo(photo, folder="original") for photo in item.original_photos]
+        original_photos = [
+            normalize_photo(photo, folder=_storage_folder(item, "original"))
+            for photo in item.original_photos
+        ]
         rectification_evidence = [
-            evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder="rectification")})
+            evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder=_storage_folder(item, "rectification"))})
             for evidence in item.rectification_evidence
         ]
         closeout_evidence = [
-            evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder="closeout")})
+            evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder=_storage_folder(item, "closeout"))})
             for evidence in item.closeout_evidence
         ]
         return item.model_copy(
