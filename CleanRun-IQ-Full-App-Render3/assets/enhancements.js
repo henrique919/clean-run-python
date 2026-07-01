@@ -1,14 +1,15 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards24";
-  document.documentElement.dataset.cleanrunBuild="cards24";
+  window.CLEANRUN_FRONTEND_BUILD="cards25";
+  document.documentElement.dataset.cleanrunBuild="cards25";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
   const DB_NAME="cleanrun-iq-offline";
   const THEME_KEY="cleanrun-theme";
   const LAST_CAPTURE_KEY="cleanrun-last-capture-fields";
+  const WALK_CONTEXT_KEY="cleanrun-walk-context-v1";
   let capturePhotoMeta=[];
   let capturePhotoPreviewUrls=[];
   let editPhotos=[];
@@ -137,12 +138,107 @@
   function rememberCaptureFields(data){
     const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,dueDate:data.dueDate,priority:data.priority,type:data.type};
     try{localStorage.setItem(LAST_CAPTURE_KEY,JSON.stringify(keep))}catch{}
+    if(state?.settings?.activeProject){
+      try{
+        const all=JSON.parse(localStorage.getItem(WALK_CONTEXT_KEY)||"{}")||{};
+        all[state.settings.activeProject]={building:keep.building||"",level:keep.level||"",unit:keep.unit||"",room:keep.room||"",trade:keep.trade||"",subcontractor:keep.subcontractor||""};
+        localStorage.setItem(WALK_CONTEXT_KEY,JSON.stringify(all));
+      }catch{}
+    }
   }
+  function readWalkContext(){
+    try{
+      const all=JSON.parse(localStorage.getItem(WALK_CONTEXT_KEY)||"{}")||{};
+      return all[state?.settings?.activeProject]||{};
+    }catch{return {}}
+  }
+  function recentValues(field,limit=4){
+    const project=state?.settings?.activeProject;
+    if(!project)return [];
+    const seen=new Set(),values=[];
+    const push=value=>{const v=String(value||"").trim();if(!v||seen.has(v))return;seen.add(v);values.push(v)};
+    push(readWalkContext()[field]);
+    try{push(JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")[field])}catch{}
+    (state.items||[]).filter(i=>i.project===project).sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")).forEach(i=>push(i[field]));
+    return values.slice(0,limit);
+  }
+  function recentChipsRow(label,field,values){
+    if(!values.length)return "";
+    return `<div class="recent-chip-row"><span class="recent-chip-label">${esc(label)}</span>${values.map(v=>`<button type="button" class="recent-chip" onclick="applyRecentField('${field}',decodeURIComponent('${encodeURIComponent(v)}'))">${esc(v)}</button>`).join("")}</div>`;
+  }
+  function locationFieldsMarkup(cfg,values={}){
+    return `<div class="field-list"><label>Project<select name="project">${options(state.settings.projects,values.project||state.settings.activeProject)}</select></label><label>Building *<select name="building" required onchange="updateLocationChip()"><option value="">Select building</option>${options(cfg.buildings||[],values.building||"")}</select></label><label>Level<select name="level" onchange="updateLocationChip()"><option value="">Select level</option>${options(cfg.levels||[],values.level||"")}</select></label><label>Unit / Area *<select name="unit" required onchange="updateLocationChip()"><option value="">Select unit / area</option>${options(cfg.units||[],values.unit||"")}</select></label><label>Room / Location<select name="room" onchange="updateLocationChip()"><option value="">Select room / location</option>${options(cfg.rooms||[],values.room||"")}</select></label></div>`;
+  }
+  function buildLocationSpeedBlock(){
+    const cfg=state.settings.projectConfigs[state.settings.activeProject]||{};
+    const ctx=readWalkContext();
+    let last={};try{last=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{}}catch{}
+    const seed={building:ctx.building||last.building||cfg.buildings?.[0]||"",level:ctx.level||last.level||cfg.levels?.[0]||"",unit:ctx.unit||last.unit||cfg.units?.[0]||"",room:ctx.room||last.room||"",project:state.settings.activeProject};
+    return `<section class="form-card location-speed-card"><div class="spread"><div><h3>Location</h3><p class="meta">Stays set while you walk the site.</p></div><button type="button" class="btn alt small" onclick="toggleLocationDetails()">Change</button></div><button type="button" class="location-context-chip" id="locationContextChip" onclick="toggleLocationDetails()">Set location</button>${recentChipsRow("Recent areas","unit",recentValues("unit"))}${recentChipsRow("Recent buildings","building",recentValues("building"))}<div id="locationDetails" class="location-details hidden">${locationFieldsMarkup(cfg,seed)}</div></section>`;
+  }
+  window.updateLocationChip=function(){
+    const form=$("#app form");if(!form)return;
+    const parts=[form.building?.value,form.level?.value,form.unit?.value,form.room?.value].filter(Boolean);
+    const chip=$("#locationContextChip");
+    if(chip)chip.textContent=parts.length?parts.join(" · "):"Tap to set location";
+  };
+  window.toggleLocationDetails=function(){
+    const panel=$("#locationDetails");
+    if(panel)panel.classList.toggle("hidden");
+  };
+  window.applyRecentField=function(field,value){
+    const form=$("#app form");if(!form?.elements[field])return;
+    form.elements[field].value=value;
+    if(field==="building"||field==="level"||field==="unit"||field==="room")updateLocationChip();
+    toast(`Set ${field} to ${value}`);
+  };
+  window.toggleWalkCapture=function(){
+    walkMode=!walkMode;
+    if(walkMode)sessionStorage.removeItem("walkModeOff");
+    else sessionStorage.setItem("walkModeOff","1");
+    render();
+  };
+  window.quickCapture=function(){
+    sessionStorage.removeItem("walkModeOff");
+    walkMode=true;
+    go("capture");
+  };
   function applyCaptureDefaults(){
     let keep={};try{keep=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{}}catch{}
+    const ctx=readWalkContext();
     const form=$("#app form");if(!form)return;
-    for(const [key,value] of Object.entries(keep)){if(value&&form.elements[key])form.elements[key].value=value}
-    photoHint?.();toggleRaised?.();
+    const cfg=state.settings.projectConfigs[state.settings.activeProject]||{};
+    const merged={...keep,...ctx};
+    for(const key of ["project","building","level","unit","room","trade","subcontractor","dueDate","priority","type"]){
+      const value=merged[key]||(key==="building"?cfg.buildings?.[0]:key==="unit"?cfg.units?.[0]:key==="level"?cfg.levels?.[0]:"");
+      if(value&&form.elements[key])form.elements[key].value=value;
+    }
+    photoHint?.();toggleRaised?.();updateLocationChip();
+  }
+  function resetCaptureForNext(){
+    const form=$("#app form");
+    if(form?.description)form.description.value="";
+    if($("#voiceText")){$("#voiceText").value="";captureVoiceCaptured=false;updateCaptureVoiceState()}
+    clearCapturePhotoState();
+    const host=$("#capturePreviews");if(host)host.innerHTML="";
+    updatePhotoCount();
+    applyCaptureDefaults();
+    form?.querySelector('input[type="file"][capture="environment"]')?.focus?.();
+  }
+  function mountQuickCaptureFab(){
+    let fab=$("#quickCaptureFab");
+    if(!fab){
+      fab=document.createElement("button");
+      fab.id="quickCaptureFab";
+      fab.type="button";
+      fab.className="quick-capture-fab";
+      fab.setAttribute("aria-label","Quick Capture");
+      fab.innerHTML='<span class="quick-capture-fab__icon">+</span><span class="quick-capture-fab__label">Quick</span>';
+      fab.onclick=()=>quickCapture();
+      document.body.appendChild(fab);
+    }
+    const hide=!state||route==="capture"||matchMedia("(min-width:1024px)").matches;
+    fab.hidden=hide;
   }
   function preferredTheme(){
     return localStorage.getItem(THEME_KEY)||state?.settings?.theme||"light";
@@ -364,19 +460,46 @@
   };
   const originalStartDictation=startDictation;
   startDictation=function(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR)return toast("Speech recognition unavailable — type the note instead.",true);
     captureVoiceCaptured=false;
     updateCaptureVoiceState();
-    return originalStartDictation();
+    const r=new SR();
+    r.lang="en-AU";
+    r.onresult=e=>{
+      const text=e.results[0][0].transcript;
+      const voice=$("#voiceText");
+      if(voice)voice.value=text;
+      captureVoiceCaptured=!!text.trim();
+      updateCaptureVoiceState();
+      draftVoice().catch(err=>toast(err.message||"Could not draft from note.",true));
+    };
+    r.onerror=()=>toast("Speech recognition failed — type the note instead.",true);
+    r.onend=()=>{};
+    r.start();
+    toast("Listening…");
+  };
+
+  const originalGo=go;
+  go=function(next){
+    if(next==="capture"&&!sessionStorage.getItem("walkModeOff"))walkMode=true;
+    return originalGo(next);
   };
 
   const originalCaptureView=captureView;
   captureView=function(){
-    const html=originalCaptureView()
+    const walkBanner=walkMode?`<div class="walk-session-banner">Walk mode · ${walkCount} captured this walk · next save loops back here</div>`:"";
+    let html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
-      .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.")
+      .replace("Start with evidence. Defects and client defects require at least one photo.", "Take a photo first. Add a short note, then save.")
       .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
-      .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Voice-to-Note AI</div><textarea id=\"voiceText\" placeholder=\"Speak or type the note, then draft the form\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak Note</button><button class=\"btn\" type=\"button\" onclick=\"draftVoice()\">Draft from Note</button></div></section>");
-    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice()},0);
+      .replace('onclick="walkMode=!walkMode;render()"','onclick="toggleWalkCapture()"')
+      .replace(/<div class="form-group"><h3>Location<\/h3><div class="field-list">[\s\S]*?<\/div><\/div>/,buildLocationSpeedBlock())
+      .replace('<label>Trade<select name="trade">',`${recentChipsRow("Recent trades","trade",recentValues("trade"))}<label>Trade<select name="trade">`)
+      .replace('<label>Subcontractor<select name="subcontractor">',`${recentChipsRow("Recent subs","subcontractor",recentValues("subcontractor"))}<label>Subcontractor<select name="subcontractor">`)
+      .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Speak note</div><p class=\"subtle\">Tap mic, describe the defect, and the form fills automatically.</p><textarea id=\"voiceText\" placeholder=\"Or type a short note\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak & fill</button></div></section>")
+      .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`);
+    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice();updateLocationChip()},0);
     return html;
   };
 
@@ -434,7 +557,7 @@
       const item=await api(path,{method:"POST",body:JSON.stringify(data)});
       clearCapturePhotoState();
       form.dataset.captureRequestId="";
-      if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved · continue walk`)}
+      if(walkMode){walkCount++;await reload();route="capture";render();resetCaptureForNext();toast(`${item.code} saved · capture next`)}
       else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}
     }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
   };
@@ -598,9 +721,11 @@
   };
   const originalItemsView=itemsView;
   itemsView=function(){
-    const html=originalItemsView();
+    let html=originalItemsView();
     const chips=["All","Captured","Issued","Ready","Rejected","Overdue","Closed"].map(v=>`<button class="filter-chip light ${v===itemStatusFilter?'active':''}" data-value="${v}" onclick="setFilter(this,'status')">${v}</button>`).join("");
-    return html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div></div><div class="screen-scroll">`);
+    html=html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div></div><div class="screen-scroll">`);
+    html=html.replace('<div class="screen-title">Items</div>','<div class="items-header-copy"><div class="screen-title">Items</div><button type="button" class="btn small quick-capture-inline" onclick="quickCapture()">Quick Capture</button></div>');
+    return html;
   };
 
   function siteStatus(item){
@@ -619,19 +744,16 @@
   const cardActionLocks=new Set();
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
   itemCard=function(i){
-    const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`,location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ");
-    const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onclick="return cardAction(event,'${i.id}','issue')">Issue ›</button>`:"";
-    const reissue=i.status==="rejected"?`<button class="cr-card-action" type="button" onclick="return cardAction(event,'${i.id}','issue')">Re-Issue ›</button>`:"";
-    return `<article class="native-card native-item cr-item-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code">${esc(i.code).toUpperCase()}</span><span class="cr-card-type">${esc(typeLabels[i.type]||i.type).toUpperCase()}</span></div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}</div><div class="cr-card-copy"><div class="cr-card-trade">${esc(i.trade||"No trade")}</div><div class="cr-card-sub">${esc(i.subcontractor||"Unassigned")}</div><div class="cr-card-desc">${esc(i.description||"No description")}</div><div class="cr-card-meta"><span>${esc(location||"NO LOCATION").toUpperCase()}</span><span>${dateText}</span></div></div></div><div class="cr-card-actions">${issueButton}${reissue}${urgent?'<span class="badge overdue">URGENT</span>':""}</div></article>`;
-  };
-
-  itemCard=function(i){
-    const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent";
-    const dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`;
-    const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ");
-    const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">ISSUE ›</button>`:"";
-    const reissue=i.status==="rejected"?`<button class="cr-card-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">RE-ISSUE ›</button>`:"";
-    return `<article class="native-card native-item cr-item-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code">${esc(i.code).toUpperCase()}</span><span class="cr-card-type">${esc(typeLabels[i.type]||i.type).toUpperCase()}</span></div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}</div><div class="cr-card-copy"><div class="cr-card-location">${esc(location||"NO LOCATION").toUpperCase()}</div><div class="cr-card-desc">${esc(i.description||"No description")}</div><div class="cr-card-assignment"><div><div class="cr-card-trade">${esc(i.trade||"No trade")}</div><div class="cr-card-sub">${esc(i.subcontractor||"Unassigned")}</div></div><div class="cr-card-date">${dateText}</div></div></div></div><div class="cr-card-actions" onclick="event.stopPropagation()">${issueButton}${reissue}${urgent?'<span class="badge overdue">URGENT</span>':""}</div></article>`;
+    const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",code=itemDisplayCode(i);
+    const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location";
+    const photoCount=(i.originalPhotos||[]).length;
+    const dateText=closed?"Closed":(i.dueDate?`Due ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short"}))}`:"");
+    const title=esc((i.description||"No description").trim().split(/\s+/).slice(0,8).join(" "));
+    const issueBtn=i.status==="open"?`<button class="cr-fast-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">Issue</button>`:"";
+    const reissueBtn=i.status==="rejected"?`<button class="cr-fast-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">Re-issue</button>`:"";
+    const photoBtn=`<button class="cr-fast-action alt" type="button" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();editItemForm('${i.id}')">+ Photo</button>`;
+    const openBtn=`<button class="cr-fast-action alt" type="button" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();showItem('${i.id}')">Open</button>`;
+    return `<article class="native-card native-item cr-item-card cr-scan-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code" title="${esc(i.code)}">${esc(code).toUpperCase()}</span>${photoCount?`<span class="cr-photo-count">${photoCount} photo${photoCount===1?"":"s"}</span>`:""}</div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}</div><div class="cr-card-copy"><div class="cr-card-title">${title}</div><div class="cr-card-location">${esc(location)}</div><div class="cr-card-assignment"><span>${esc(i.trade||"No trade")}</span><span>${esc(i.subcontractor||"Unassigned")}</span></div><div class="cr-card-meta-row">${dateText?`<span>${dateText}</span>`:""}${urgent?'<span class="badge overdue">Urgent</span>':""}</div></div></div><div class="cr-card-actions cr-fast-actions" onclick="event.stopPropagation()">${issueBtn}${reissueBtn}${photoBtn}${openBtn}</div></article>`;
   };
 
   dashboardView=function(){
@@ -649,7 +771,10 @@
 
   const commandDashboardView=dashboardView;
   dashboardView=function(){
-    const html=commandDashboardView();
+    let html=commandDashboardView();
+    html=html.replace(`onclick="go('capture')"`,`onclick="quickCapture()"`);
+    html=html.replace("<b>Capture Item</b><small>Photo, voice-to-note or walk capture</small>","<b>Quick Capture</b><small>Photo first · walk the site · save and next</small>");
+    if(matchMedia("(max-width:1023px)").matches)html=html.replace(/<form class="command-home[\s\S]*?<\/form>/,"");
     return html.includes("command-home")?html:html.replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
   };
 
@@ -718,6 +843,7 @@
     if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();updateOfflinePill();return}
     originalRender();renderMobileNav();renderDesktopNav();
     if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
+    mountQuickCaptureFab();
     updateOfflinePill();
   };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
@@ -768,7 +894,6 @@
   const setupWithFocus=setupView;
   setupView=function(){const html=setupWithFocus(),cfg=state.settings.projectConfigs[state.settings.activeProject]||{},scope=cfg.itemsProjectScope||"active",mode=cfg.itemsFocusMode||"level";const card=`${codePrefixCard(cfg)}${spreadsheetImportCard()}<section class="form-card"><h2>Items page focus</h2><p class="meta">Choose the default project scope and third filter group for this project.</p><label>Project scope<select onchange="saveItemsProjectScope(this.value)">${projectScopeOptions().map(([value,label])=>`<option value="${esc(value)}" ${value===scope?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label>Default focus group<select onchange="saveItemsFocusMode(this.value)">${FOCUS_MODES.map(([value,label])=>`<option value="${value}" ${value===mode?"selected":""}>${label}</option>`).join("")}</select></label></section>`;return html.replace("</section>",`</section>${card}`)};
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});await reload();if(route==="items")filterItems();else render();toast(act==="issue"?"ISSUED - moved to Issued":"Item updated")})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
-  itemCard=function(i){const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",code=itemDisplayCode(i);const dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`;const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" - ");const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">ISSUE</button>`:"";const reissue=i.status==="rejected"?`<button class="cr-card-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">RE-ISSUE</button>`:"";return `<article class="native-card native-item cr-item-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code" title="${esc(i.code)}" data-full-code="${esc(i.code)}">${esc(code).toUpperCase()}</span><span class="cr-card-type">${esc(typeLabels[i.type]||i.type).toUpperCase()}</span></div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}<div class="cr-card-date under-photo">${dateText}</div></div><div class="cr-card-copy"><div class="cr-card-location">${esc(location||"NO LOCATION").toUpperCase()}</div><div class="cr-card-desc">${esc(i.description||"No description")}</div><div class="cr-card-assignment"><div class="cr-card-sub">${esc(i.subcontractor||"Unassigned")}</div><div class="cr-card-trade">${esc(i.trade||"No trade")}</div></div></div></div><div class="cr-card-actions" onclick="event.stopPropagation()">${issueButton}${reissue}${urgent?'<span class="badge overdue">URGENT</span>':""}</div></article>`};
   function planFit(plan){return {x:0,y:0,scale:1,...(plan?.fit||{})}}
   function pdfSrc(plan){const src=String(plan?.image||"");return src.includes("#")?src:`${src}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
   function activePlan(){return state.plans.filter(p=>p.project===state.settings.activeProject)[0]}

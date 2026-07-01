@@ -385,3 +385,75 @@ html[data-theme="dark"] .setup-import-actions .btn.alt{background:#F4F6F9!import
   .command-palette input{font-size:17px}
 }
 
+.quick-capture-fab{
+  position:fixed;
+  right:max(14px,calc((100vw - 780px)/2 + 14px));
+  bottom:calc(86px + env(safe-area-inset-bottom));
+  z-index:24;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  min-width:68px;
+  min-height:68px;
+  padding:10px 12px;
+  border:0;
+  border-radius:18px;
+  background:#18A94F;
+  color:#121619;
+  box-shadow:0 12px 28px #12833D44;
+  font-weight:800;
+}
+.quick-capture-fab__icon{font-size:28px;line-height:1}
+.quick-capture-fab__label{font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.quick-capture-inline{white-space:nowrap}
+.items-header-copy{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%}
+.walk-session-banner{margin:0 16px 12px;padding:10px 12px;border-radius:12px;background:#E1F7E9;color:#0C7733;font-size:13px;font-weight:700}
+.location-speed-card h3{margin:0 0 4px;font-size:15px}
+.location-context-chip{
+  width:100%;
+  margin:10px 0 8px;
+  padding:12px 14px;
+  border:1px solid #B9EAC7;
+  border-radius:12px;
+  background:#F3FBF6;
+  color:#121619;
+  text-align:left;
+  font-weight:700;
+}
+.location-details.hidden{display:none}
+.recent-chip-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
+.recent-chip-label{font-size:11px;font-weight:800;color:#6B7280;text-transform:uppercase;letter-spacing:.05em;margin-right:4px}
+.recent-chip{
+  border:1px solid #D0D5DD;
+  background:#fff;
+  color:#121619;
+  border-radius:999px;
+  padding:7px 11px;
+  font-size:12px;
+  font-weight:700;
+}
+.cr-scan-card .cr-card-desc{display:none}
+.cr-scan-card .cr-card-title{
+  font-size:14px;
+  font-weight:800;
+  line-height:1.25;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.cr-photo-count{font-size:11px;font-weight:700;color:#6B7280;margin-left:8px}
+.cr-fast-actions{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 12px}
+.cr-fast-action{
+  border:0;
+  border-radius:999px;
+  padding:8px 12px;
+  font-size:12px;
+  font-weight:800;
+  background:#20C55E;
+  color:#121619;
+}
+.cr-fast-action.alt{background:#fff;border:1px solid #D0D5DD}
+.capture-voice-actions .btn:only-child{grid-column:1/-1}

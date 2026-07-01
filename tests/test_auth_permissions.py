@@ -132,8 +132,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards23", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards23", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards25", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards25", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
