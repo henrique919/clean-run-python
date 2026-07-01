@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards22";
-  document.documentElement.dataset.cleanrunBuild="cards22";
+  window.CLEANRUN_FRONTEND_BUILD="cards24";
+  document.documentElement.dataset.cleanrunBuild="cards24";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -10,8 +10,10 @@
   const THEME_KEY="cleanrun-theme";
   const LAST_CAPTURE_KEY="cleanrun-last-capture-fields";
   let capturePhotoMeta=[];
+  let capturePhotoPreviewUrls=[];
   let editPhotos=[];
   let editPhotoMeta=[];
+  let editPhotoPreviewUrls=[];
   let selectedEditItem="";
   let lastChosenPhotoMeta=null;
   let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[]};
@@ -28,6 +30,20 @@
   const offlineId=()=>`offline-${crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random().toString(16).slice(2)}`;
   const MAX_PHOTO_EDGE=1600;
   const PHOTO_QUALITY=.72;
+  const PHOTO_SKIP_BYTES=900000;
+
+  const yieldToMain=()=>new Promise(resolve=>{
+    if(typeof requestAnimationFrame==="function")requestAnimationFrame(()=>setTimeout(resolve,0));
+    else setTimeout(resolve,0);
+  });
+
+  function revokePreviewUrl(url){
+    if(url&&String(url).startsWith("blob:"))try{URL.revokeObjectURL(url)}catch{}
+  }
+
+  function revokePreviewUrls(urls){
+    (urls||[]).forEach(revokePreviewUrl);
+  }
 
   function readFileData(file){
     return new Promise((resolve,reject)=>{
@@ -38,27 +54,71 @@
     });
   }
 
-  function loadImage(src){
+  function blobToDataUrl(blob){
     return new Promise((resolve,reject)=>{
-      const img=new Image();
-      img.onload=()=>resolve(img);
-      img.onerror=reject;
-      img.src=src;
+      const reader=new FileReader();
+      reader.onload=()=>resolve(reader.result);
+      reader.onerror=()=>reject(reader.error);
+      reader.readAsDataURL(blob);
     });
   }
 
+  function canvasToJpegBlob(canvas,quality=PHOTO_QUALITY){
+    return new Promise((resolve,reject)=>{
+      canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Could not compress image.")), "image/jpeg", quality);
+    });
+  }
+
+  async function decodeImageSource(file,objectUrl){
+    if(typeof createImageBitmap==="function"){
+      try{
+        const bitmap=await createImageBitmap(file);
+        return {width:bitmap.width,height:bitmap.height,draw:(ctx,x,y,w,h)=>{ctx.drawImage(bitmap,x,y,w,h);bitmap.close?.()}};
+      }catch{}
+    }
+    const img=await new Promise((resolve,reject)=>{
+      const image=new Image();
+      image.onload=()=>resolve(image);
+      image.onerror=reject;
+      image.src=objectUrl;
+    });
+    return {width:img.naturalWidth,height:img.naturalHeight,draw:(ctx,x,y,w,h)=>ctx.drawImage(img,x,y,w,h)};
+  }
+
+  async function compressImageForUpload(file){
+    if(!file?.type?.startsWith("image/"))return {dataUrl:await readFileData(file),previewUrl:null};
+    const objectUrl=URL.createObjectURL(file);
+    try{
+      await yieldToMain();
+      const decoded=await decodeImageSource(file,objectUrl);
+      const scale=Math.min(1,MAX_PHOTO_EDGE/decoded.width,MAX_PHOTO_EDGE/decoded.height);
+      if(scale>=1&&file.size<PHOTO_SKIP_BYTES){
+        const dataUrl=await readFileData(file);
+        return {dataUrl,previewUrl:URL.createObjectURL(file)};
+      }
+      const width=Math.max(1,Math.round(decoded.width*scale));
+      const height=Math.max(1,Math.round(decoded.height*scale));
+      const canvas=document.createElement("canvas");
+      canvas.width=width;
+      canvas.height=height;
+      const ctx=canvas.getContext("2d",{alpha:false});
+      ctx.fillStyle="#fff";
+      ctx.fillRect(0,0,width,height);
+      decoded.draw(ctx,0,0,width,height);
+      await yieldToMain();
+      const blob=await canvasToJpegBlob(canvas);
+      return {dataUrl:await blobToDataUrl(blob),previewUrl:URL.createObjectURL(blob)};
+    }catch(err){
+      console.warn("[CleanRun] image compression failed; using original",err);
+      const dataUrl=await readFileData(file);
+      return {dataUrl,previewUrl:URL.createObjectURL(file)};
+    }finally{
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   async function fileToUploadData(file){
-    if(!file?.type?.startsWith("image/"))return readFileData(file);
-    const original=await readFileData(file);
-    const img=await loadImage(original);
-    const scale=Math.min(1,MAX_PHOTO_EDGE/img.naturalWidth,MAX_PHOTO_EDGE/img.naturalHeight);
-    if(scale>=1&&file.size<900000)return original;
-    const canvas=document.createElement("canvas");
-    canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
-    canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
-    canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
-    const compressed=canvas.toDataURL("image/jpeg",PHOTO_QUALITY);
-    return compressed.length<original.length?compressed:original;
+    return (await compressImageForUpload(file)).dataUrl;
   }
 
   function setBusyButton(button,label){
@@ -109,27 +169,59 @@
     });
   }
 
-  async function filesWithMeta(files){
+  async function filesWithMeta(files,onRecord){
     const list=[...files];
-    const [sources,geo]=await Promise.all([Promise.all(list.map(fileToUploadData)),locatePhoto()]);
-    return sources.map((src,n)=>({src,meta:{...geo,fileName:list[n]?.name||`photo-${n+1}.jpg`,mimeType:list[n]?.type||"image/jpeg",compressed:!!list[n]?.type?.startsWith("image/")}}));
+    if(!list.length)return [];
+    const geo=await locatePhoto();
+    const records=[];
+    for(let n=0;n<list.length;n++){
+      const file=list[n];
+      await yieldToMain();
+      const packed=await compressImageForUpload(file);
+      const record={
+        src:packed.dataUrl,
+        previewUrl:packed.previewUrl||packed.dataUrl,
+        meta:{...geo,fileName:file?.name||`photo-${n+1}.jpg`,mimeType:file?.type||"image/jpeg",compressed:!!file?.type?.startsWith("image/")}
+      };
+      records.push(record);
+      onRecord?.(record,n);
+    }
+    return records;
   }
 
   filesToData=async function(files){
-    return Promise.all([...files].map(fileToUploadData));
+    const records=await filesWithMeta(files);
+    return records.map(record=>record.src);
   };
+
+  function previewSrc(mode,index){
+    if(mode==="capture")return capturePhotoPreviewUrls[index]||capturePhotos[index];
+    if(mode==="edit")return editPhotoPreviewUrls[index]||editPhotos[index];
+    return "";
+  }
 
   function previewFigure(src,meta,index,mode){
     const safeTitle=mode==="edit"?"Retrospective evidence":"Issue evidence";
-    return `<figure><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})"><figcaption class="photo-caption">${esc(geoLabel(meta))}</figcaption><div class="photo-tools"><button class="btn alt" type="button" onclick="markupEvidencePhoto('${mode}',${index})">Mark up</button><button class="btn alt" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
+    return `<figure data-photo-index="${index}"><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})"><figcaption class="photo-caption">${esc(geoLabel(meta))}</figcaption><div class="photo-tools"><button class="btn alt" type="button" onclick="markupEvidencePhoto('${mode}',${index})">Mark up</button><button class="btn alt" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
+  }
+
+  function updatePhotoCount(){
+    const count=$("#photoCount");
+    if(count)count.textContent=capturePhotos.length?`${capturePhotos.length} photo${capturePhotos.length===1?"":"s"} attached`:"No photos attached yet";
+    document.querySelector("[data-photo-card]")?.classList.toggle("needs-photo",capturePhotos.length===0);
+  }
+
+  function appendCapturePreview(index){
+    const host=$("#capturePreviews");
+    if(!host)return;
+    host.insertAdjacentHTML("beforeend",previewFigure(previewSrc("capture",index),capturePhotoMeta[index],index,"capture"));
+    updatePhotoCount();
   }
 
   function renderCapturePreviews(){
     const host=$("#capturePreviews");
-    if(host)host.innerHTML=capturePhotos.map((src,n)=>previewFigure(src,capturePhotoMeta[n],n,"capture")).join("");
-    const count=$("#photoCount");
-    if(count)count.textContent=capturePhotos.length?`${capturePhotos.length} photo${capturePhotos.length===1?"":"s"} attached`:"No photos attached yet";
-    document.querySelector("[data-photo-card]")?.classList.toggle("needs-photo",capturePhotos.length===0);
+    if(host)host.innerHTML=capturePhotos.map((_,n)=>previewFigure(previewSrc("capture",n),capturePhotoMeta[n],n,"capture")).join("");
+    updatePhotoCount();
   }
 
   function renderEditPreviews(){
@@ -137,7 +229,7 @@
     if(!host)return;
     host.innerHTML=editPhotos.map((src,n)=>src.startsWith("seed://")
       ?`<figure><span class="thumb">${seedThumb(src)}</span><figcaption class="photo-caption">Original seeded evidence</figcaption></figure>`
-      :previewFigure(src,editPhotoMeta[n],n,"edit")).join("")||'<span class="meta">No photos attached.</span>';
+      :previewFigure(previewSrc("edit",n),editPhotoMeta[n],n,"edit")).join("")||'<span class="meta">No photos attached.</span>';
   }
 
   window.openEvidencePhoto=function(mode,index){
@@ -149,15 +241,44 @@
     const photos=mode==="edit"?editPhotos:capturePhotos;
     const src=photos[index];
     if(!src||src.startsWith("seed://"))return toast("Seed previews cannot be marked up.",true);
-    openWorkbench(src,"Mark up evidence",data=>{photos[index]=data;mode==="edit"?renderEditPreviews():renderCapturePreviews()});
+    openWorkbench(src,"Mark up evidence",data=>{
+      photos[index]=data;
+      if(mode==="edit"){
+        revokePreviewUrl(editPhotoPreviewUrls[index]);
+        editPhotoPreviewUrls[index]=null;
+        renderEditPreviews();
+      }else{
+        revokePreviewUrl(capturePhotoPreviewUrls[index]);
+        capturePhotoPreviewUrls[index]=null;
+        renderCapturePreviews();
+      }
+    });
   };
   window.removeEvidencePhoto=function(mode,index){
-    if(mode==="edit"){editPhotos.splice(index,1);editPhotoMeta.splice(index,1);renderEditPreviews()}
-    else{capturePhotos.splice(index,1);capturePhotoMeta.splice(index,1);renderCapturePreviews()}
+    if(mode==="edit"){
+      revokePreviewUrl(editPhotoPreviewUrls[index]);
+      editPhotos.splice(index,1);editPhotoMeta.splice(index,1);editPhotoPreviewUrls.splice(index,1);renderEditPreviews();
+    }else{
+      revokePreviewUrl(capturePhotoPreviewUrls[index]);
+      capturePhotos.splice(index,1);capturePhotoMeta.splice(index,1);capturePhotoPreviewUrls.splice(index,1);renderCapturePreviews();
+    }
   };
   window.addEditPhotos=async function(input){
-    const records=await filesWithMeta(input.files||[]);
-    editPhotos.push(...records.map(r=>r.src));editPhotoMeta.push(...records.map(r=>r.meta));renderEditPreviews();input.value="";
+    const files=input.files||[];
+    if(!files.length)return;
+    const start=editPhotos.length;
+    await filesWithMeta(files,record=>{
+      editPhotos.push(record.src);
+      editPhotoMeta.push(record.meta);
+      editPhotoPreviewUrls.push(record.previewUrl);
+    });
+    const host=$("#editPhotoGrid");
+    if(host){
+      for(let n=start;n<editPhotos.length;n++){
+        host.insertAdjacentHTML("beforeend",previewFigure(previewSrc("edit",n),editPhotoMeta[n],n,"edit"));
+      }
+    }else renderEditPreviews();
+    input.value="";
   };
 
   function ensureWorkbench(){
@@ -168,28 +289,60 @@
     const style=ctx=>{ctx.strokeStyle=$("#markupColor").value;ctx.fillStyle=$("#markupColor").value;ctx.lineWidth=Number($("#markupWidth").value);ctx.lineCap="round";ctx.lineJoin="round";ctx.font="700 22px Inter, system-ui, sans-serif"};
     const arrow=(ctx,a,b)=>{const angle=Math.atan2(b.y-a.y,b.x-a.x),head=22+ctx.lineWidth;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-head*Math.cos(angle-Math.PI/6),b.y-head*Math.sin(angle-Math.PI/6));ctx.lineTo(b.x-head*Math.cos(angle+Math.PI/6),b.y-head*Math.sin(angle+Math.PI/6));ctx.closePath();ctx.fill()};
     const shape=(ctx,tool,a,b)=>{style(ctx);const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(b.x-a.x),h=Math.abs(b.y-a.y);if(tool==="box"){ctx.strokeRect(x,y,w,h)}else if(tool==="circle"){ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,Math.max(1,w/2),Math.max(1,h/2),0,0,Math.PI*2);ctx.stroke()}else if(tool==="arrow"){arrow(ctx,a,b)}};
-    const start=e=>{if(!workbench.save)return;e.preventDefault();const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");workbench.history.push(canvas.toDataURL("image/png"));if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));return}workbench.drawing=true;workbench.last=p;workbench.start=p;workbench.snapshot=canvas.toDataURL("image/png")};
-    const move=e=>{if(!workbench.drawing)return;e.preventDefault();const p=point(e),tool=$("#markupTool").value,ctx=canvas.getContext("2d");if(tool==="pen"){style(ctx);ctx.beginPath();ctx.moveTo(workbench.last.x,workbench.last.y);ctx.lineTo(p.x,p.y);ctx.stroke();workbench.last=p;return}const img=new Image();img.onload=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0);shape(ctx,tool,workbench.start,p)};img.src=workbench.snapshot};
-    const stop=e=>{if(!workbench.drawing)return;const tool=$("#markupTool").value;if(tool!=="pen")shape(canvas.getContext("2d"),tool,workbench.start,point(e));workbench.drawing=false;workbench.last=null;workbench.start=null;workbench.snapshot=null};
+    const start=e=>{if(!workbench.save)return;e.preventDefault();const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");const base=document.createElement("canvas");base.width=canvas.width;base.height=canvas.height;base.getContext("2d").drawImage(canvas,0,0);workbench.baseCanvas=base;workbench.history.push(base);if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();workbench.baseCanvas=null;return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));workbench.baseCanvas=null;return}workbench.drawing=true;workbench.last=p;workbench.start=p};
+    const move=e=>{if(!workbench.drawing||!workbench.baseCanvas)return;e.preventDefault();const p=point(e),tool=$("#markupTool").value,ctx=canvas.getContext("2d");if(tool==="pen"){style(ctx);ctx.beginPath();ctx.moveTo(workbench.last.x,workbench.last.y);ctx.lineTo(p.x,p.y);ctx.stroke();workbench.last=p;return}ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(workbench.baseCanvas,0,0);shape(ctx,tool,workbench.start,p)};
+    const stop=e=>{if(!workbench.drawing)return;const tool=$("#markupTool").value;if(tool!=="pen")shape(canvas.getContext("2d"),tool,workbench.start,point(e));workbench.drawing=false;workbench.last=null;workbench.start=null;workbench.baseCanvas=null};
     canvas.addEventListener("pointerdown",start);canvas.addEventListener("pointermove",move);canvas.addEventListener("pointerup",stop);canvas.addEventListener("pointerleave",stop);
   }
 
   function drawSource(src){
     const img=new Image();img.onload=()=>{const canvas=$("#markupCanvas"),scale=Math.min(1,1400/img.naturalWidth,900/img.naturalHeight);canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);workbench.history=[]};img.src=src;
   }
-  function restoreCanvas(src){
-    const img=new Image();img.onload=()=>{const canvas=$("#markupCanvas");canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height)};img.src=src;
+  function restoreCanvas(base){
+    const canvas=$("#markupCanvas");
+    if(!canvas||!base)return;
+    canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+    canvas.getContext("2d").drawImage(base,0,0,canvas.width,canvas.height);
   }
-  function openWorkbench(src,title,onSave){ensureWorkbench();workbench={source:src,title,save:onSave,drawing:false,last:null,history:[]};$("#photoWorkbenchTitle").textContent=title;$("#saveMarkup").hidden=!onSave;$("#photoWorkbench").hidden=false;drawSource(src)}
+  function openWorkbench(src,title,onSave){ensureWorkbench();workbench={source:src,title,save:onSave,drawing:false,last:null,history:[],baseCanvas:null};$("#photoWorkbenchTitle").textContent=title;$("#saveMarkup").hidden=!onSave;$("#photoWorkbench").hidden=false;drawSource(src)}
   window.closePhotoWorkbench=()=>{$("#photoWorkbench").hidden=true};
   window.resetPhotoMarkup=()=>drawSource(workbench.source);
   window.undoPhotoMarkup=()=>{const previous=workbench.history.pop();if(previous)restoreCanvas(previous)};
-  window.savePhotoMarkup=()=>{const data=$("#markupCanvas").toDataURL("image/jpeg",.92);workbench.save?.(data);closePhotoWorkbench();toast("Marked-up evidence saved")};
+  window.savePhotoMarkup=async function(){
+    const canvas=$("#markupCanvas");
+    if(!canvas||!workbench.save)return;
+    await yieldToMain();
+    const blob=await canvasToJpegBlob(canvas,.92);
+    workbench.save?.(await blobToDataUrl(blob));
+    closePhotoWorkbench();
+    toast("Marked-up evidence saved");
+  };
 
-  const originalLoadCapturePhotos=loadCapturePhotos;
+  function clearCapturePhotoState(){
+    revokePreviewUrls(capturePhotoPreviewUrls);
+    capturePhotos=[];
+    capturePhotoMeta=[];
+    capturePhotoPreviewUrls=[];
+  }
+
   loadCapturePhotos=async function(input){
-    const records=await filesWithMeta(input.files||[]);
-    capturePhotos.push(...records.map(r=>r.src));capturePhotoMeta.push(...records.map(r=>r.meta));renderCapturePreviews();input.value="";
+    const files=input.files||[];
+    if(!files.length)return;
+    const button=input.closest("label");
+    const release=button?setBusyButton(button,"Processing…"):()=>{};
+    try{
+      await filesWithMeta(files,record=>{
+        capturePhotos.push(record.src);
+        capturePhotoMeta.push(record.meta);
+        capturePhotoPreviewUrls.push(record.previewUrl);
+        appendCapturePreview(capturePhotos.length-1);
+      });
+    }catch(err){
+      toast(err.message||"Could not read photo.",true);
+    }finally{
+      release();
+      input.value="";
+    }
   };
 
   let captureVoiceCaptured=false;
@@ -221,6 +374,7 @@
     const html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
       .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.")
+      .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
       .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Voice-to-Note AI</div><textarea id=\"voiceText\" placeholder=\"Speak or type the note, then draft the form\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak Note</button><button class=\"btn\" type=\"button\" onclick=\"draftVoice()\">Draft from Note</button></div></section>");
     setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice()},0);
     return html;
@@ -236,18 +390,8 @@
     setTimeout(()=>card?.classList.remove("photo-required-pulse"),1800);
   }
 
-  saveCapture=async function(e){
-    e.preventDefault();const form=e.currentTarget,data=Object.fromEntries(new FormData(form)),mode=e.submitter?.value||"save";
-    const release=setBusyButton(e.submitter,mode==="issue"?"Issuing…":"Saving…");
-    data.id=offlineId();data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
-    const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
-    if(data.type==="client"&&!data.raisedBy){release();return toast("A Client Defect requires a Raised By / source.",true)}
-    if(mode==="issue"&&(!data.trade||!data.subcontractor)){release();return toast("Issue Now requires a trade and subcontractor.",true)}
-    try{const path=mode==="issue"?"/api/items?issue_now=true":"/api/items";const item=await api(path,{method:"POST",body:JSON.stringify(data)});capturePhotos=[];capturePhotoMeta=[];if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved - continue walk`)}else{await reload();route="items";render();toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}}catch(err){toast(err.message,true)}finally{release()}
-  };
-
   editItemForm=function(id){
-    const i=state.items.find(x=>x.id===id);selectedEditItem=id;editPhotos=[...(i.originalPhotos||[])];editPhotoMeta=[...(i.originalPhotoMeta||[])];while(editPhotoMeta.length<editPhotos.length)editPhotoMeta.push({capturedAt:i.createdAt});
+    const i=state.items.find(x=>x.id===id);selectedEditItem=id;editPhotos=[...(i.originalPhotos||[])];editPhotoMeta=[...(i.originalPhotoMeta||[])];editPhotoPreviewUrls=editPhotos.map(()=>null);while(editPhotoMeta.length<editPhotos.length)editPhotoMeta.push({capturedAt:i.createdAt});
     $("#modalTitle").textContent=`Edit ${i.code}`;
     $("#modalBody").innerHTML=`<form class="field-list" onsubmit="saveItemEdit(event,'${id}')"><div class="fields admin-form-grid"><label>Item type<select name="type">${options(["defect","incomplete","client"],i.type)}</select></label><label>Project<select name="project">${options(state.settings.projects,i.project)}</select></label><label>Building<input name="building" value="${esc(i.building)}"></label><label>Level<input name="level" value="${esc(i.level)}"></label><label>Unit / Area<input name="unit" value="${esc(i.unit)}"></label><label>Room / Location<input name="room" value="${esc(i.room)}"></label><label>Trade<select name="trade"><option value=""></option>${options(trades,i.trade)}</select></label><label>Subcontractor<select name="subcontractor"><option value=""></option>${options(state.settings.subcontractors,i.subcontractor)}</select></label><label>Priority<select name="priority">${options(["high","urgent"],i.priority)}</select></label><label>Due date<input type="date" name="dueDate" value="${esc(i.dueDate)}"></label><label class="span">Description<textarea name="description">${esc(i.description)}</textarea></label></div><section class="edit-evidence"><div class="spread"><div><b>Original issue photos</b><div class="meta">Add evidence retrospectively, enlarge it or mark it up.</div></div><label class="btn alt">＋ Add photos<input hidden type="file" accept="image/*" multiple onchange="addEditPhotos(this)"></label></div><div class="edit-photo-grid" id="editPhotoGrid"></div></section><button class="btn">Save changes and evidence</button></form>`;
     renderEditPreviews();
@@ -255,7 +399,7 @@
 
   saveItemEdit=async function(e,id){
     e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));data.by=state.settings.preparedBy;data.originalPhotos=editPhotos;data.originalPhotoMeta=editPhotoMeta;
-    try{await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});await reload();showItem(id);toast("Item details and evidence updated")}catch(err){toast(err.message,true)}
+    try{await yieldToMain();await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});await reload();showItem(id);toast("Item details and evidence updated")}catch(err){toast(err.message,true)}
   };
 
   chooseImage=function(){return new Promise(resolve=>{
@@ -283,11 +427,13 @@
     if(requireOriginalPhoto(data)){focusPhotoEvidence();return fail("Attach original photo evidence, or change Item Type to Incomplete Work.")}
     if(mode==="issue"&&(!data.trade||!data.subcontractor))return fail("Issue Now requires a trade and subcontractor.");
     try{
-      toast(capturePhotos.length?"Compressing and uploading evidence…":"Saving item…");
+      toast(capturePhotos.length?"Uploading evidence…":"Saving item…");
       if(mode==="issue"){data.issueOnCreate=true;data.issueTo=data.subcontractor}
       const path=mode==="issue"?"/api/items?issue_now=true":"/api/items";
+      await yieldToMain();
       const item=await api(path,{method:"POST",body:JSON.stringify(data)});
-      capturePhotos=[];capturePhotoMeta=[];
+      clearCapturePhotoState();
+      form.dataset.captureRequestId="";
       if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved · continue walk`)}
       else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}
     }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
@@ -571,7 +717,7 @@
     document.body.dataset.route=route;applyTheme();
     if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();updateOfflinePill();return}
     originalRender();renderMobileNav();renderDesktopNav();
-    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");renderCapturePreviews()}
+    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
     updateOfflinePill();
   };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
