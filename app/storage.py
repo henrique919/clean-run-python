@@ -112,7 +112,7 @@ def resolve_photo_url(value: str | None) -> str | None:
         return _signed_url(_client_for_storage_path(value), value)
     except Exception:
         logger.exception("Could not create signed URL for Supabase Storage object %s", value)
-        return value
+        return None
 
 
 def _ensure_bucket(client) -> None:

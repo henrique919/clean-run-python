@@ -224,13 +224,13 @@ def sign_item_photos(item: Item) -> Item:
     original_photos = [resolve_photo_url(photo) or photo for photo in item.original_photos]
     rectification_evidence = [
         evidence.model_copy(
-            update={"photo": resolve_photo_url(evidence.photo) if evidence.photo else evidence.photo}
+            update={"photo": (resolve_photo_url(evidence.photo) or evidence.photo) if evidence.photo else evidence.photo}
         )
         for evidence in item.rectification_evidence
     ]
     closeout_evidence = [
         evidence.model_copy(
-            update={"photo": resolve_photo_url(evidence.photo) if evidence.photo else evidence.photo}
+            update={"photo": (resolve_photo_url(evidence.photo) or evidence.photo) if evidence.photo else evidence.photo}
         )
         for evidence in item.closeout_evidence
     ]
