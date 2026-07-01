@@ -369,24 +369,12 @@
     return originalStartDictation();
   };
 
-  window.toggleWalkMode=function(){
-    walkMode=!walkMode;
-    const button=document.querySelector(".screen-header .header-pill");
-    if(button){
-      button.classList.toggle("green",walkMode);
-      button.textContent=walkMode?`Walk · ${walkCount}`:"Walk Capture";
-      return;
-    }
-    render();
-  };
-
   const originalCaptureView=captureView;
   captureView=function(){
     const html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
       .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.")
       .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
-      .replace('onclick="walkMode=!walkMode;render()"', 'onclick="toggleWalkMode()"')
       .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Voice-to-Note AI</div><textarea id=\"voiceText\" placeholder=\"Speak or type the note, then draft the form\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak Note</button><button class=\"btn\" type=\"button\" onclick=\"draftVoice()\">Draft from Note</button></div></section>");
     setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice()},0);
     return html;
