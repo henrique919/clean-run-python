@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards31";
-  document.documentElement.dataset.cleanrunBuild="cards31";
+  window.CLEANRUN_FRONTEND_BUILD="cards32";
+  document.documentElement.dataset.cleanrunBuild="cards32";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -17,10 +17,10 @@
   let editPhotoPreviewUrls=[];
   let selectedEditItem="";
   let lastChosenPhotoMeta=null;
-  let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[]};
+  let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[],ready:false};
   let offlineQueue=[];
   let captureSubmitting=false;
-  if(typeof walkMode!=="undefined"&&!sessionStorage.getItem("walkModeOff"))walkMode=true;
+  let drawSourceToken=0;
 
   const readJson=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key)||"")||fallback}catch{return fallback}};
   const openOfflineDb=()=>new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,1);request.onupgradeneeded=()=>request.result.createObjectStore("kv");request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
@@ -521,7 +521,7 @@
     const style=ctx=>{ctx.strokeStyle=$("#markupColor").value;ctx.fillStyle=$("#markupColor").value;ctx.lineWidth=Number($("#markupWidth").value);ctx.lineCap="round";ctx.lineJoin="round";ctx.font="700 22px Inter, system-ui, sans-serif"};
     const arrow=(ctx,a,b)=>{const angle=Math.atan2(b.y-a.y,b.x-a.x),head=22+ctx.lineWidth;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-head*Math.cos(angle-Math.PI/6),b.y-head*Math.sin(angle-Math.PI/6));ctx.lineTo(b.x-head*Math.cos(angle+Math.PI/6),b.y-head*Math.sin(angle+Math.PI/6));ctx.closePath();ctx.fill()};
     const shape=(ctx,tool,a,b)=>{style(ctx);const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(b.x-a.x),h=Math.abs(b.y-a.y);if(tool==="box"){ctx.strokeRect(x,y,w,h)}else if(tool==="circle"){ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,Math.max(1,w/2),Math.max(1,h/2),0,0,Math.PI*2);ctx.stroke()}else if(tool==="arrow"){arrow(ctx,a,b)}};
-    const start=e=>{if(!workbench.save)return;e.preventDefault();e.currentTarget?.setPointerCapture?.(e.pointerId);const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");const base=document.createElement("canvas");base.width=canvas.width;base.height=canvas.height;base.getContext("2d").drawImage(canvas,0,0);workbench.baseCanvas=base;workbench.history.push(base);if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();workbench.baseCanvas=null;return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));workbench.baseCanvas=null;return}workbench.drawing=true;workbench.last=p;workbench.start=p};
+    const start=e=>{if(!workbench.save||!workbench.ready)return;e.preventDefault();e.currentTarget?.setPointerCapture?.(e.pointerId);const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");const base=document.createElement("canvas");base.width=canvas.width;base.height=canvas.height;base.getContext("2d").drawImage(canvas,0,0);workbench.baseCanvas=base;workbench.history.push(base);if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();workbench.baseCanvas=null;return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));workbench.baseCanvas=null;return}workbench.drawing=true;workbench.last=p;workbench.start=p};
     const move=e=>{if(!workbench.drawing||!workbench.baseCanvas)return;e.preventDefault();const p=point(e),tool=$("#markupTool").value,ctx=canvas.getContext("2d");if(tool==="pen"){style(ctx);ctx.beginPath();ctx.moveTo(workbench.last.x,workbench.last.y);ctx.lineTo(p.x,p.y);ctx.stroke();workbench.last=p;return}ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(workbench.baseCanvas,0,0);shape(ctx,tool,workbench.start,p)};
     const stop=e=>{if(!workbench.drawing)return;e?.preventDefault?.();const tool=$("#markupTool").value;if(tool!=="pen")shape(canvas.getContext("2d"),tool,workbench.start,point(e));workbench.drawing=false;workbench.last=null;workbench.start=null;workbench.baseCanvas=null};
     const passive={passive:false};
@@ -537,7 +537,24 @@
   }
 
   function drawSource(src){
-    const img=new Image();img.onload=()=>{const canvas=$("#markupCanvas"),scale=Math.min(1,1400/img.naturalWidth,900/img.naturalHeight);canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);workbench.history=[]};img.src=src;
+    const token=++drawSourceToken;
+    return new Promise((resolve,reject)=>{
+      const img=new Image();
+      img.onload=()=>{
+        if(token!==drawSourceToken)return resolve();
+        const canvas=$("#markupCanvas");
+        if(!canvas)return reject(new Error("Markup canvas missing."));
+        const scale=Math.min(1,1400/img.naturalWidth,900/img.naturalHeight);
+        canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+        canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+        canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+        workbench.history=[];
+        workbench.ready=true;
+        resolve();
+      };
+      img.onerror=()=>{if(token===drawSourceToken)reject(new Error("Could not load photo for markup."))};
+      img.src=src;
+    });
   }
   function restoreCanvas(base){
     const canvas=$("#markupCanvas");
@@ -545,14 +562,43 @@
     canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
     canvas.getContext("2d").drawImage(base,0,0,canvas.width,canvas.height);
   }
-  function openWorkbench(src,title,onSave){ensureWorkbench();workbench={source:src,title,save:onSave,drawing:false,last:null,history:[],baseCanvas:null};$("#photoWorkbenchTitle").textContent=title;$("#saveMarkup").hidden=!onSave;$("#photoWorkbench").hidden=false;drawSource(src)}
+  async function openWorkbench(src,title,onSave){
+    ensureWorkbench();
+    workbench={source:src,title,save:onSave,drawing:false,last:null,history:[],baseCanvas:null,ready:false};
+    const panel=$("#photoWorkbench");
+    const saveBtn=$("#saveMarkup");
+    $("#photoWorkbenchTitle").textContent=title;
+    if(saveBtn){
+      saveBtn.hidden=!onSave;
+      saveBtn.disabled=!!onSave;
+      saveBtn.textContent=onSave?"Loading photo…":"Save marked-up copy";
+    }
+    if(panel){
+      panel.hidden=false;
+      panel.dataset.loading="1";
+    }
+    try{
+      await drawSource(src);
+      if(saveBtn&&onSave){
+        saveBtn.disabled=false;
+        saveBtn.textContent="Save marked-up copy";
+      }
+    }catch(err){
+      toast(err?.message||"Could not open photo for markup.",true);
+      closePhotoWorkbench();
+      return;
+    }finally{
+      if(panel)delete panel.dataset.loading;
+    }
+  }
   window.closePhotoWorkbench=()=>{$("#photoWorkbench").hidden=true};
-  window.resetPhotoMarkup=()=>drawSource(workbench.source);
+  window.resetPhotoMarkup=()=>{workbench.ready=false;drawSource(workbench.source).catch(err=>toast(err?.message||"Could not reset markup.",true))};
   window.undoPhotoMarkup=()=>{const previous=workbench.history.pop();if(previous)restoreCanvas(previous)};
   window.savePhotoMarkup=async function(){
     const canvas=$("#markupCanvas");
     const btn=$("#saveMarkup");
     if(!canvas||!workbench.save)return;
+    if(!workbench.ready)return toast("Photo still loading. Wait a moment and try again.",true);
     if(btn)btn.disabled=true;
     try{
       await yieldToMain();
@@ -603,12 +649,6 @@
     r.onerror=()=>toast("Speech recognition failed — type the note instead.",true);
     r.start();
     toast("Listening…");
-  };
-
-  const originalGo=go;
-  go=function(next){
-    if(next==="capture"&&!sessionStorage.getItem("walkModeOff"))walkMode=true;
-    return originalGo(next);
   };
 
   const originalCaptureView=captureView;
@@ -1034,5 +1074,5 @@
   window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);closeModal();openReport("subcontractor",{subcontractor:value})};
   reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   function rerenderLatestHome(){if(typeof state!=="undefined"&&state&&route==="home")render()}
-  ensureWorkbench();updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
+  ensureWorkbench();supportsImageBitmapOrientation().catch(()=>{});updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
 })();
