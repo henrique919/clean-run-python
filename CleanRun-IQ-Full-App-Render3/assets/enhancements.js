@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards25";
-  document.documentElement.dataset.cleanrunBuild="cards25";
+  window.CLEANRUN_FRONTEND_BUILD="cards26";
+  document.documentElement.dataset.cleanrunBuild="cards26";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -134,6 +134,34 @@
     const buttons=[...form.querySelectorAll("button[type='submit']")],snapshots=buttons.map(button=>({button,html:button.innerHTML,disabled:button.disabled}));
     buttons.forEach(button=>{button.classList.add("is-busy");button.disabled=true;if(button===document.activeElement&&label)button.innerHTML=label});
     return()=>snapshots.forEach(({button,html,disabled})=>{button.classList.remove("is-busy");button.disabled=disabled;button.innerHTML=html});
+  }
+  function ensureCaptureDescription(data,voiceText){
+    const text=String(data.description||"").trim();
+    if(text){data.description=text;return data.description}
+    const voice=String(voiceText||"").trim();
+    if(voice){data.description=voice;return data.description}
+    const where=[data.room,data.unit,data.level,data.building].filter(Boolean).join(" · ");
+    data.description=where?`Defect — ${where}`:"Site defect";
+    return data.description;
+  }
+  function itemSearchHaystack(i){
+    return [i.code,i.description,i.building,i.level,i.unit,i.room,i.trade,i.subcontractor,i.status,i.type,labels?.[i.status],typeLabels?.[i.type]].filter(Boolean).join(" ").toLowerCase();
+  }
+  function mergeSavedItem(item){
+    if(!item||!state?.items)return;
+    const idx=state.items.findIndex(x=>x.id===item.id);
+    if(idx>=0)state.items[idx]={...state.items[idx],...item};
+    else state.items.unshift(item);
+    cacheState();
+  }
+  async function refreshStateBackground(){
+    try{state=await api("/api/state");cacheState();updateOfflinePill()}catch{}
+  }
+  function focusCaptureNote(){
+    const field=$("#app form textarea[name='description']");
+    if(!field)return;
+    field.scrollIntoView({behavior:"smooth",block:"nearest"});
+    if(!field.value.trim())field.focus({preventScroll:true});
   }
   function rememberCaptureFields(data){
     const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,dueDate:data.dueDate,priority:data.priority,type:data.type};
@@ -433,6 +461,7 @@
         capturePhotoPreviewUrls.push(record.previewUrl);
         appendCapturePreview(capturePhotos.length-1);
       });
+      if(capturePhotos.length)focusCaptureNote();
     }catch(err){
       toast(err.message||"Could not read photo.",true);
     }finally{
@@ -497,6 +526,7 @@
       .replace(/<div class="form-group"><h3>Location<\/h3><div class="field-list">[\s\S]*?<\/div><\/div>/,buildLocationSpeedBlock())
       .replace('<label>Trade<select name="trade">',`${recentChipsRow("Recent trades","trade",recentValues("trade"))}<label>Trade<select name="trade">`)
       .replace('<label>Subcontractor<select name="subcontractor">',`${recentChipsRow("Recent subs","subcontractor",recentValues("subcontractor"))}<label>Subcontractor<select name="subcontractor">`)
+      .replace('<textarea name="description" required placeholder','<textarea name="description" placeholder')
       .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Speak note</div><p class=\"subtle\">Tap mic, describe the defect, and the form fills automatically.</p><textarea id=\"voiceText\" placeholder=\"Or type a short note\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak & fill</button></div></section>")
       .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`);
     setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice();updateLocationChip()},0);
@@ -543,8 +573,9 @@
     const release=setBusyForm(form,mode==="issue"?"Issuing…":"Saving…");
     form.dataset.captureRequestId=form.dataset.captureRequestId||offlineId();
     data.id=form.dataset.captureRequestId;data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
-    rememberCaptureFields(data);
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
+    ensureCaptureDescription(data,voice);
+    rememberCaptureFields(data);
     const fail=message=>{captureSubmitting=false;release();toast(message,true)};
     if(data.type==="client"&&!data.raisedBy)return fail("A Client Defect requires a Raised By / source.");
     if(requireOriginalPhoto(data)){focusPhotoEvidence();return fail("Attach original photo evidence, or change Item Type to Incomplete Work.")}
@@ -557,7 +588,7 @@
       const item=await api(path,{method:"POST",body:JSON.stringify(data)});
       clearCapturePhotoState();
       form.dataset.captureRequestId="";
-      if(walkMode){walkCount++;await reload();route="capture";render();resetCaptureForNext();toast(`${item.code} saved · capture next`)}
+      if(walkMode){walkCount++;mergeSavedItem(item);route="capture";render();resetCaptureForNext();toast(`${item.code} saved · capture next`);refreshStateBackground()}
       else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}
     }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
   };
@@ -739,7 +770,7 @@
   function cardPhoto(item){
     const src=(item.originalPhotos||[])[0];
     if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
-    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence">`;
+    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence" loading="lazy" decoding="async">`;
   }
   const cardActionLocks=new Set();
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
@@ -817,7 +848,7 @@
     const ready=(state?.items||[]).filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).length;
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review",ready?`Review ${ready}`:"Review","✓"],["more","More",navIcon?.more||"•••"]];
     const active=["reports","settings","setup","subcontractor"].includes(route)?"more":route;
-    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
 
   function renderDesktopNav(){
@@ -830,12 +861,12 @@
       ["more","More",navIcon?.more||"•••"]
     ];
     const active=["reports","setup","settings","subcontractor"].includes(route)?"more":route;
-    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
   renderDesktopNav=function(){
     if(!matchMedia("(min-width:1024px)").matches)return;
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
-    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   };
   const originalRender=render;
   render=function(){
@@ -888,7 +919,7 @@
   window.setItemFocusValue=function(value){itemFocusValue=value;const [mode]=focusTokenParts();if(mode)itemFocusMode=mode;filterItems()};
   const focusedItemsView=itemsView;
   itemsView=function(){const cfg=state.settings.projectConfigs?.[state.settings.activeProject]||{};itemProjectScope=cfg.itemsProjectScope||itemProjectScope||"active";itemFocusMode=cfg.itemsFocusMode||itemFocusMode||"level";const html=focusedItemsView();return html.replace("</div></div><div class=\"screen-scroll\">",`</div>${itemFocusControls()}</div><div class="screen-scroll">`)};
-  filterItems=function(){const search=$("#search");if(!search)return;const q=search.value.toLowerCase();const [focusMode,focusValue]=focusTokenParts();const list=state.items.filter(i=>{const focusMatch=!focusValue||String(i[focusMode]||"")===focusValue;return scopeMatches(i)&&(!itemBuildingValue||i.building===itemBuildingValue)&&focusMatch&&(itemTypeFilter==="all"||i.type===itemTypeFilter)&&statusMatch(i,itemStatusFilter)&&JSON.stringify(i).toLowerCase().includes(q)}).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$("#itemCount").textContent=`${list.length} item${list.length===1?"":"s"}`;$("#itemList").innerHTML=list.map(itemCard).join("")||'<div class="empty">No items match<br><span class="meta">Try a different project, building, focus area or capture a new item.</span></div>'};
+  filterItems=function(){const search=$("#search");if(!search)return;const q=search.value.toLowerCase();const [focusMode,focusValue]=focusTokenParts();const list=state.items.filter(i=>{const focusMatch=!focusValue||String(i[focusMode]||"")===focusValue;return scopeMatches(i)&&(!itemBuildingValue||i.building===itemBuildingValue)&&focusMatch&&(itemTypeFilter==="all"||i.type===itemTypeFilter)&&statusMatch(i,itemStatusFilter)&&(!q||itemSearchHaystack(i).includes(q))}).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$("#itemCount").textContent=`${list.length} item${list.length===1?"":"s"}`;$("#itemList").innerHTML=list.map(itemCard).join("")||'<div class="empty">No items match<br><span class="meta">Try a different project, building, focus area or capture a new item.</span></div>'};
   window.saveItemsProjectScope=async function(scope){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsProjectScope=scope;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items project scope saved")};
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};
   const setupWithFocus=setupView;

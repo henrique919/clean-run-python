@@ -99,7 +99,7 @@ def test_render3_phase1_field_speed_ux_markers():
     """Phase 1 speed UX: quick capture, sticky location, scan cards, capture-next."""
     enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
 
-    assert 'CLEANRUN_FRONTEND_BUILD="cards25"' in enhancements
+    assert 'CLEANRUN_FRONTEND_BUILD="cards26"' in enhancements
     assert "window.quickCapture=function()" in enhancements
     assert "quick-capture-fab" in enhancements
     assert "WALK_CONTEXT_KEY" in enhancements
@@ -108,7 +108,9 @@ def test_render3_phase1_field_speed_ux_markers():
     assert "resetCaptureForNext" in enhancements
     assert "cr-scan-card" in enhancements
     assert "Speak & fill" in enhancements
-    assert "saved · capture next" in enhancements
+    assert "ensureCaptureDescription" in enhancements
+    assert "itemSearchHaystack" in enhancements
+    assert "refreshStateBackground" in enhancements
 
 
 def test_render3_demo_reset_hidden_in_production_markup():
