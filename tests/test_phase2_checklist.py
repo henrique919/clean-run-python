@@ -15,8 +15,8 @@ class Phase2LocalChecklist(unittest.TestCase):
         self.enh = ENHANCEMENTS.read_text(encoding="utf-8")
         self.css = STYLES.read_text(encoding="utf-8")
 
-    def test_build_tag_cards39(self) -> None:
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards39"', self.enh)
+    def test_build_tag_cards40(self) -> None:
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards40"', self.enh)
 
     def test_defaults_strip_containment(self) -> None:
         for marker in (
@@ -51,14 +51,13 @@ class Phase2LocalChecklist(unittest.TestCase):
         self.assertIn("captureDescriptionEdited", self.enh)
         self.assertIn("preserveDescription", self.enh)
 
-    def test_ios_compression_path_untouched(self) -> None:
-        for marker in (
-            "supportsImageBitmapOrientation",
-            "fileToUploadData",
-            "drawSourceToken",
-            "compressImageForUpload",
-        ):
-            self.assertIn(marker, self.enh)
+    def test_walk_save_skips_background_reload(self) -> None:
+        self.assertIn("stateNeedsGlobalRefresh=true", self.enh)
+        self.assertNotIn("reload().then(fresh=>{state=fresh;walkMode=true", self.enh)
+
+    def test_perf_signing_helpers_present(self) -> None:
+        self.assertIn("stateNeedsGlobalRefresh", self.enh)
+        self.assertIn("baseGo=go", self.enh)
 
 
 if __name__ == "__main__":

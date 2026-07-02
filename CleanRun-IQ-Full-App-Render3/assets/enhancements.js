@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards39";
-  document.documentElement.dataset.cleanrunBuild="cards39";
+  window.CLEANRUN_FRONTEND_BUILD="cards40";
+  document.documentElement.dataset.cleanrunBuild="cards40";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -13,6 +13,9 @@
   const RECENTS_KEY="cleanrun-capture-recents-v1";
   const RECENT_FIELDS=["building","level","unit","room","trade","subcontractor"];
   const RECENT_LIMIT=3;
+  // Walk Save+Next merges the returned item locally and skips full /api/state reload.
+  // Dashboard stat chips and the Review nav badge can lag until home/review is opened or reload() runs.
+  let stateNeedsGlobalRefresh=false;
   let captureDefaultsExpanded=null;
   let captureDraftHighlights=new Set();
   let captureDescriptionEdited=false;
@@ -223,6 +226,20 @@
     else state.items.unshift(item);
     cacheState();
   }
+  const baseReload=reload;
+  reload=async function(){
+    stateNeedsGlobalRefresh=false;
+    await baseReload();
+  };
+  const baseGo=go;
+  go=function(next){
+    if(stateNeedsGlobalRefresh&&(next==="home"||next==="review")){
+      stateNeedsGlobalRefresh=false;
+      reload().then(()=>{baseGo(next)}).catch(()=>baseGo(next));
+      return;
+    }
+    baseGo(next);
+  };
   async function refreshStateBackground(){
     try{state=await api("/api/state");cacheState();updateOfflinePill()}catch{}
   }
@@ -957,11 +974,11 @@
       if(walkMode){
         captureDefaultsExpanded=false;
         walkCount++;
+        stateNeedsGlobalRefresh=true;
         route="capture";
         render();
         resetCaptureForNext();
         toast(`${item.code} saved · capture next`);
-        reload().then(fresh=>{state=fresh;walkMode=true;mergeSavedItem(item);cacheState()}).catch(()=>{});
       }else{
         await reload();
         route="items";
@@ -1158,6 +1175,7 @@
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
 
   dashboardView=function(){
+    // Stat chips and closeout KPIs use local state; walk Save+Next may lag until reload() or opening Home.
     const p=state.settings.activeProject,items=state.items.filter(i=>i.project===p),today=new Date().toISOString().slice(0,10);
     const active=items.filter(i=>!["closed","complete"].includes(i.status)),assigned=items.filter(i=>i.subcontractor),closed=items.filter(i=>["closed","complete"].includes(i.status)),overdueItems=items.filter(overdue),ready=items.filter(i=>i.status==="ready_for_review"),issued=items.filter(i=>["issued","in_progress"].includes(i.status)),todayDue=active.filter(i=>i.dueDate===today),activity=items.filter(i=>(i.updatedAt||i.createdAt||"").slice(0,10)===today);
     const closeoutPct=assigned.length?Math.round(closed.length/assigned.length*100):0,activityPct=items.length?Math.round(activity.length/items.length*100):0;
@@ -1215,6 +1233,7 @@
 
   function renderMobileNav(){
     if(matchMedia("(min-width:1024px)").matches)return;
+    // Review badge uses local state; may be stale after walk Save+Next until reload/go('review').
     const ready=(state?.items||[]).filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).length;
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review",ready?`Review ${ready}`:"Review","✓"],["more","More",navIcon?.more||"•••"]];
     const active=["reports","settings","setup","subcontractor"].includes(route)?"more":route;

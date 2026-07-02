@@ -36,7 +36,7 @@ from app.permissions import (
 from app.services import items as item_service
 from app.services import projects as project_service
 from app.services import reports as report_service
-from app.storage import StorageUploadError, resolve_photo_url, resolve_thumbnail_url
+from app.storage import StorageUploadError, prefetch_item_photo_urls, resolve_photo_url, resolve_thumbnail_url
 from app.validation import ValidationError
 from app.workflow import WorkflowError
 
@@ -650,9 +650,11 @@ def bootstrap(ctx: RequestContext = Depends(get_request_context)):
 def legacy_state(ctx: RequestContext = Depends(get_request_context)):
     data = store.snapshot()
     settings = scoped_settings(data.settings, ctx)
+    visible = visible_items(ctx.user, data.items)
+    prefetch_item_photo_urls(visible)
     return {
         "settings": camel_settings(settings),
-        "items": [camel_item(item) for item in visible_items(ctx.user, data.items)],
+        "items": [camel_item(item) for item in visible],
         "plans": [],
         "trades": TRADES,
         "raisedByOptions": RAISED_BY_OPTIONS,
@@ -754,7 +756,9 @@ def create_item(payload: dict[str, object], issue_now: bool = Query(default=Fals
     require_create_item(ctx.user, payload.project)
     payload = payload.model_copy(update={"created_by": actor_label(ctx)})
     try:
-        return item_service.create_item(store, payload, issue_now=issue_now, actor=actor_context(ctx))
+        item = item_service.create_item(store, payload, issue_now=issue_now, actor=actor_context(ctx))
+        prefetch_item_photo_urls([item])
+        return camel_item(item)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except StorageUploadError as exc:

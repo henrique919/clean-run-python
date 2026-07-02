@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from threading import RLock
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
@@ -13,6 +17,15 @@ logger = logging.getLogger(__name__)
 BUCKET_NAME = os.getenv("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence")
 MAX_IMAGE_BYTES = int(os.getenv("CLEANRUN_MAX_IMAGE_BYTES", "8000000"))
 SIGNED_URL_TTL_SECONDS = int(os.getenv("CLEANRUN_STORAGE_SIGNED_URL_TTL_SECONDS", "604800"))
+# Re-sign before Supabase TTL expires so users never hold a URL that dies mid-session.
+SIGNED_URL_CACHE_MAX_AGE_SECONDS = int(
+    os.getenv(
+        "CLEANRUN_SIGNED_URL_CACHE_SECONDS",
+        str(max(60, SIGNED_URL_TTL_SECONDS - 86400)),
+    )
+)
+SIGN_URL_MAX_WORKERS = int(os.getenv("CLEANRUN_SIGN_URL_MAX_WORKERS", "10"))
+SIGN_URL_RETRY_BACKOFF_SECONDS = float(os.getenv("CLEANRUN_SIGN_URL_RETRY_BACKOFF_SECONDS", "0.75"))
 # Item card is 142×108 CSS px; thumbnails are centre-cropped at 2× for retina.
 LIST_CARD_THUMB_WIDTH = 284
 LIST_CARD_THUMB_HEIGHT = 216
@@ -74,16 +87,131 @@ def _split_data_url(value: str) -> tuple[str, bytes]:
     return content_type, data
 
 
-def _signed_url(client, path: str, *, transform: dict[str, object] | None = None) -> str:
+def _transform_cache_key(transform: dict[str, object] | None) -> str:
+    if not transform:
+        return ""
+    return json.dumps(transform, sort_keys=True, separators=(",", ":"))
+
+
+def _sign_cache_key(path: str, transform: dict[str, object] | None) -> str:
+    return f"{path}\0{_transform_cache_key(transform)}"
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if status == 429:
+        return True
+    message = str(exc).lower()
+    return "429" in message or "rate limit" in message or "too many requests" in message
+
+
+def _extract_signed_url(result: object) -> str:
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        return result.get("signedURL") or result.get("signed_url") or ""
+    return str(result)
+
+
+def _create_signed_url(client, path: str, *, transform: dict[str, object] | None = None) -> str:
     options: dict[str, object] = {}
     if transform:
         options["transform"] = transform
     result = client.storage.from_(BUCKET_NAME).create_signed_url(path, SIGNED_URL_TTL_SECONDS, options)
-    if isinstance(result, str):
-        return result
-    if isinstance(result, dict):
-        return result.get("signedURL") or result.get("signed_url") or path
-    return str(result)
+    signed = _extract_signed_url(result)
+    if not signed:
+        raise RuntimeError(f"Supabase create_signed_url returned no URL for {path}")
+    return signed
+
+
+class SignedUrlCache:
+    """In-memory signed URL cache for single-worker deployments."""
+
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self._entries: dict[str, tuple[str, float]] = {}
+        self._pending: dict[str, Future[str]] = {}
+        self._executor = ThreadPoolExecutor(max_workers=SIGN_URL_MAX_WORKERS, thread_name_prefix="sign-url")
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+    def stats(self) -> dict[str, int]:
+        with self._lock:
+            return {"entries": len(self._entries), "pending": len(self._pending)}
+
+    def _sign_with_retry(self, path: str, transform: dict[str, object] | None) -> str:
+        client = _client_for_storage_path(path)
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                return _create_signed_url(client, path, transform=transform)
+            except Exception as exc:
+                last_error = exc
+                if attempt == 0 and _is_rate_limited(exc):
+                    time.sleep(SIGN_URL_RETRY_BACKOFF_SECONDS)
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"Could not sign URL for {path}")
+
+    def _store(self, key: str, url: str) -> str:
+        expires_at = time.monotonic() + SIGNED_URL_CACHE_MAX_AGE_SECONDS
+        with self._lock:
+            self._entries[key] = (url, expires_at)
+        return url
+
+    def get(self, path: str, *, transform: dict[str, object] | None = None) -> str:
+        key = _sign_cache_key(path, transform)
+        now = time.monotonic()
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry and entry[1] > now:
+                return entry[0]
+            pending = self._pending.get(key)
+            if pending is None:
+                future = self._executor.submit(self._sign_with_retry, path, transform)
+                self._pending[key] = future
+                pending = future
+        try:
+            url = pending.result()
+            return self._store(key, url)
+        finally:
+            with self._lock:
+                if self._pending.get(key) is pending and pending.done():
+                    self._pending.pop(key, None)
+
+    def prefetch(self, requests: list[tuple[str, dict[str, object] | None]]) -> None:
+        """Warm the cache for many paths using the signing thread pool."""
+        unique: dict[str, tuple[str, dict[str, object] | None]] = {}
+        now = time.monotonic()
+        with self._lock:
+            for path, transform in requests:
+                if not path or path.startswith(("data:image/", "seed://")):
+                    continue
+                key = _sign_cache_key(path, transform)
+                entry = self._entries.get(key)
+                if entry and entry[1] > now:
+                    continue
+                unique[key] = (path, transform)
+        if not unique:
+            return
+        futures = [self._executor.submit(self.get, path, transform=transform) for path, transform in unique.values()]
+        for future in futures:
+            try:
+                future.result()
+            except Exception:
+                logger.exception("Signed URL prefetch failed")
+
+
+signed_url_cache = SignedUrlCache()
+
+
+def _signed_url(client, path: str, *, transform: dict[str, object] | None = None) -> str:
+    del client  # client selection is path-based; cache owns signing
+    return signed_url_cache.get(path, transform=transform)
 
 
 def _path_from_signed_url(value: str) -> str | None:
@@ -107,6 +235,49 @@ def storage_path_from_value(value: str | None) -> str | None:
     return value
 
 
+def list_thumbnail_transform(
+    *,
+    width: int = LIST_CARD_THUMB_WIDTH,
+    height: int = LIST_CARD_THUMB_HEIGHT,
+) -> dict[str, object]:
+    return {
+        "width": max(1, min(int(width), 2500)),
+        "height": max(1, min(int(height), 2500)),
+        "resize": "cover",
+    }
+
+
+def collect_item_sign_requests(item) -> list[tuple[str, dict[str, object] | None]]:
+    """Collect unique storage paths and transform variants needed for one item."""
+    requests: list[tuple[str, dict[str, object] | None]] = []
+    thumb_transform = list_thumbnail_transform()
+
+    def add(value: str | None, *, transform: dict[str, object] | None = None) -> None:
+        path = storage_path_from_value(value)
+        if not path or path.startswith(("data:image/", "seed://")):
+            return
+        requests.append((path, transform))
+
+    for photo in item.original_photos:
+        add(photo)
+        add(photo, transform=thumb_transform)
+    for evidence in item.rectification_evidence:
+        if evidence.photo:
+            add(evidence.photo)
+    for evidence in item.closeout_evidence:
+        if evidence.photo:
+            add(evidence.photo)
+    return requests
+
+
+def prefetch_item_photo_urls(items) -> None:
+    """Parallel prefetch for /api/state cold-cache loads."""
+    requests: list[tuple[str, dict[str, object] | None]] = []
+    for item in items:
+        requests.extend(collect_item_sign_requests(item))
+    signed_url_cache.prefetch(requests)
+
+
 def resolve_photo_url(value: str | None) -> str | None:
     return _resolve_storage_url(value)
 
@@ -119,14 +290,7 @@ def resolve_thumbnail_url(
 ) -> str | None:
     if not value or value.startswith(("data:image/", "seed://")):
         return value
-    return _resolve_storage_url(
-        value,
-        transform={
-            "width": max(1, min(int(width), 2500)),
-            "height": max(1, min(int(height), 2500)),
-            "resize": "cover",
-        },
-    )
+    return _resolve_storage_url(value, transform=list_thumbnail_transform(width=width, height=height))
 
 
 def _resolve_storage_url(value: str | None, *, transform: dict[str, object] | None = None) -> str | None:
@@ -140,7 +304,7 @@ def _resolve_storage_url(value: str | None, *, transform: dict[str, object] | No
             return value
         value = path
     try:
-        return _signed_url(_client_for_storage_path(value), value, transform=transform)
+        return signed_url_cache.get(value, transform=transform)
     except Exception:
         logger.exception("Could not create signed URL for Supabase Storage object %s", value)
         return None
