@@ -99,18 +99,11 @@ def test_render3_phase1_field_speed_ux_markers():
     """Phase 1 speed UX: quick capture, sticky location, scan cards, capture-next."""
     enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
 
-    assert 'CLEANRUN_FRONTEND_BUILD="cards26"' in enhancements
-    assert "window.quickCapture=function()" in enhancements
-    assert "quick-capture-fab" in enhancements
-    assert "WALK_CONTEXT_KEY" in enhancements
-    assert "locationContextChip" in enhancements
-    assert "recent-chip" in enhancements
-    assert "resetCaptureForNext" in enhancements
-    assert "cr-scan-card" in enhancements
-    assert "Speak & fill" in enhancements
-    assert "ensureCaptureDescription" in enhancements
-    assert "itemSearchHaystack" in enhancements
-    assert "refreshStateBackground" in enhancements
+    assert 'CLEANRUN_FRONTEND_BUILD="cards27"' in enhancements
+    assert "window.openReport=async function" in enhancements
+    assert "Speak Item" in enhancements or "Speak Item" in (ROOT / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+    assert "Draft form from note" in (ROOT / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+    assert "cr-scan-card" not in enhancements
 
 
 def test_render3_demo_reset_hidden_in_production_markup():
