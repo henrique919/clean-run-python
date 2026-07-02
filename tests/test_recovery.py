@@ -300,7 +300,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("CLEANRUN_SERVE_LEGACY_EXPORT", main)
         self.assertIn("renderLogin", full_app)
         self.assertIn("bottom-nav", full_app)
-        self.assertIn("enhancements.js?v=cards28", full_app)
+        self.assertIn("enhancements.js?v=cards29", full_app)
 
     def test_plans_navigation_is_disabled_in_production_ui(self) -> None:
         root = Path(__file__).resolve().parents[1]

@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards28";
-  document.documentElement.dataset.cleanrunBuild="cards28";
+  window.CLEANRUN_FRONTEND_BUILD="cards29";
+  document.documentElement.dataset.cleanrunBuild="cards29";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -73,7 +73,7 @@
   async function decodeImageSource(file,objectUrl){
     if(typeof createImageBitmap==="function"){
       try{
-        const bitmap=await createImageBitmap(file);
+        const bitmap=await createImageBitmap(file,{imageOrientation:"from-image"});
         return {width:bitmap.width,height:bitmap.height,draw:(ctx,x,y,w,h)=>{ctx.drawImage(bitmap,x,y,w,h);bitmap.close?.()}};
       }catch{}
     }
@@ -332,17 +332,20 @@
     return records.map(record=>record.src);
   };
 
-  window.formatFieldDate=function(iso){
-    try{
-      const d=new Date(iso);
-      if(Number.isNaN(d.getTime()))return iso||"";
-      const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      if(/^\d{4}-\d{2}-\d{2}$/.test(String(iso||"").trim()))return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-      const h=d.getHours()%12||12,m=String(d.getMinutes()).padStart(2,"0"),ampm=d.getHours()<12?"am":"pm";
-      return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${h}:${m}${ampm}`;
-    }catch{return iso||""}
-  };
+  window.formatFieldDate=window.formatFieldDate||function(iso){return iso||""};
   fmt=window.formatFieldDate;
+
+  function cardDueText(item){
+    if(["closed","complete"].includes(item?.status))return "CLOSED";
+    return `DUE ${esc(formatFieldDate(item?.dueDate)).toUpperCase()}`;
+  }
+
+  const baseItemCard=itemCard;
+  itemCard=function(i){
+    const html=baseItemCard(i);
+    if(!html.includes("cr-card-date")&&!html.includes("cr-card-meta"))return html;
+    return html.replace(/DUE [^<]+/g,cardDueText(i)).replace(/Due \d{4}-\d{2}-\d{2}/g,`Due ${esc(formatFieldDate(i.dueDate))}`);
+  };
 
   function issueHistoryForItem(item){
     let rows=[...(item?.issueHistory||[])];

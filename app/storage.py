@@ -85,10 +85,13 @@ def _signed_url(client, path: str, *, transform: dict[str, object] | None = None
 
 def _path_from_signed_url(value: str) -> str | None:
     parsed = urlsplit(value)
-    marker = f"/storage/v1/object/sign/{BUCKET_NAME}/"
-    if marker not in parsed.path:
-        return None
-    return unquote(parsed.path.split(marker, 1)[1])
+    for marker in (
+        f"/storage/v1/object/sign/{BUCKET_NAME}/",
+        f"/storage/v1/render/image/sign/{BUCKET_NAME}/",
+    ):
+        if marker in parsed.path:
+            return unquote(parsed.path.split(marker, 1)[1])
+    return None
 
 
 def storage_path_from_value(value: str | None) -> str | None:
