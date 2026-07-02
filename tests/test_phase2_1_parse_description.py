@@ -18,17 +18,31 @@ ENHANCEMENTS = ROOT / "CleanRun-IQ-Full-App-Render3" / "assets" / "enhancements.
 
 
 class ParseDescriptionTests(unittest.TestCase):
-    def test_no_api_key_returns_full_note(self) -> None:
-        with patch.dict("os.environ", {}, clear=False):
-            with patch("app.parse_description.os.getenv", return_value=None):
-                note = "cracked tile under vanity, regrout"
-                self.assertEqual(clean_parsed_description(note, {"level": "Level 1"}), note)
+    def test_no_api_key_returns_rule_cleaned_note(self) -> None:
+        with patch("app.parse_description.os.getenv", return_value=None):
+            note = "Level 1 unit 101 bedroom 1, door frame cracked near the hinge, carpenter to replace"
+            cleaned = clean_parsed_description(
+                note,
+                {"level": "Level 1", "room": "Bedroom 1", "trade": "Joinery"},
+            )
+        self.assertIn("door frame cracked", cleaned.lower())
+        self.assertNotIn("level 1", cleaned.lower())
+        self.assertIn("replace", cleaned.lower())
 
-    def test_openai_failure_returns_full_note(self) -> None:
-        note = "Level 1, cracked tile under vanity, regrout"
+    def test_defect_only_note_mostly_unchanged(self) -> None:
+        with patch("app.parse_description.os.getenv", return_value=None):
+            note = "cracked tile under vanity, regrout"
+            cleaned = clean_parsed_description(note, {"trade": "Tiling"})
+        self.assertIn("cracked tile under vanity", cleaned.lower())
+        self.assertIn("regrout", cleaned.lower())
+
+    def test_openai_failure_returns_rule_cleaned_note(self) -> None:
+        note = "Level 1 unit 101 bedroom 1, door frame cracked near the hinge, carpenter to replace"
         with patch("app.parse_description.os.getenv", side_effect=lambda key, default=None: "sk-test" if key == "OPENAI_API_KEY" else default):
             with patch("openai.OpenAI", side_effect=RuntimeError("timeout")):
-                self.assertEqual(clean_parsed_description(note, {"level": "Level 1"}), note)
+                cleaned = clean_parsed_description(note, {"level": "L01", "room": "Bedroom 1", "trade": "Joinery"})
+        self.assertIn("door frame cracked", cleaned.lower())
+        self.assertNotIn("level 1", cleaned.lower())
 
     def test_openai_success_returns_cleaned_description(self) -> None:
         mock_client = MagicMock()
@@ -57,13 +71,14 @@ class LegacyParseEndpointTests(unittest.TestCase):
         self.patcher.stop()
         self.temp_dir.cleanup()
 
-    def test_parse_without_ai_keeps_full_note_as_description(self) -> None:
+    def test_parse_without_ai_keeps_rule_cleaned_description(self) -> None:
         note = "cracked tile under vanity, regrout"
-        with patch("app.main.clean_parsed_description", side_effect=lambda transcript, fields: transcript):
+        with patch("app.main.clean_parsed_description", side_effect=lambda transcript, fields: __import__("app.parse_description", fromlist=["rule_based_clean_description"]).rule_based_clean_description(transcript, fields)):
             response = self.client.post("/api/parse", headers=self.headers, json={"transcript": note})
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["description"], note)
+        self.assertIn("Cracked tile under vanity", body["description"])
+        self.assertIn("Regrout", body["description"])
 
     def test_parse_applies_cleaned_description_when_available(self) -> None:
         note = "L01 A-304 Bedroom 1, door frame cracked near the hinge, carpenter to replace"
