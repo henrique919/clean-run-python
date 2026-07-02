@@ -698,6 +698,11 @@ async def import_settings_spreadsheet(
         if not cfg:
             raise HTTPException(status_code=404, detail="Project not found")
         values = import_units_from_rows(rows)
+        if not values:
+            raise HTTPException(
+                status_code=422,
+                detail="No units found in spreadsheet. Use a Unit/Area column header or a single-column list.",
+            )
         merged = sorted(set([*cfg.units, *values]), key=lambda value: value.lower())
         project_configs = dict(settings.project_configs)
         project_configs[project_name] = cfg.model_copy(update={"units": merged})

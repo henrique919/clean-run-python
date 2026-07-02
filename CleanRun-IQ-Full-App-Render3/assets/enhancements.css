@@ -155,6 +155,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .photo-workbench__tools button.primary{background:var(--action-green);border-color:var(--action-green);color:#121619;min-height:44px;font-size:15px;font-weight:900;padding:10px 16px}
 .photo-workbench__stage{display:grid;place-items:center;min-height:300px;padding:14px;background:#0C0F12;overflow:auto}
 .photo-workbench canvas{max-width:100%;height:auto;touch-action:none;background:#fff;cursor:crosshair}
+.photo-workbench[data-loading="1"] canvas{opacity:.45;pointer-events:none}
 .photo-workbench select{width:auto;border:1px solid #4A535C;background:#1B2025;color:#fff;border-radius:8px;padding:8px}
 .photo-workbench input[type="color"]{width:44px;height:38px;padding:2px;background:#fff}
 .photo-workbench input[type="range"]{width:130px}
