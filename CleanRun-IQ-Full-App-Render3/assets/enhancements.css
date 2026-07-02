@@ -209,7 +209,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .cr-card-band>div{display:flex;align-items:center;gap:9px;min-width:0}
 .cr-card-main{display:grid;grid-template-columns:142px minmax(0,1fr);gap:15px;padding:13px 16px 11px;align-items:start;background:#ECEFF2}
 .cr-card-media{width:142px;display:grid;gap:8px;align-content:start}
-.cr-card-photo{width:142px!important;height:108px!important;object-fit:contain;border-radius:12px;border:1px solid #C4CBD3;display:block;background:#D2D8E0}
+.cr-card-photo{width:142px!important;height:108px!important;object-fit:cover;border-radius:12px;border:1px solid #C4CBD3;display:block;background:#D2D8E0}
 .cr-card-photo .thumb{width:142px;height:108px;flex-basis:142px;border-radius:12px}
 .cr-card-photo.empty{display:grid;place-items:center;color:#667085;font-size:11px;font-weight:800}
 .cr-card-copy{display:grid;gap:5px;min-width:0;align-self:stretch}
