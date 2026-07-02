@@ -87,6 +87,27 @@ class SignedUrlCacheTests(unittest.TestCase):
             signed_url_cache.prefetch(requests)
         self.assertEqual(len(client.storage.bucket.calls), 2)
 
+    def test_prefetch_does_not_deadlock_thread_pool(self) -> None:
+        client = FakeClient()
+        item = Item(
+            code="DEF-001",
+            type=ItemType.DEFECT,
+            project="Jura Noosa",
+            due_date="2026-07-07",
+            description="Probe",
+            original_photos=[f"projects/jura/items/def-001/original/{index}.jpg" for index in range(12)],
+            priority=Priority.HIGH,
+            created_at=now_iso(),
+            updated_at=now_iso(),
+            sync=SyncState.SYNCED,
+        )
+        requests = collect_item_sign_requests(item)
+        with patch("app.storage.SIGN_URL_MAX_WORKERS", 2):
+            cache = SignedUrlCache()
+            with patch("app.storage._client_for_storage_path", return_value=client):
+                cache.prefetch(requests * 3)
+        self.assertGreater(len(client.storage.bucket.calls), 0)
+
     def test_rate_limit_retries_once(self) -> None:
         cache = SignedUrlCache()
         attempts = {"count": 0}
