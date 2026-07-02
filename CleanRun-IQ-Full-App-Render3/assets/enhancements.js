@@ -157,11 +157,6 @@
   async function refreshStateBackground(){
     try{state=await api("/api/state");cacheState();updateOfflinePill()}catch{}
   }
-  function focusCaptureNote(){
-    const field=$("#app form textarea[name='description']");
-    if(!field)return;
-    if(!field.value.trim())field.focus({preventScroll:true});
-  }
   window.openReport=async function(reportType,query={}){
     const params=new URLSearchParams();
     if(state?.settings?.activeProject)params.set("project",state.settings.activeProject);
