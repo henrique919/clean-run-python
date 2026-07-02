@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards38";
-  document.documentElement.dataset.cleanrunBuild="cards38";
+  window.CLEANRUN_FRONTEND_BUILD="cards39";
+  document.documentElement.dataset.cleanrunBuild="cards39";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -15,6 +15,7 @@
   const RECENT_LIMIT=3;
   let captureDefaultsExpanded=null;
   let captureDraftHighlights=new Set();
+  let captureDescriptionEdited=false;
   let capturePhotoMeta=[];
   let capturePhotoPreviewUrls=[];
   let editPhotos=[];
@@ -405,6 +406,11 @@
     form.addEventListener("invalid",e=>{
       if(e.target?.name)expandCaptureSectionForInvalid(form);
     },true);
+    const desc=form.description;
+    if(desc&&!desc.dataset.draftGuardWired){
+      desc.dataset.draftGuardWired="1";
+      desc.addEventListener("input",()=>{captureDescriptionEdited=true});
+    }
     updateCaptureDefaultsStrip();
     photoHint?.();
     toggleRaised?.();
@@ -487,6 +493,7 @@
     const host=$("#capturePreviews");if(host)host.innerHTML="";
     updatePhotoCount();
     applyCaptureDefaults();
+    captureDescriptionEdited=false;
     form?.querySelector('input[type="file"][capture="environment"]')?.focus?.();
   }
   function mountQuickCaptureFab(){
@@ -842,17 +849,26 @@
     toast("Listening…");
   };
 
-  const baseDraftVoice=draftVoice;
   draftVoice=async function(){
     const form=$("#app form");
+    const note=$("#voiceText")?.value?.trim();
+    if(!note)return toast("Type or speak a note first.",true);
     const before={};
     if(form)[...form.elements].forEach(el=>{if(el.name)before[el.name]=el.value});
-    await baseDraftVoice();
-    captureDraftHighlights=new Set();
-    if(form)[...form.elements].forEach(el=>{
-      if(el.name&&before[el.name]!==undefined&&String(before[el.name])!==String(el.value))captureDraftHighlights.add(el.name);
-    });
-    updateCaptureDefaultsStrip();
+    const preserveDescription=captureDescriptionEdited;
+    try{
+      const f=await api("/api/parse",{method:"POST",body:JSON.stringify({transcript:note})});
+      for(const [k,v] of Object.entries(f)){
+        if(k==="description"&&preserveDescription)continue;
+        if(form?.elements[k])form.elements[k].value=v;
+      }
+      captureDraftHighlights=new Set();
+      if(form)[...form.elements].forEach(el=>{
+        if(el.name&&before[el.name]!==undefined&&String(before[el.name])!==String(el.value))captureDraftHighlights.add(el.name);
+      });
+      updateCaptureDefaultsStrip();
+      toast("Draft applied — review before saving");
+    }catch(e){toast(e.message,true)}
   };
 
   const originalCaptureView=captureView;
