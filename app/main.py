@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.auth import RequestContext, get_request_context
-from app.config import app_env, is_production
+from app.config import app_env, is_production, login_required
 from app.db import build_repository
 from app.parse_description import clean_parsed_description
 from app.parse_fields import match_config_value, match_level, match_room, match_trade, match_unit
@@ -428,6 +428,7 @@ def auth_config() -> dict[str, object]:
         "supabase_publishable_key": os.getenv("SUPABASE_PUBLISHABLE_KEY"),
         "environment": os.getenv("CLEANRUN_ENV", "development"),
         "dev_tokens_enabled": not is_production(),
+        "login_required": login_required(),
     }
 
 

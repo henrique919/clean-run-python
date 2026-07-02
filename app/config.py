@@ -20,3 +20,7 @@ def bool_env(name: str, default: bool = False) -> bool:
 
 def storage_backend() -> str:
     return (os.getenv("CLEANRUN_STORAGE") or "local").lower()
+
+
+def login_required() -> bool:
+    return bool_env("CLEANRUN_LOGIN_REQUIRED", default=True)
