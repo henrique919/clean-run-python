@@ -39,13 +39,17 @@ http://127.0.0.1:8000
 ## Main files
 
 ```text
-app/main.py          FastAPI routes and static app server
-app/models.py        CleanRun IQ domain models
-app/store.py         JSON persistence layer
-app/validation.py    Capture/update validation
-app/reporting.py     HTML report builder
-app/static/          Mobile-first browser UI
-supabase/            Supabase CLI config, migrations, seed, storage/RLS policies, generated type target
+app/main.py                              FastAPI routes; serves Render3 at /
+app/models.py                            CleanRun IQ domain models
+app/db.py                                Repository factory (local vs Supabase)
+app/repositories/                        Persistence adapters
+app/services/                            Item, project, and report orchestration
+app/store.py / app/store_supabase.py     Shared store logic
+app/validation.py                        Capture/update validation
+app/reporting.py                         HTML report builder
+CleanRun-IQ-Full-App-Render3/            Production browser UI (served at /)
+app/static/                              Modular fallback UI (mounted at /static)
+supabase/                                Supabase CLI config, migrations, storage/RLS policies
 ```
 
 ## Supabase local-first workflow
