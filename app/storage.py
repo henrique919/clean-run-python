@@ -85,10 +85,13 @@ def _signed_url(client, path: str, *, transform: dict[str, object] | None = None
 
 def _path_from_signed_url(value: str) -> str | None:
     parsed = urlsplit(value)
-    marker = f"/storage/v1/object/sign/{BUCKET_NAME}/"
-    if marker not in parsed.path:
-        return None
-    return unquote(parsed.path.split(marker, 1)[1])
+    for marker in (
+        f"/storage/v1/object/sign/{BUCKET_NAME}/",
+        f"/storage/v1/render/image/sign/{BUCKET_NAME}/",
+    ):
+        if marker in parsed.path:
+            return unquote(parsed.path.split(marker, 1)[1])
+    return None
 
 
 def storage_path_from_value(value: str | None) -> str | None:
@@ -110,7 +113,11 @@ def resolve_thumbnail_url(value: str | None, *, width: int = 200) -> str | None:
         return value
     return _resolve_storage_url(
         value,
-        transform={"width": max(1, min(int(width), 2500)), "resize": "cover"},
+        transform={
+            "width": max(1, min(int(width), 2500)),
+            "height": max(1, min(int(width * 108 / 142), 2500)),
+            "resize": "contain",
+        },
     )
 
 

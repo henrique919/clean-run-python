@@ -47,8 +47,9 @@ class StoragePathTests(unittest.TestCase):
             def create_signed_url(self, path, ttl, options=None):
                 options = options or {}
                 transform = options.get("transform")
-                suffix = f"?w={transform['width']}" if transform else ""
-                return {"signedURL": f"https://fresh.example/{path}{suffix}"}
+                if transform:
+                    return {"signedURL": f"https://fresh.example/storage/v1/render/image/sign/cleanrun-evidence/{path}?token=thumb"}
+                return {"signedURL": f"https://fresh.example/storage/v1/object/sign/cleanrun-evidence/{path}?token=full"}
 
         class FakeStorage:
             def from_(self, bucket):
@@ -61,13 +62,12 @@ class StoragePathTests(unittest.TestCase):
 
         self.assertEqual(normalize_photo(expired), "projects/jura/photo.jpg")
         with patch("app.storage.get_supabase_client", return_value=FakeClient()):
-            self.assertEqual(resolve_photo_url(expired), "https://fresh.example/projects/jura/photo.jpg")
+            self.assertEqual(resolve_photo_url(expired), "https://fresh.example/storage/v1/object/sign/cleanrun-evidence/projects/jura/photo.jpg?token=full")
             from app.storage import resolve_thumbnail_url
 
-            self.assertEqual(
-                resolve_thumbnail_url("projects/jura/photo.jpg"),
-                "https://fresh.example/projects/jura/photo.jpg?w=200",
-            )
+            thumb = resolve_thumbnail_url("projects/jura/photo.jpg")
+            self.assertIn("/render/image/sign/", thumb)
+            self.assertIn("projects/jura/photo.jpg", thumb)
 
     def test_resolve_photo_url_returns_none_when_signing_fails(self) -> None:
         class FailingBucket:

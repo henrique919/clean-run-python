@@ -166,8 +166,9 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("siteStatus", page)
         self.assertIn("cr-item-card", page)
         self.assertIn("Captured','Issued','Ready", page)
-        self.assertIn("enhancements.css?v=cards28", page)
-        self.assertIn("enhancements.js?v=cards28", page)
+        self.assertIn("enhancements.css?v=cards30", page)
+        self.assertIn("enhancements.js?v=cards30", page)
+        self.assertIn("format-dates.js?v=cards30", page)
         self.assertIn("review:reviewView", page)
         self.assertIn("ready for supervisor review", page)
         self.assertIn("location.href='/api/reports/${id}'", page)
@@ -213,7 +214,7 @@ class FullFieldAppTests(unittest.TestCase):
         enhancements = (ROOT / "assets" / "enhancements.js").read_text(encoding="utf-8")
         styles = (ROOT / "assets" / "enhancements.css").read_text(encoding="utf-8")
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
-        for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1", "formatFieldDate", "issueHistoryForItem", "originalPhotoThumbnails", 'loading="lazy"', "shareReport"):
+        for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1", "format-dates.js", "issueHistoryForItem", "originalPhotoThumbnails", 'loading="lazy"', "shareReport", "imageOrientation"):
             self.assertIn(marker, enhancements)
         for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "openDashboardSearch", "Closeout control room", "Subcontractor performance", "Trade pressure", "Today's schedule", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode", "siteStatus", "CAPTURED", "REJECTED / RE-ISSUE", "cr-issue-cta", "Captured\",\"Issued\",\"Ready", "cardAction", "reviewCloseout", "reviewReject", "signature-pad", "cardActionLocks", "openCommandPalette", "runCommand", "Command Palette", "Issue DEF-022 to AquaSeal", "Find all open items Block A L02", "commandHomeBar", "lockProjectCodePrefix"):
             self.assertIn(marker, enhancements)
