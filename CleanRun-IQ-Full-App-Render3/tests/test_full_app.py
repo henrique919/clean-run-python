@@ -165,10 +165,10 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("/assets/chevrons.svg", page)
         self.assertIn("siteStatus", page)
         self.assertIn("cr-item-card", page)
-        self.assertIn("Captured','Issued','Ready", page)
-        self.assertIn("enhancements.css?v=cards36", page)
-        self.assertIn("enhancements.js?v=cards36", page)
-        self.assertIn("format-dates.js?v=cards36", page)
+        self.assertIn("In Progress','Ready", page)
+        self.assertIn("enhancements.css?v=cards37", page)
+        self.assertIn("enhancements.js?v=cards37", page)
+        self.assertIn("format-dates.js?v=cards37", page)
         self.assertIn("review:reviewView", page)
         self.assertIn("ready for supervisor review", page)
         self.assertIn("location.href='/api/reports/${id}'", page)
@@ -216,7 +216,7 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1", "format-dates.js", "issueHistoryForItem", "originalPhotoThumbnails", 'loading="lazy"', "shareReport", "supportsImageBitmapOrientation", "isImageFile", "returnToReports"):
             self.assertIn(marker, enhancements)
-        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "openDashboardSearch", "Closeout control room", "Subcontractor performance", "Trade pressure", "Today's schedule", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode", "siteStatus", "CAPTURED", "REJECTED / RE-ISSUE", "cr-issue-cta", "Captured\",\"Issued\",\"Ready", "cardAction", "reviewCloseout", "reviewReject", "signature-pad", "cardActionLocks", "openCommandPalette", "runCommand", "Command Palette", "Issue DEF-022 to AquaSeal", "Find all open items Block A L02", "commandHomeBar", "lockProjectCodePrefix"):
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "openDashboardSearch", "Closeout control room", "Subcontractor performance", "Trade pressure", "Today's schedule", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode", "siteStatus", "CAPTURED", "IN PROGRESS", "cr-issue-cta", "Captured\",\"Issued\",\"In Progress", "cardAction", "reviewCloseout", "reviewReject", "signature-pad", "cardActionLocks", "openCommandPalette", "runCommand", "Command Palette", "Issue DEF-022 to AquaSeal", "Find all open items Block A L02", "commandHomeBar", "lockProjectCodePrefix", "toggleItemFilters", "labelIconButtons", "cardHeadline"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
         self.assertIn('"reports","Reports"', enhancements)
@@ -232,6 +232,7 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn(".review-compare", styles)
         self.assertIn(".review-decision-row", styles)
         self.assertIn("border-left:6px solid", styles)
+        self.assertNotIn("Location unavailable", enhancements)
         self.assertIn(".cr-card-band", styles)
         self.assertIn("background:#DDE1E5", styles)
         self.assertIn(".cr-card-location", styles)
