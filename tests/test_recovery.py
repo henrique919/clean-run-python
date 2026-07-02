@@ -226,6 +226,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(names, ["Acme Tiling"])
         self.assertEqual(profiles["Acme Tiling"].trade, "Tiling")
         self.assertEqual(profiles["Acme Tiling"].email, "acme@example.com")
+        self.assertEqual(import_units_from_rows([["Unit", "Area"]]), [])
 
     def test_report_actions_heading_layout_and_subcontractor_filter(self) -> None:
         item = self.create_item()
@@ -301,7 +302,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("CLEANRUN_SERVE_LEGACY_EXPORT", main)
         self.assertIn("renderLogin", full_app)
         self.assertIn("bottom-nav", full_app)
-        self.assertIn("enhancements.js?v=cards32", full_app)
+        self.assertIn("enhancements.js?v=cards33", full_app)
 
     def test_plans_navigation_is_disabled_in_production_ui(self) -> None:
         root = Path(__file__).resolve().parents[1]

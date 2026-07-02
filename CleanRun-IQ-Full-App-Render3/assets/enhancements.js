@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards32";
-  document.documentElement.dataset.cleanrunBuild="cards32";
+  window.CLEANRUN_FRONTEND_BUILD="cards33";
+  document.documentElement.dataset.cleanrunBuild="cards33";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -33,6 +33,16 @@
   const MAX_PHOTO_EDGE=1600;
   const PHOTO_QUALITY=.72;
   const PHOTO_SKIP_BYTES=900000;
+  const CAPTURE_DUE_DAYS=7;
+
+  function defaultCaptureDueDate(){
+    const cfg=state?.settings?.projectConfigs?.[state?.settings?.activeProject]||{};
+    const days=Number(cfg.defaultDueDays??cfg.default_due_days??CAPTURE_DUE_DAYS)||CAPTURE_DUE_DAYS;
+    const due=new Date();
+    due.setDate(due.getDate()+days);
+    return due.toISOString().slice(0,10);
+  }
+  window.defaultCaptureDueDate=defaultCaptureDueDate;
 
   const yieldToMain=()=>new Promise(resolve=>{
     if(typeof requestAnimationFrame==="function")requestAnimationFrame(()=>setTimeout(resolve,0));
@@ -233,7 +243,7 @@
   };
 
   function rememberCaptureFields(data){
-    const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,dueDate:data.dueDate,priority:data.priority,type:data.type};
+    const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,priority:data.priority,type:data.type};
     try{localStorage.setItem(LAST_CAPTURE_KEY,JSON.stringify(keep))}catch{}
     if(state?.settings?.activeProject){
       try{
@@ -306,10 +316,11 @@
     const form=$("#app form");if(!form)return;
     const cfg=state.settings.projectConfigs[state.settings.activeProject]||{};
     const merged={...keep,...ctx};
-    for(const key of ["project","building","level","unit","room","trade","subcontractor","dueDate","priority","type"]){
+    for(const key of ["project","building","level","unit","room","trade","subcontractor","priority","type"]){
       const value=merged[key]||(key==="building"?cfg.buildings?.[0]:key==="unit"?cfg.units?.[0]:key==="level"?cfg.levels?.[0]:"");
       if(value&&form.elements[key])form.elements[key].value=value;
     }
+    if(form.elements.dueDate)form.elements.dueDate.value=defaultCaptureDueDate();
     photoHint?.();toggleRaised?.();
   }
   function resetCaptureForNext(){
@@ -1033,7 +1044,36 @@
   function itemDisplayCode(item){const cfg=state.settings.projectConfigs?.[item.project]||{},prefix=cfg.codePrefixLocked&&cfg.codePrefixHiddenOnCards!==false?cfg.codePrefix:"";return prefix&&item.code?.toUpperCase().startsWith(`${prefix}-`)?item.code.slice(prefix.length+1):item.code}
   function codePrefixCard(cfg){const project=state.settings.activeProject,locked=!!cfg.codePrefixLocked,prefix=cfg.codePrefix||suggestedProjectCodePrefix(project),status=locked?`Locked as ${esc(prefix)}. Cards show DEF-1001; reports keep ${esc(prefix)}-DEF-1001.`:"Choose once for this project. It cannot be changed after locking.";return `<section class="form-card project-code-card"><h2>Item numbering</h2><p class="meta">Attach silent project letters to new item numbers for clean registers across multiple projects.</p><label>Project code prefix<div class="project-code-lock"><input id="projectCodePrefix" maxlength="6" value="${esc(prefix)}" ${locked?"disabled":""} oninput="this.value=sanitizeProjectCodeInput(this.value)"><button class="btn alt" type="button" ${locked?"disabled":""} onclick="lockProjectCodePrefix()"> ${locked?"Locked":"Lock prefix"}</button></div></label><p class="meta">${status}</p></section>`}
   window.lockProjectCodePrefix=async function(){const project=state.settings.activeProject,prefix=sanitizeProjectCodeInput($("#projectCodePrefix")?.value||suggestedProjectCodePrefix(project));if(!prefix)return toast("Add a project prefix before locking.",true);const s=structuredClone(state.settings),cfg=s.projectConfigs[project]||{};cfg.codePrefix=prefix;cfg.codePrefixLocked=true;cfg.codePrefixHiddenOnCards=true;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Project prefix locked")};
-  window.uploadSettingsSheet=async function(target,input){const file=input.files?.[0];if(!file)return;const form=new FormData();form.append("target",target);form.append("project",state.settings.activeProject);form.append("file",file);const headers={};if(authToken)headers.Authorization=`Bearer ${authToken}`;try{const res=await fetch("/api/settings/import",{method:"POST",headers,body:form});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.detail||`Import failed (${res.status})`);await reload();route="setup";render();const label=target==="units"?"unit / area":"subcontractor";toast(`${data.imported||0} ${label} record${data.imported===1?"":"s"} imported`)}catch(err){toast(err.message||"Import failed",true)}finally{input.value=""}};
+  window.uploadSettingsSheet=async function(first,second){
+    let target,input;
+    if(typeof first==="string"&&(second?.files||second?.tagName==="INPUT")){target=first;input=second}
+    else if(typeof second==="string"&&(first?.files||first?.tagName==="INPUT")){target=second;input=first}
+    else return toast("Choose a spreadsheet file to upload.",true);
+    const file=input.files?.[0];
+    if(!file)return;
+    const form=new FormData();
+    form.append("target",target);
+    form.append("project",state.settings.activeProject);
+    form.append("file",file,file.name||"import.csv");
+    try{
+      toast("Uploading spreadsheet…");
+      const data=await api("/api/settings/import",{method:"POST",body:form});
+      await reload();
+      route="setup";
+      render();
+      const isUnits=String(target).toLowerCase().includes("unit");
+      const label=isUnits?"unit / area":"subcontractor";
+      const added=Number(data.imported||0);
+      const total=isUnits
+        ? (state.settings.projectConfigs?.[state.settings.activeProject]?.units?.length||0)
+        : (state.settings.subcontractors?.length||0);
+      toast(added>0?`${added} ${label} record${added===1?"":"s"} added (${total} total)`:`No new ${label} rows in file (${total} already on project)`);
+    }catch(err){
+      toast(err?.message||"Import failed",true);
+    }finally{
+      input.value="";
+    }
+  };
   function spreadsheetImportCard(){return `<section class="form-card setup-import-card"><h2>Spreadsheet import</h2><p class="meta">Upload Excel or CSV lists to populate setup data faster. Units are added to the active project; subcontractors are added to the project directory.</p><div class="setup-import-actions"><label class="btn alt">Upload units / areas<input hidden type="file" accept=".xlsx,.xlsm,.csv,.tsv" onchange="uploadSettingsSheet('units',this)"></label><label class="btn alt">Upload subcontractors<input hidden type="file" accept=".xlsx,.xlsm,.csv,.tsv" onchange="uploadSettingsSheet('subcontractors',this)"></label></div></section>`}
   function projectScopeOptions(){const projects=state.settings.projects||[];return [["active","Active project"],["all","All projects"],...projects.map(p=>[`project::${p}`,p])]}
   function scopeProjectName(){return itemProjectScope.startsWith("project::")?itemProjectScope.slice(9):state.settings.activeProject}
