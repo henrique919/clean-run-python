@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 BUCKET_NAME = os.getenv("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence")
 MAX_IMAGE_BYTES = int(os.getenv("CLEANRUN_MAX_IMAGE_BYTES", "8000000"))
 SIGNED_URL_TTL_SECONDS = int(os.getenv("CLEANRUN_STORAGE_SIGNED_URL_TTL_SECONDS", "604800"))
+# Item card is 142×108 CSS px; thumbnails are centre-cropped at 2× for retina.
+LIST_CARD_THUMB_WIDTH = 284
+LIST_CARD_THUMB_HEIGHT = 216
 
 CONTENT_TYPE_EXT = {
     "image/jpeg": ".jpg",
@@ -108,15 +111,20 @@ def resolve_photo_url(value: str | None) -> str | None:
     return _resolve_storage_url(value)
 
 
-def resolve_thumbnail_url(value: str | None, *, width: int = 200) -> str | None:
+def resolve_thumbnail_url(
+    value: str | None,
+    *,
+    width: int = LIST_CARD_THUMB_WIDTH,
+    height: int = LIST_CARD_THUMB_HEIGHT,
+) -> str | None:
     if not value or value.startswith(("data:image/", "seed://")):
         return value
     return _resolve_storage_url(
         value,
         transform={
             "width": max(1, min(int(width), 2500)),
-            "height": max(1, min(int(width * 108 / 142), 2500)),
-            "resize": "contain",
+            "height": max(1, min(int(height), 2500)),
+            "resize": "cover",
         },
     )
 

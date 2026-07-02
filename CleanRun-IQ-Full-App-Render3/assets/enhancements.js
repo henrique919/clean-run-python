@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards30";
-  document.documentElement.dataset.cleanrunBuild="cards30";
+  window.CLEANRUN_FRONTEND_BUILD="cards31";
+  document.documentElement.dataset.cleanrunBuild="cards31";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -20,6 +20,7 @@
   let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[]};
   let offlineQueue=[];
   let captureSubmitting=false;
+  if(typeof walkMode!=="undefined"&&!sessionStorage.getItem("walkModeOff"))walkMode=true;
 
   const readJson=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key)||"")||fallback}catch{return fallback}};
   const openOfflineDb=()=>new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,1);request.onupgradeneeded=()=>request.result.createObjectStore("kv");request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
@@ -65,29 +66,81 @@
   }
 
   function canvasToJpegBlob(canvas,quality=PHOTO_QUALITY){
+    const fallback=()=>{
+      const dataUrl=canvas.toDataURL("image/jpeg",quality);
+      const encoded=dataUrl.split(",")[1]||"";
+      const bin=atob(encoded);
+      const bytes=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      return new Blob([bytes],{type:"image/jpeg"});
+    };
     return new Promise((resolve,reject)=>{
-      canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Could not compress image.")), "image/jpeg", quality);
+      if(typeof canvas.toBlob!=="function"){
+        try{resolve(fallback())}catch(err){reject(err)}
+        return;
+      }
+      canvas.toBlob(blob=>{
+        if(blob)return resolve(blob);
+        try{resolve(fallback())}catch(err){reject(err)}
+      },"image/jpeg",quality);
     });
+  }
+
+  let imageBitmapOrientationSupported=null;
+  async function supportsImageBitmapOrientation(){
+    if(imageBitmapOrientationSupported!==null)return imageBitmapOrientationSupported;
+    if(typeof createImageBitmap!=="function"){imageBitmapOrientationSupported=false;return false}
+    try{
+      const probe=document.createElement("canvas");
+      probe.width=2;
+      probe.height=2;
+      await createImageBitmap(probe,{imageOrientation:"from-image"});
+      imageBitmapOrientationSupported=true;
+    }catch{
+      imageBitmapOrientationSupported=false;
+    }
+    return imageBitmapOrientationSupported;
+  }
+
+  function loadImageElement(src){
+    return new Promise((resolve,reject)=>{
+      const image=new Image();
+      image.onload=()=>resolve(image);
+      image.onerror=()=>reject(new Error("Could not read image."));
+      image.src=src;
+    });
+  }
+
+  function isImageFile(file){
+    if(!file)return false;
+    if(file.type?.startsWith("image/"))return true;
+    if(!file.type&&file.size>0)return true;
+    return /\.(jpe?g|png|webp)$/i.test(file.name||"");
   }
 
   async function decodeImageSource(file,objectUrl){
-    if(typeof createImageBitmap==="function"){
+    if(await supportsImageBitmapOrientation()){
       try{
         const bitmap=await createImageBitmap(file,{imageOrientation:"from-image"});
-        return {width:bitmap.width,height:bitmap.height,draw:(ctx,x,y,w,h)=>{ctx.drawImage(bitmap,x,y,w,h);bitmap.close?.()}};
-      }catch{}
+        return {
+          width:bitmap.width,
+          height:bitmap.height,
+          draw:(ctx,x,y,w,h)=>{ctx.drawImage(bitmap,x,y,w,h);bitmap.close?.()},
+        };
+      }catch(err){
+        console.warn("[CleanRun] createImageBitmap failed; using image fallback",err);
+      }
     }
-    const img=await new Promise((resolve,reject)=>{
-      const image=new Image();
-      image.onload=()=>resolve(image);
-      image.onerror=reject;
-      image.src=objectUrl;
-    });
-    return {width:img.naturalWidth,height:img.naturalHeight,draw:(ctx,x,y,w,h)=>ctx.drawImage(img,x,y,w,h)};
+    const img=await loadImageElement(objectUrl);
+    return {
+      width:img.naturalWidth||img.width,
+      height:img.naturalHeight||img.height,
+      draw:(ctx,x,y,w,h)=>ctx.drawImage(img,x,y,w,h),
+    };
   }
 
   async function compressImageForUpload(file){
-    if(!file?.type?.startsWith("image/"))return {dataUrl:await readFileData(file),previewUrl:null};
+    if(!isImageFile(file))return {dataUrl:await readFileData(file),previewUrl:null};
     const objectUrl=URL.createObjectURL(file);
     try{
       await yieldToMain();
@@ -170,7 +223,9 @@
       if(res.status===401){clearAuthToken();renderLogin("Sign in to continue.");return}
       if(!res.ok){let message=`Report failed (${res.status})`;try{const data=await res.json();message=data.detail||data.error||message}catch{message=await res.text()||message}throw new Error(message)}
       const html=await res.text();
-      const url=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));
+      const appReturn=`${location.origin}/?route=reports`;
+      const doc=html.includes("data-app-return")?html:html.replace("<body",`<body data-app-return="${appReturn}"`);
+      const url=URL.createObjectURL(new Blob([doc],{type:"text/html;charset=utf-8"}));
       const tab=window.open(url,"_blank");
       if(!tab){URL.revokeObjectURL(url);return toast("Allow popups to open reports.",true)}
       setTimeout(()=>URL.revokeObjectURL(url),120000);
@@ -363,11 +418,11 @@
   cardPhoto=function(i){
     const src=(i.originalPhotoThumbnails||i.originalPhotos||[])[0];
     if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
-    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence" loading="lazy" decoding="async" width="200" height="200">`;
+    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence" loading="lazy" decoding="async" width="284" height="216">`;
   };
 
   fileToData=async function(file){
-    if(file?.type?.startsWith("image/")){try{return await fileToUploadData(file)}catch(e){console.warn("[CleanRun] image compression failed; using original",e)}}
+    if(isImageFile(file)){try{return await fileToUploadData(file)}catch(e){console.warn("[CleanRun] image compression failed; using original",e)}}
     return readFileDataUrl(file);
   };
 
@@ -466,10 +521,19 @@
     const style=ctx=>{ctx.strokeStyle=$("#markupColor").value;ctx.fillStyle=$("#markupColor").value;ctx.lineWidth=Number($("#markupWidth").value);ctx.lineCap="round";ctx.lineJoin="round";ctx.font="700 22px Inter, system-ui, sans-serif"};
     const arrow=(ctx,a,b)=>{const angle=Math.atan2(b.y-a.y,b.x-a.x),head=22+ctx.lineWidth;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-head*Math.cos(angle-Math.PI/6),b.y-head*Math.sin(angle-Math.PI/6));ctx.lineTo(b.x-head*Math.cos(angle+Math.PI/6),b.y-head*Math.sin(angle+Math.PI/6));ctx.closePath();ctx.fill()};
     const shape=(ctx,tool,a,b)=>{style(ctx);const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(b.x-a.x),h=Math.abs(b.y-a.y);if(tool==="box"){ctx.strokeRect(x,y,w,h)}else if(tool==="circle"){ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,Math.max(1,w/2),Math.max(1,h/2),0,0,Math.PI*2);ctx.stroke()}else if(tool==="arrow"){arrow(ctx,a,b)}};
-    const start=e=>{if(!workbench.save)return;e.preventDefault();const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");const base=document.createElement("canvas");base.width=canvas.width;base.height=canvas.height;base.getContext("2d").drawImage(canvas,0,0);workbench.baseCanvas=base;workbench.history.push(base);if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();workbench.baseCanvas=null;return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));workbench.baseCanvas=null;return}workbench.drawing=true;workbench.last=p;workbench.start=p};
+    const start=e=>{if(!workbench.save)return;e.preventDefault();e.currentTarget?.setPointerCapture?.(e.pointerId);const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");const base=document.createElement("canvas");base.width=canvas.width;base.height=canvas.height;base.getContext("2d").drawImage(canvas,0,0);workbench.baseCanvas=base;workbench.history.push(base);if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();workbench.baseCanvas=null;return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));workbench.baseCanvas=null;return}workbench.drawing=true;workbench.last=p;workbench.start=p};
     const move=e=>{if(!workbench.drawing||!workbench.baseCanvas)return;e.preventDefault();const p=point(e),tool=$("#markupTool").value,ctx=canvas.getContext("2d");if(tool==="pen"){style(ctx);ctx.beginPath();ctx.moveTo(workbench.last.x,workbench.last.y);ctx.lineTo(p.x,p.y);ctx.stroke();workbench.last=p;return}ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(workbench.baseCanvas,0,0);shape(ctx,tool,workbench.start,p)};
-    const stop=e=>{if(!workbench.drawing)return;const tool=$("#markupTool").value;if(tool!=="pen")shape(canvas.getContext("2d"),tool,workbench.start,point(e));workbench.drawing=false;workbench.last=null;workbench.start=null;workbench.baseCanvas=null};
-    canvas.addEventListener("pointerdown",start);canvas.addEventListener("pointermove",move);canvas.addEventListener("pointerup",stop);canvas.addEventListener("pointerleave",stop);
+    const stop=e=>{if(!workbench.drawing)return;e?.preventDefault?.();const tool=$("#markupTool").value;if(tool!=="pen")shape(canvas.getContext("2d"),tool,workbench.start,point(e));workbench.drawing=false;workbench.last=null;workbench.start=null;workbench.baseCanvas=null};
+    const passive={passive:false};
+    canvas.addEventListener("pointerdown",start,passive);
+    canvas.addEventListener("pointermove",move,passive);
+    canvas.addEventListener("pointerup",stop,passive);
+    canvas.addEventListener("pointercancel",stop,passive);
+    canvas.addEventListener("pointerleave",stop);
+    canvas.addEventListener("touchstart",e=>{if(e.touches?.length===1)start(e)},passive);
+    canvas.addEventListener("touchmove",e=>{if(workbench.drawing)move(e)},passive);
+    canvas.addEventListener("touchend",stop,passive);
+    canvas.addEventListener("touchcancel",stop,passive);
   }
 
   function drawSource(src){
@@ -487,12 +551,20 @@
   window.undoPhotoMarkup=()=>{const previous=workbench.history.pop();if(previous)restoreCanvas(previous)};
   window.savePhotoMarkup=async function(){
     const canvas=$("#markupCanvas");
+    const btn=$("#saveMarkup");
     if(!canvas||!workbench.save)return;
-    await yieldToMain();
-    const blob=await canvasToJpegBlob(canvas,.92);
-    workbench.save?.(await blobToDataUrl(blob));
-    closePhotoWorkbench();
-    toast("Marked-up evidence saved");
+    if(btn)btn.disabled=true;
+    try{
+      await yieldToMain();
+      const blob=await canvasToJpegBlob(canvas,.92);
+      workbench.save(await blobToDataUrl(blob));
+      closePhotoWorkbench();
+      toast("Marked-up evidence saved");
+    }catch(err){
+      toast(err?.message||"Could not save marked-up photo.",true);
+    }finally{
+      if(btn)btn.disabled=false;
+    }
   };
 
   function clearCapturePhotoState(){
@@ -607,8 +679,21 @@
       const item=await api(path,{method:"POST",body:JSON.stringify(data)});
       clearCapturePhotoState();
       form.dataset.captureRequestId="";
-      if(walkMode){walkCount++;mergeSavedItem(item);route="capture";render();resetCaptureForNext();toast(`${item.code} saved · capture next`);refreshStateBackground()}
-      else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}
+      mergeSavedItem(item);
+      if(walkMode){
+        walkCount++;
+        route="capture";
+        render();
+        resetCaptureForNext();
+        toast(`${item.code} saved · capture next`);
+        reload().then(fresh=>{state=fresh;walkMode=true;mergeSavedItem(item);cacheState()}).catch(()=>{});
+      }else{
+        await reload();
+        route="items";
+        render();
+        setTimeout(()=>scrollTo(0,0),0);
+        toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`);
+      }
     }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
   };
 

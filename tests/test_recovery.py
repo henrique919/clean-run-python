@@ -249,6 +249,7 @@ class RecoveryTests(unittest.TestCase):
         report = build_report_html(snapshot.items, snapshot.settings, "subcontractor", subcontractor="Sterling Tiling")
 
         self.assertIn("Return to reports", report)
+        self.assertIn("returnToReports()", report)
         self.assertIn("Print Report", report)
         self.assertIn("Share Report", report)
         self.assertIn("Jura Noosa", report)
@@ -300,7 +301,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("CLEANRUN_SERVE_LEGACY_EXPORT", main)
         self.assertIn("renderLogin", full_app)
         self.assertIn("bottom-nav", full_app)
-        self.assertIn("enhancements.js?v=cards30", full_app)
+        self.assertIn("enhancements.js?v=cards31", full_app)
 
     def test_plans_navigation_is_disabled_in_production_ui(self) -> None:
         root = Path(__file__).resolve().parents[1]
