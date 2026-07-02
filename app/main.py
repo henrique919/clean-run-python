@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.auth import RequestContext, get_request_context
 from app.config import app_env, is_production
 from app.db import build_repository
+from app.parse_description import clean_parsed_description
 from app.models import AccessRequest, CloseoutEvidence, Comment, Item, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
 from app.permissions import (
     require_close_item,
@@ -605,6 +606,8 @@ def legacy_parse_note(payload: LegacyParsePayload, ctx: RequestContext = Depends
             }
         )
     parsed["trade"] = _match_config_value(text, TRADES)
+    parsed["subcontractor"] = _match_config_value(text, settings.subcontractors)
+    parsed["description"] = clean_parsed_description(text, parsed)
     return {key: value for key, value in parsed.items() if value}
 
 
