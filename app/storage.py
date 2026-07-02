@@ -113,7 +113,11 @@ def resolve_thumbnail_url(value: str | None, *, width: int = 200) -> str | None:
         return value
     return _resolve_storage_url(
         value,
-        transform={"width": max(1, min(int(width), 2500)), "resize": "cover"},
+        transform={
+            "width": max(1, min(int(width), 2500)),
+            "height": max(1, min(int(width * 108 / 142), 2500)),
+            "resize": "contain",
+        },
     )
 
 
