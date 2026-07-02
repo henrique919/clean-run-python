@@ -119,9 +119,17 @@ class AuthPermissionTests(unittest.TestCase):
         )
 
     def test_anonymous_workflow_requests_are_rejected(self) -> None:
-        self.assertEqual(self.client.get("/api/items").status_code, 401)
-        response = self.client.post("/api/items", json={})
-        self.assertEqual(response.status_code, 401)
+        with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
+            self.assertEqual(self.client.get("/api/items").status_code, 401)
+            response = self.client.post("/api/items", json={})
+            self.assertEqual(response.status_code, 401)
+
+    def test_open_access_is_default_without_env(self) -> None:
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CLEANRUN_LOGIN_REQUIRED", None)
+            from app.config import login_required
+
+            self.assertFalse(login_required())
 
     def test_anonymous_production_requests_are_rejected(self) -> None:
         with patch.dict(os.environ, {"APP_ENV": "production", "CLEANRUN_ENV": "production", "CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
@@ -158,7 +166,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["status"], "pending")
-        self.assertEqual(self.client.get("/api/bootstrap").status_code, 401)
+        with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
+            self.assertEqual(self.client.get("/api/bootstrap").status_code, 401)
 
     def test_project_scope_is_not_leaked_between_companies(self) -> None:
         other_item = self.create_direct_item(project="Other Project", subcontractor="Other Trade")
@@ -235,14 +244,15 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertEqual(payload["auditEvents"][0]["email"], "site.manager@cleanrun.local")
 
     def test_reports_require_project_access(self) -> None:
-        anonymous = self.client.get("/api/reports/handover")
+        with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
+            anonymous = self.client.get("/api/reports/handover")
+            self.assertEqual(anonymous.status_code, 401)
         viewer = self.client.get("/api/reports/handover", headers=bearer("dev-viewer"))
         other_company = self.client.get(
             "/api/reports/handover?project=Jura%20Noosa",
             headers=bearer("dev-other-company"),
         )
 
-        self.assertEqual(anonymous.status_code, 401)
         self.assertEqual(viewer.status_code, 200)
         self.assertEqual(other_company.status_code, 403)
 

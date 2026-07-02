@@ -23,4 +23,5 @@ def storage_backend() -> str:
 
 
 def login_required() -> bool:
-    return bool_env("CLEANRUN_LOGIN_REQUIRED", default=True)
+    # Default off for the current launch window; set CLEANRUN_LOGIN_REQUIRED=true to restore sign-in.
+    return bool_env("CLEANRUN_LOGIN_REQUIRED", default=False)
