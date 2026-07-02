@@ -157,11 +157,19 @@ class SignedUrlCache:
             raise last_error
         raise RuntimeError(f"Could not sign URL for {path}")
 
-    def _store(self, key: str, url: str) -> str:
+    def _sign_and_store(self, key: str, path: str, transform: dict[str, object] | None) -> str:
+        url = self._sign_with_retry(path, transform)
         expires_at = time.monotonic() + SIGNED_URL_CACHE_MAX_AGE_SECONDS
         with self._lock:
             self._entries[key] = (url, expires_at)
         return url
+
+    def _pending_future(self, key: str, path: str, transform: dict[str, object] | None) -> Future[str]:
+        pending = self._pending.get(key)
+        if pending is None:
+            pending = self._executor.submit(self._sign_and_store, key, path, transform)
+            self._pending[key] = pending
+        return pending
 
     def get(self, path: str, *, transform: dict[str, object] | None = None) -> str:
         key = _sign_cache_key(path, transform)
@@ -170,14 +178,9 @@ class SignedUrlCache:
             entry = self._entries.get(key)
             if entry and entry[1] > now:
                 return entry[0]
-            pending = self._pending.get(key)
-            if pending is None:
-                future = self._executor.submit(self._sign_with_retry, path, transform)
-                self._pending[key] = future
-                pending = future
+            pending = self._pending_future(key, path, transform)
         try:
-            url = pending.result()
-            return self._store(key, url)
+            return pending.result()
         finally:
             with self._lock:
                 if self._pending.get(key) is pending and pending.done():
@@ -196,14 +199,19 @@ class SignedUrlCache:
                 if entry and entry[1] > now:
                     continue
                 unique[key] = (path, transform)
-        if not unique:
-            return
-        futures = [self._executor.submit(self.get, path, transform=transform) for path, transform in unique.values()]
-        for future in futures:
+            futures = [
+                (key, self._pending_future(key, path, transform))
+                for key, (path, transform) in unique.items()
+            ]
+        for key, future in futures:
             try:
                 future.result()
             except Exception:
                 logger.exception("Signed URL prefetch failed")
+            finally:
+                with self._lock:
+                    if self._pending.get(key) is future and future.done():
+                        self._pending.pop(key, None)
 
 
 signed_url_cache = SignedUrlCache()
