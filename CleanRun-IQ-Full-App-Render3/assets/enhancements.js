@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards27";
-  document.documentElement.dataset.cleanrunBuild="cards27";
+  window.CLEANRUN_FRONTEND_BUILD="cards28";
+  document.documentElement.dataset.cleanrunBuild="cards28";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -332,6 +332,42 @@
     return records.map(record=>record.src);
   };
 
+  window.formatFieldDate=function(iso){
+    try{
+      const d=new Date(iso);
+      if(Number.isNaN(d.getTime()))return iso||"";
+      const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      if(/^\d{4}-\d{2}-\d{2}$/.test(String(iso||"").trim()))return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+      const h=d.getHours()%12||12,m=String(d.getMinutes()).padStart(2,"0"),ampm=d.getHours()<12?"am":"pm";
+      return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${h}:${m}${ampm}`;
+    }catch{return iso||""}
+  };
+  fmt=window.formatFieldDate;
+
+  function issueHistoryForItem(item){
+    let rows=[...(item?.issueHistory||[])];
+    if(!rows.length&&item?.auditEvents?.length){
+      rows=item.auditEvents.filter(e=>/^(Re-issued|Issued) to /.test(e.action||"")).map(e=>({
+        at:e.at,to:(e.action||"").replace(/^(Re-issued|Issued) to /,""),by:e.by,reissue:(e.action||"").startsWith("Re-issued"),note:e.note
+      }));
+    }
+    if(!rows.length&&item&&item.status!=="open"&&item.issuedAt){
+      rows=[{at:item.issuedAt,to:item.subcontractor||"",by:item.createdBy,reissue:false}];
+    }
+    return rows;
+  }
+
+  cardPhoto=function(i){
+    const src=(i.originalPhotoThumbnails||i.originalPhotos||[])[0];
+    if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
+    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence" loading="lazy" decoding="async" width="200" height="200">`;
+  };
+
+  fileToData=async function(file){
+    if(file?.type?.startsWith("image/")){try{return await fileToUploadData(file)}catch(e){console.warn("[CleanRun] image compression failed; using original",e)}}
+    return readFileDataUrl(file);
+  };
+
   function previewSrc(mode,index){
     if(mode==="capture")return capturePhotoPreviewUrls[index]||capturePhotos[index];
     if(mode==="edit")return editPhotoPreviewUrls[index]||editPhotos[index];
@@ -615,6 +651,11 @@
   const originalShowItem=showItem;
   showItem=function(id){
     originalShowItem(id);const i=state.items.find(x=>x.id===id),cards=[...document.querySelectorAll("#modalBody .native-card")],original=cards.find(c=>c.querySelector("h2")?.textContent==="Original Issue");
+    const historyCard=cards.find(c=>c.querySelector("h2")?.textContent==="Assignment & Issue History");
+    if(historyCard){
+      const rows=issueHistoryForItem(i);
+      historyCard.innerHTML=`<h2>Assignment & Issue History</h2>${rows.length?rows.map(e=>`<div class="event"><b>${e.reissue?"Re-issued":"Issued"} to ${esc(e.to)}</b><div class="meta">${esc(e.by||"")} · ${esc(fmt(e.at))}</div>${e.note?`<p>${esc(e.note)}</p>`:""}</div>`).join(""):'<div class="meta">Not yet issued to a subcontractor.</div>'}`;
+    }
     if(original){const photos=[...original.querySelectorAll(".photo-preview img")];photos.forEach((img,n)=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,`${i.code} · Original issue ${n+1}`,null);const meta=i.originalPhotoMeta?.[n];if(meta){const cap=document.createElement("div");cap.className="photo-caption";cap.textContent=geoLabel(meta);img.insertAdjacentElement("afterend",cap)}});const add=document.createElement("button");add.className="btn alt small";add.textContent="＋ Add / mark up photos";add.onclick=()=>editItemForm(id);original.querySelector("h2")?.insertAdjacentElement("afterend",add)}
     document.querySelectorAll("#modalBody .evidence img").forEach(img=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,img.alt||"Evidence photo",null)});
   };

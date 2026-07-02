@@ -71,8 +71,11 @@ def _split_data_url(value: str) -> tuple[str, bytes]:
     return content_type, data
 
 
-def _signed_url(client, path: str) -> str:
-    result = client.storage.from_(BUCKET_NAME).create_signed_url(path, SIGNED_URL_TTL_SECONDS)
+def _signed_url(client, path: str, *, transform: dict[str, object] | None = None) -> str:
+    options: dict[str, object] = {}
+    if transform:
+        options["transform"] = transform
+    result = client.storage.from_(BUCKET_NAME).create_signed_url(path, SIGNED_URL_TTL_SECONDS, options)
     if isinstance(result, str):
         return result
     if isinstance(result, dict):
@@ -99,6 +102,19 @@ def storage_path_from_value(value: str | None) -> str | None:
 
 
 def resolve_photo_url(value: str | None) -> str | None:
+    return _resolve_storage_url(value)
+
+
+def resolve_thumbnail_url(value: str | None, *, width: int = 200) -> str | None:
+    if not value or value.startswith(("data:image/", "seed://")):
+        return value
+    return _resolve_storage_url(
+        value,
+        transform={"width": max(1, min(int(width), 2500)), "resize": "cover"},
+    )
+
+
+def _resolve_storage_url(value: str | None, *, transform: dict[str, object] | None = None) -> str | None:
     if not value:
         return value
     if value.startswith(("data:image/", "seed://")):
@@ -109,7 +125,7 @@ def resolve_photo_url(value: str | None) -> str | None:
             return value
         value = path
     try:
-        return _signed_url(_client_for_storage_path(value), value)
+        return _signed_url(_client_for_storage_path(value), value, transform=transform)
     except Exception:
         logger.exception("Could not create signed URL for Supabase Storage object %s", value)
         return None

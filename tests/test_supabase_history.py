@@ -63,6 +63,35 @@ class SupabaseHistoryHydrationTests(unittest.TestCase):
         self.assertEqual(item.inspection_history[0].action, "rejected")
         self.assertEqual(item.inspection_history[0].reason, "Not acceptable")
 
+    def test_issue_history_rebuilt_from_audit_when_payload_missing(self) -> None:
+        store = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore)
+        row = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "code": "DEF-1002",
+            "type": "defect",
+            "status": ItemStatus.ISSUED,
+            "project": "Jura Noosa",
+            "subcontractor": "ASTW Tiling",
+            "issued_at": "2026-06-01T08:04:00Z",
+            "created_by_label": "Site Manager",
+            "created_at": "2026-06-01T08:04:00Z",
+            "updated_at": "2026-06-01T08:04:00Z",
+            "payload": {},
+        }
+        audit_rows = [
+            {
+                "message": "Issued to ASTW Tiling",
+                "created_by_label": "Site Manager",
+                "created_at": "2026-06-01T08:04:00Z",
+            }
+        ]
+
+        item = store._item_from_rows(row, [], [], audit_rows)
+
+        self.assertEqual(len(item.issue_history), 1)
+        self.assertEqual(item.issue_history[0].to, "ASTW Tiling")
+        self.assertEqual(item.issue_history[0].by, "Site Manager")
+
 
 if __name__ == "__main__":
     unittest.main()

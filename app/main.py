@@ -34,7 +34,7 @@ from app.permissions import (
 from app.services import items as item_service
 from app.services import projects as project_service
 from app.services import reports as report_service
-from app.storage import StorageUploadError, resolve_photo_url
+from app.storage import StorageUploadError, resolve_photo_url, resolve_thumbnail_url
 from app.validation import ValidationError
 from app.workflow import WorkflowError
 
@@ -268,6 +268,9 @@ def camel_item(item) -> dict[str, object]:
     for source, target in rename.items():
         if source in payload:
             payload[target] = payload.pop(source)
+    payload["originalPhotoThumbnails"] = [
+        resolve_thumbnail_url(photo) or resolve_photo_url(photo) or photo for photo in item.original_photos
+    ]
     return payload
 
 
