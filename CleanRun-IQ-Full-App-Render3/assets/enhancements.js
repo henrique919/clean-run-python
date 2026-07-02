@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards33";
-  document.documentElement.dataset.cleanrunBuild="cards33";
+  window.CLEANRUN_FRONTEND_BUILD="cards37";
+  document.documentElement.dataset.cleanrunBuild="cards37";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -306,8 +306,6 @@
     render();
   };
   window.quickCapture=function(){
-    sessionStorage.removeItem("walkModeOff");
-    walkMode=true;
     go("capture");
   };
   function applyCaptureDefaults(){
@@ -340,7 +338,7 @@
       fab.id="quickCaptureFab";
       fab.type="button";
       fab.className="quick-capture-fab";
-      fab.setAttribute("aria-label","Quick Capture");
+      fab.setAttribute("aria-label","Walk capture");
       fab.innerHTML='<span class="quick-capture-fab__icon">+</span><span class="quick-capture-fab__label">Quick</span>';
       fab.onclick=()=>quickCapture();
       document.body.appendChild(fab);
@@ -357,7 +355,7 @@
   applyTheme();
 
   function geoLabel(meta){
-    if(!meta||meta.latitude==null)return "Location unavailable";
+    if(!meta||meta.latitude==null)return "";
     return `📍 ${Number(meta.latitude).toFixed(5)}, ${Number(meta.longitude).toFixed(5)}${meta.accuracy?` ±${Math.round(meta.accuracy)}m`:""}`;
   }
 
@@ -406,9 +404,30 @@
     return `DUE ${esc(formatFieldDate(item?.dueDate)).toUpperCase()}`;
   }
 
+  function cardHeadline(item){
+    const desc=String(item?.description||"").trim();
+    const location=[item?.building,item?.level,item?.unit,item?.room].filter(Boolean).join(" · ");
+    const empty=!desc||desc==="No description"||desc===location;
+    if(!empty)return desc;
+    const typeWord=String(typeLabels[item?.type]||item?.type||"item").toLowerCase();
+    const trade=String(item?.trade||"").trim();
+    return trade?`${trade} ${typeWord}`:`${typeWord.charAt(0).toUpperCase()}${typeWord.slice(1)}`;
+  }
+
+  window.siteStatus=function(item){
+    if(overdue(item))return {label:"OVERDUE",tone:"overdue"};
+    if(["closed","complete"].includes(item.status))return {label:"CLOSED",tone:"closed"};
+    if(item.status==="rejected")return {label:"REJECTED",tone:"rejected"};
+    if(["ready_for_review","under_inspection"].includes(item.status))return {label:"READY",tone:"ready"};
+    if(item.status==="in_progress")return {label:"IN PROGRESS",tone:"in_progress"};
+    if(item.status==="issued")return {label:"ISSUED",tone:"issued"};
+    return {label:"CAPTURED",tone:"captured"};
+  };
+
   const baseItemCard=itemCard;
   itemCard=function(i){
-    const html=baseItemCard(i);
+    let html=baseItemCard(i);
+    if(html.includes("cr-card-desc"))html=html.replace(/<div class="cr-card-desc">[^<]*<\/div>/,`<div class="cr-card-desc">${esc(cardHeadline(i))}</div>`);
     if(!html.includes("cr-card-date")&&!html.includes("cr-card-meta"))return html;
     return html.replace(/DUE [^<]+/g,cardDueText(i)).replace(/Due \d{4}-\d{2}-\d{2}/g,`Due ${esc(formatFieldDate(i.dueDate))}`);
   };
@@ -445,7 +464,8 @@
 
   function previewFigure(src,meta,index,mode){
     const safeTitle=mode==="edit"?"Retrospective evidence":"Issue evidence";
-    return `<figure data-photo-index="${index}"><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})"><figcaption class="photo-caption">${esc(geoLabel(meta))}</figcaption><div class="photo-tools"><button class="btn alt" type="button" onclick="markupEvidencePhoto('${mode}',${index})">Mark up</button><button class="btn alt" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
+    const caption=geoLabel(meta);
+    return `<figure data-photo-index="${index}"><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})">${caption?`<figcaption class="photo-caption">${esc(caption)}</figcaption>`:""}<div class="photo-tools"><button class="btn alt" type="button" onclick="markupEvidencePhoto('${mode}',${index})">Mark up</button><button class="btn alt" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
   }
 
   function updatePhotoCount(){
@@ -670,6 +690,7 @@
       .replace("Start with evidence. Defects and client defects require at least one photo.", "Take a photo first. Add a short note, then save.")
       .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
       .replace('onclick="walkMode=!walkMode;render()"','onclick="toggleWalkCapture()"')
+      .replace(">Walk Capture</button>",'>Walk mode</button>')
       .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`);
     setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews()},0);
     return html;
@@ -790,12 +811,18 @@
   const originalShowItem=showItem;
   showItem=function(id){
     originalShowItem(id);const i=state.items.find(x=>x.id===id),cards=[...document.querySelectorAll("#modalBody .native-card")],original=cards.find(c=>c.querySelector("h2")?.textContent==="Original Issue");
+    const summary=cards[0];
+    if(summary&&i){
+      const status=siteStatus(i);
+      const badge=summary.querySelector(".spread .badge");
+      if(badge){badge.className=`badge ${status.tone}`;badge.textContent=status.label}
+    }
     const historyCard=cards.find(c=>c.querySelector("h2")?.textContent==="Assignment & Issue History");
     if(historyCard){
       const rows=issueHistoryForItem(i);
       historyCard.innerHTML=`<h2>Assignment & Issue History</h2>${rows.length?rows.map(e=>`<div class="event"><b>${e.reissue?"Re-issued":"Issued"} to ${esc(e.to)}</b><div class="meta">${esc(e.by||"")} · ${esc(fmt(e.at))}</div>${e.note?`<p>${esc(e.note)}</p>`:""}</div>`).join(""):'<div class="meta">Not yet issued to a subcontractor.</div>'}`;
     }
-    if(original){const photos=[...original.querySelectorAll(".photo-preview img")];photos.forEach((img,n)=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,`${i.code} · Original issue ${n+1}`,null);const meta=i.originalPhotoMeta?.[n];if(meta){const cap=document.createElement("div");cap.className="photo-caption";cap.textContent=geoLabel(meta);img.insertAdjacentElement("afterend",cap)}});const add=document.createElement("button");add.className="btn alt small";add.textContent="＋ Add / mark up photos";add.onclick=()=>editItemForm(id);original.querySelector("h2")?.insertAdjacentElement("afterend",add)}
+    if(original){const photos=[...original.querySelectorAll(".photo-preview img")];photos.forEach((img,n)=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,`${i.code} · Original issue ${n+1}`,null);const meta=i.originalPhotoMeta?.[n];const caption=geoLabel(meta);if(caption){const cap=document.createElement("div");cap.className="photo-caption";cap.textContent=caption;img.insertAdjacentElement("afterend",cap)}});const add=document.createElement("button");add.className="btn alt small";add.textContent="＋ Add / mark up photos";add.onclick=()=>editItemForm(id);original.querySelector("h2")?.insertAdjacentElement("afterend",add)}
     document.querySelectorAll("#modalBody .evidence img").forEach(img=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,img.alt||"Evidence photo",null)});
   };
 
@@ -858,7 +885,7 @@
   function commandCode(value){const raw=String(value||"").trim().toUpperCase();return raw.includes("-")?raw:raw.replace(/^([A-Z]+)(\d+)$/,"$1-$2")}
   function commandFindItem(code){const key=commandKey(code);return (state.items||[]).find(item=>commandKey(item.code)===key)}
   function commandFindSubcontractor(name){const wanted=commandKey(name),subs=state.settings?.subcontractors||[];return subs.find(sub=>commandKey(sub)===wanted)||subs.find(sub=>commandKey(sub).includes(wanted)||wanted.includes(commandKey(sub)))||cleanCommandText(name)}
-  function commandStatus(value){const key=String(value||"").toLowerCase();if(["open","captured"].includes(key))return "Captured";if(key==="issued")return "Issued";if(key==="ready")return "Ready";if(key==="closed")return "Closed";if(key==="overdue")return "Overdue";if(key==="rejected")return "Rejected";return "All"}
+  function commandStatus(value){const key=String(value||"").toLowerCase();if(["open","captured"].includes(key))return "Captured";if(key==="issued")return "Issued";if(["in progress","in_progress","inprogress"].includes(key))return "In Progress";if(key==="ready")return "Ready";if(key==="closed")return "Closed";if(key==="overdue")return "Overdue";if(key==="rejected")return "Rejected";return "All"}
   function commandPreviewText(value){
     const q=cleanCommandText(value);
     if(!q)return "Run field commands or search the closeout register.";
@@ -892,7 +919,7 @@
     }
     const find=q.match(/^(?:find|show|search)\s+(?:all\s+)?(?:(open|captured|issued|ready|closed|overdue|rejected)\s+)?(?:items?|defects?|works?)?\s*(.*)$/i);
     if(find){closeModal();openDashboardSearch(cleanCommandText(find[2]),commandStatus(find[1]));return}
-    if(/^capture|new defect|new item/i.test(q)){closeModal();go("capture");return}
+    if(/^capture|new defect|new item/i.test(q)){closeModal();quickCapture();return}
     if(/^review/i.test(q)){closeModal();go("review");return}
     closeModal();openDashboardSearch(q,"All");
   };
@@ -903,30 +930,27 @@
   statusMatch=function(i,s){
     if(s==="All")return true;
     if(s==="Captured")return i.status==="open"&&!overdue(i);
-    if(s==="Issued")return ["issued","in_progress"].includes(i.status)&&!overdue(i);
+    if(s==="Issued")return i.status==="issued"&&!overdue(i);
+    if(s==="In Progress")return i.status==="in_progress"&&!overdue(i);
     if(s==="Ready")return ["ready_for_review","under_inspection"].includes(i.status)&&!overdue(i);
     if(s==="Rejected")return i.status==="rejected";
     if(s==="Overdue")return overdue(i);
     if(s==="Closed")return ["closed","complete"].includes(i.status);
     return true;
   };
+  const STATUS_FILTER_CHIPS=["All","Captured","Issued","In Progress","Ready","Rejected","Overdue","Closed"];
+  let itemFiltersOpen=false;
+  function itemFilterActiveCount(){let n=0;if(itemProjectScope!=="active")n++;if(itemBuildingValue)n++;if(itemFocusValue)n++;return n}
+  function itemFilterButton(){const n=itemFilterActiveCount();return `<button type="button" class="btn alt small item-filter-btn" onclick="toggleItemFilters()" aria-expanded="${itemFiltersOpen?"true":"false"}" aria-controls="itemFilterPanel">Filter${n?` · ${n}`:""}</button>`}
+  window.toggleItemFilters=function(){itemFiltersOpen=!itemFiltersOpen;const panel=$("#itemFilterPanel");if(panel)panel.hidden=!itemFiltersOpen;const btn=document.querySelector(".item-filter-btn");if(btn)btn.setAttribute("aria-expanded",String(itemFiltersOpen))};
   const originalItemsView=itemsView;
   itemsView=function(){
     let html=originalItemsView();
-    const chips=["All","Captured","Issued","Ready","Rejected","Overdue","Closed"].map(v=>`<button class="filter-chip light ${v===itemStatusFilter?'active':''}" data-value="${v}" onclick="setFilter(this,'status')">${v}</button>`).join("");
-    html=html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div></div><div class="screen-scroll">`);
-    html=html.replace('<div class="screen-title">Items</div>','<div class="items-header-copy"><div class="screen-title">Items</div><button type="button" class="btn small quick-capture-inline" onclick="quickCapture()">Quick Capture</button></div>');
+    const chips=STATUS_FILTER_CHIPS.map(v=>`<button class="filter-chip light ${v===itemStatusFilter?'active':''}" data-value="${v}" onclick="setFilter(this,'status')">${v}</button>`).join("");
+    html=html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div><div class="item-filter-row">${itemFilterButton()}</div><div id="itemFilterPanel" class="item-filter-panel" ${itemFiltersOpen?"":"hidden"}>${itemFocusControls()}</div></div><div class="screen-scroll">`);
+    html=html.replace('<div class="screen-title">Items</div>','<div class="items-header-copy"><div class="screen-title">Items</div><button type="button" class="btn small quick-capture-inline" onclick="quickCapture()">Walk Capture</button></div>');
     return html;
   };
-
-  function siteStatus(item){
-    if(overdue(item))return {label:"OVERDUE",tone:"overdue"};
-    if(["closed","complete"].includes(item.status))return {label:"CLOSED",tone:"closed"};
-    if(item.status==="rejected")return {label:"REJECTED / RE-ISSUE",tone:"rejected"};
-    if(["ready_for_review","under_inspection"].includes(item.status))return {label:"READY",tone:"ready"};
-    if(["issued","in_progress"].includes(item.status))return {label:"ISSUED",tone:"issued"};
-    return {label:"CAPTURED",tone:"captured"};
-  }
   const cardActionLocks=new Set();
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
 
@@ -940,14 +964,14 @@
     const perfRow=(r)=>{const pct=r.total?Math.round(r.closed/r.total*100):0;return `<button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(r.name)}'))"><span><strong>${esc(r.name)}</strong><small>${r.open} open · ${r.closed}/${r.total} closed${r.overdue?` · ${r.overdue} overdue`:""}</small></span><span class="dashboard-score">${pct}%</span><span class="dashboard-bar"><span style="width:${pct}%"></span></span></button>`};
     const schedule=todayDue.length?todayDue.slice(0,4).map(i=>`<button class="schedule-item" onclick="showItem('${i.id}')"><b>${esc(i.code)} · ${esc(i.trade||"No trade")}</b><small>${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")} · ${esc(i.subcontractor||"Unassigned")}</small></button>`).join(""):`<div class="schedule-item"><b>No items due today</b><small>Good breathing room — keep capture moving.</small></div>`;
     const next=active.sort((a,b)=>(overdue(a)?0:a.status==="ready_for_review"?1:a.status==="open"?2:3)-(overdue(b)?0:b.status==="ready_for_review"?1:b.status==="open"?2:3)||a.dueDate.localeCompare(b.dueDate)).slice(0,4);
-    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" onclick="go('items')">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button><section class="native-card dashboard-hero"><div class="spread"><div><h2>Closeout control room</h2><p class="meta">Live subcontractor, trade and schedule performance for ${esc(p)}.</p></div><button class="btn alt small" onclick="openHomeBucket('all')">All items</button></div><div class="gamify-strip"><span><b>${closeoutPct}%</b> closeout rate</span><span><b>${activityPct}%</b> activity today</span><span><b>${topSub?esc(topSub.name):"—"}</b> most open defects</span></div></section><div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><section class="dashboard-board"><div class="dashboard-panel"><h3>Subcontractor performance</h3>${subPerf.length?subPerf.map(perfRow).join(""):`<p class="meta">No subcontractor assignments yet.</p>`}</div><div class="dashboard-panel"><h3>Trade pressure</h3>${tradePerf.length?tradePerf.map(perfRow).join(""):`<p class="meta">No trade data yet.</p>`}</div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Today's schedule</h3><div class="dashboard-schedule">${schedule}</div></div><div class="dashboard-panel"><h3>Quick focus</h3><button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(topTrade?.name||"")}'))"><span><strong>${topTrade?esc(topTrade.name):"No trade pressure"}</strong><small>Highest open trade workload</small></span><span class="dashboard-score">${topTrade?topTrade.open:0}</span></button><button class="dashboard-row" onclick="go('reports')"><span><strong>${closed.length}/${assigned.length||items.length} closed</strong><small>Closeout progress across assigned work</small></span><span class="dashboard-score">${closeoutPct}%</span></button></div></section><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list">${next.map(itemCard).join("")||`<div class="native-card empty">✓<br><b>All clear on ${esc(p)}</b><br>Nothing open right now.</div>`}</div></div>`;
+    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" type="button" onclick="go('items')" aria-label="Search items">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button><section class="native-card dashboard-hero"><div class="spread"><div><h2>Closeout control room</h2><p class="meta">Live subcontractor, trade and schedule performance for ${esc(p)}.</p></div><button class="btn alt small" onclick="openHomeBucket('all')">All items</button></div><div class="gamify-strip"><span><b>${closeoutPct}%</b> closeout rate</span><span><b>${activityPct}%</b> activity today</span><span><b>${topSub?esc(topSub.name):"—"}</b> most open defects</span></div></section><div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><section class="dashboard-board"><div class="dashboard-panel"><h3>Subcontractor performance</h3>${subPerf.length?subPerf.map(perfRow).join(""):`<p class="meta">No subcontractor assignments yet.</p>`}</div><div class="dashboard-panel"><h3>Trade pressure</h3>${tradePerf.length?tradePerf.map(perfRow).join(""):`<p class="meta">No trade data yet.</p>`}</div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Today's schedule</h3><div class="dashboard-schedule">${schedule}</div></div><div class="dashboard-panel"><h3>Quick focus</h3><button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(topTrade?.name||"")}'))"><span><strong>${topTrade?esc(topTrade.name):"No trade pressure"}</strong><small>Highest open trade workload</small></span><span class="dashboard-score">${topTrade?topTrade.open:0}</span></button><button class="dashboard-row" onclick="go('reports')"><span><strong>${closed.length}/${assigned.length||items.length} closed</strong><small>Closeout progress across assigned work</small></span><span class="dashboard-score">${closeoutPct}%</span></button></div></section><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list">${next.map(itemCard).join("")||`<div class="native-card empty">✓<br><b>All clear on ${esc(p)}</b><br>Nothing open right now.</div>`}</div></div>`;
   };
 
   const commandDashboardView=dashboardView;
   dashboardView=function(){
     let html=commandDashboardView();
     html=html.replace(`onclick="go('capture')"`,`onclick="quickCapture()"`);
-    html=html.replace("<b>Capture Item</b><small>Photo, voice-to-note or walk capture</small>","<b>Quick Capture</b><small>Photo first · walk the site · save and next</small>");
+    html=html.replace("<b>Capture Item</b><small>Photo, voice-to-note or walk capture</small>","<b>Walk Capture</b><small>Photo first · add a note · save</small>");
     if(matchMedia("(max-width:1023px)").matches)html=html.replace(/<form class="command-home[\s\S]*?<\/form>/,"");
     return html.includes("command-home")?html:html.replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
   };
@@ -1011,13 +1035,37 @@
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   };
+  function labelIconButtons(){
+    const infer=(btn)=>{
+      if(btn.getAttribute("aria-label")||btn.getAttribute("title"))return;
+      const text=(btn.textContent||"").replace(/\s+/g," ").trim();
+      const onclick=btn.getAttribute("onclick")||"";
+      if(btn.classList.contains("circle-btn")||text==="⌕")return btn.setAttribute("aria-label","Search items");
+      if(btn.closest(".back-header")&&text==="‹")return btn.setAttribute("aria-label","Back");
+      if(text==="⌫"||onclick.includes("deletePlan"))return btn.setAttribute("aria-label","Delete plan");
+      if(text==="×"&&btn.closest(".setup-chip"))return btn.setAttribute("aria-label","Remove");
+      if(text==="+"&&onclick.includes("addProject"))return btn.setAttribute("aria-label","Add project");
+      if(text==="+"&&onclick.includes("addSetup"))return btn.setAttribute("aria-label",`Add ${btn.closest("section")?.querySelector("h2")?.textContent?.toLowerCase()||"item"}`);
+      if(text==="✎"||onclick.includes("editItemForm"))return btn.setAttribute("aria-label","Edit item");
+      if(btn.classList.contains("close")&&onclick.includes("closeModal"))return;
+      if(!text||/^(⌕|‹|⌫|✎|×|\+|⌄|›|•••|▥|▤|⌂|✓|⚙|▧|⌖)$/.test(text))btn.setAttribute("aria-label",text==="+"?"Add":text==="×"?"Remove":"Action");
+    };
+    document.querySelectorAll("button").forEach(infer);
+    document.querySelectorAll("label.header-pill input[type=file]").forEach(input=>{
+      const label=input.closest("label.header-pill");
+      if(label&&!label.getAttribute("aria-label"))label.setAttribute("aria-label","Add plan");
+    });
+  }
+  const baseSubHeader=subHeader;
+  subHeader=function(title){return baseSubHeader(title).replace('<button onclick="go(\'more\')">‹</button>','<button type="button" onclick="go(\'more\')" aria-label="Back">‹</button>')};
   const originalRender=render;
   render=function(){
     document.body.dataset.route=route;applyTheme();
-    if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();updateOfflinePill();return}
+    if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();return}
     originalRender();renderMobileNav();renderDesktopNav();
     if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
     mountQuickCaptureFab();
+    labelIconButtons();
     updateOfflinePill();
   };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
@@ -1090,7 +1138,7 @@
   window.setItemBuildingValue=function(value){itemBuildingValue=value;itemFocusValue="";render()};
   window.setItemFocusValue=function(value){itemFocusValue=value;const [mode]=focusTokenParts();if(mode)itemFocusMode=mode;filterItems()};
   const focusedItemsView=itemsView;
-  itemsView=function(){const cfg=state.settings.projectConfigs?.[state.settings.activeProject]||{};itemProjectScope=cfg.itemsProjectScope||itemProjectScope||"active";itemFocusMode=cfg.itemsFocusMode||itemFocusMode||"level";const html=focusedItemsView();return html.replace("</div></div><div class=\"screen-scroll\">",`</div>${itemFocusControls()}</div><div class="screen-scroll">`)};
+  itemsView=function(){const cfg=state.settings.projectConfigs?.[state.settings.activeProject]||{};itemProjectScope=cfg.itemsProjectScope||itemProjectScope||"active";itemFocusMode=cfg.itemsFocusMode||itemFocusMode||"level";return focusedItemsView()};
   filterItems=function(){const search=$("#search");if(!search)return;const q=search.value.toLowerCase();const [focusMode,focusValue]=focusTokenParts();const list=state.items.filter(i=>{const focusMatch=!focusValue||String(i[focusMode]||"")===focusValue;return scopeMatches(i)&&(!itemBuildingValue||i.building===itemBuildingValue)&&focusMatch&&(itemTypeFilter==="all"||i.type===itemTypeFilter)&&statusMatch(i,itemStatusFilter)&&(!q||itemSearchHaystack(i).includes(q))}).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$("#itemCount").textContent=`${list.length} item${list.length===1?"":"s"}`;$("#itemList").innerHTML=list.map(itemCard).join("")||'<div class="empty">No items match<br><span class="meta">Try a different project, building, focus area or capture a new item.</span></div>'};
   window.saveItemsProjectScope=async function(scope){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsProjectScope=scope;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items project scope saved")};
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};

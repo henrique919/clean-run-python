@@ -76,14 +76,14 @@ TYPE_LABEL: dict[ItemType, str] = {
 }
 
 STATUS_LABEL: dict[ItemStatus, str] = {
-    ItemStatus.OPEN: "Open",
+    ItemStatus.OPEN: "Captured",
     ItemStatus.ISSUED: "Issued",
     ItemStatus.IN_PROGRESS: "In Progress",
-    ItemStatus.READY_FOR_REVIEW: "Ready for Review",
-    ItemStatus.UNDER_INSPECTION: "Under Inspection",
+    ItemStatus.READY_FOR_REVIEW: "Ready",
+    ItemStatus.UNDER_INSPECTION: "Ready",
     ItemStatus.REJECTED: "Rejected",
     ItemStatus.CLOSED: "Closed",
-    ItemStatus.COMPLETE: "Complete",
+    ItemStatus.COMPLETE: "Closed",
 }
 
 CODE_PREFIX: dict[ItemType, str] = {

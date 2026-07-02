@@ -201,10 +201,28 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 }
 .cr-item-card.status-captured{--rail:#fff}
 .cr-item-card.status-issued{--rail:#D99A21}
+.cr-item-card.status-in_progress{--rail:#C27803}
 .cr-item-card.status-overdue{--rail:#B42318}
 .cr-item-card.status-ready{--rail:#1D4ED8}
 .cr-item-card.status-closed{--rail:#16A34A}
 .cr-item-card.status-rejected{--rail:#C026D3}
+.cr-card-status.in_progress{background:#C27803!important;border-color:#C27803!important;color:#fff!important}
+.cr-card-status.ready{background:#1D4ED8!important;border-color:#1D4ED8!important}
+.cr-card-status.overdue{background:#B42318!important;border-color:#B42318!important}
+.cr-card-status.closed{background:#16A34A!important;border-color:#16A34A!important}
+.cr-card-status.issued{background:#D99A21!important;border-color:#D99A21!important;color:#121619!important}
+.badge.captured{background:#ECEFF2;color:#344054;border:1px solid #D0D5DD}
+.badge.issued{background:#FFF4DF;color:#8A5A00;border:1px solid #F0D7A4}
+.badge.in_progress{background:#FFF0E0;color:#9A4A00;border:1px solid #F0D0A8}
+.badge.ready{background:#E8F0FF;color:#1D4ED8;border:1px solid #BFD4FF}
+.badge.overdue{background:#FDECEC;color:#8B1E1E;border:1px solid #F5C2C2}
+.badge.closed{background:#EAFBF1;color:#0B6E36;border:1px solid #BFE8D0}
+.badge.rejected{background:#FDECEC;color:#8B1E1E;border:1px solid #F5C2C2}
+.item-filter-row{display:flex;justify-content:flex-start;padding:0 16px 10px}
+.item-filter-panel{border-top:1px solid #D0D5DD;padding:10px 16px 12px;background:#F8FAFC}
+.item-filter-panel[hidden]{display:none!important}
+.item-filter-panel .focus-controls{padding-top:0;grid-template-columns:1fr}
+@media(min-width:640px){.item-filter-panel .focus-controls{grid-template-columns:minmax(180px,260px) minmax(180px,260px) minmax(220px,1fr)}}
 .cr-card-band{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(32,37,43,.8);color:#fff;padding:6px 14px}
 .cr-card-band{border-top:var(--rail-width) solid var(--rail);box-shadow:none}
 .cr-card-band>div{display:flex;align-items:center;gap:9px;min-width:0}
