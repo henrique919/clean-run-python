@@ -15,8 +15,8 @@ class Phase2LocalChecklist(unittest.TestCase):
         self.enh = ENHANCEMENTS.read_text(encoding="utf-8")
         self.css = STYLES.read_text(encoding="utf-8")
 
-    def test_build_tag_cards38(self) -> None:
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards38"', self.enh)
+    def test_build_tag_cards39(self) -> None:
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards39"', self.enh)
 
     def test_defaults_strip_containment(self) -> None:
         for marker in (
@@ -48,7 +48,8 @@ class Phase2LocalChecklist(unittest.TestCase):
 
     def test_voice_draft_strip_hook(self) -> None:
         self.assertIn("captureDraftHighlights", self.enh)
-        self.assertIn("baseDraftVoice", self.enh)
+        self.assertIn("captureDescriptionEdited", self.enh)
+        self.assertIn("preserveDescription", self.enh)
 
     def test_ios_compression_path_untouched(self) -> None:
         for marker in (
