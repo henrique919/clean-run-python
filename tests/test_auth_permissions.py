@@ -132,8 +132,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards39", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards39", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards40", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards40", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
@@ -223,9 +223,9 @@ class AuthPermissionTests(unittest.TestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(payload["created_by"], "site.manager@cleanrun.local")
-        self.assertEqual(payload["audit_events"][0]["user_id"], "dev-site-manager")
-        self.assertEqual(payload["audit_events"][0]["email"], "site.manager@cleanrun.local")
+        self.assertEqual(payload["createdBy"], "site.manager@cleanrun.local")
+        self.assertEqual(payload["auditEvents"][0]["user_id"], "dev-site-manager")
+        self.assertEqual(payload["auditEvents"][0]["email"], "site.manager@cleanrun.local")
 
     def test_reports_require_project_access(self) -> None:
         anonymous = self.client.get("/api/reports/handover")
