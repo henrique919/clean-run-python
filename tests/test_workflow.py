@@ -98,6 +98,41 @@ class WorkflowApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
+    def test_in_progress_action_alias_matches_start(self) -> None:
+        item = self.store.issue_item(self.store.snapshot().items[0].id, to="ASTW Tiling", by="Site Manager")
+        start = self.client.post(
+            f"/api/items/{item.id}/actions/start",
+            headers=bearer("dev-site-manager"),
+            json={"by": "Site Manager"},
+        )
+        self.assertEqual(start.status_code, 200)
+        self.assertEqual(start.json()["status"], "in_progress")
+
+        item2 = self.store.create_item(
+            ItemCreate(
+                project="Jura Noosa",
+                building="B1",
+                level="Level 1",
+                unit="U103",
+                room="Bathroom",
+                trade="Tiling",
+                subcontractor="ASTW Tiling",
+                due_date="2026-07-01",
+                description="Alias route test",
+                original_photos=["seed://photo"],
+                created_by="Site Manager",
+            )
+        )
+        item2 = self.store.issue_item(item2.id, to="ASTW Tiling", by="Site Manager")
+        alias = self.client.post(
+            f"/api/items/{item2.id}/actions/in-progress",
+            headers=bearer("dev-site-manager"),
+            json={"by": "Site Manager"},
+        )
+        self.assertEqual(alias.status_code, 200)
+        self.assertEqual(alias.json()["status"], "in_progress")
+        self.assertEqual(alias.json()["status"], start.json()["status"])
+
 
 class StorageValidationTests(unittest.TestCase):
     def test_heic_upload_returns_clear_error(self) -> None:

@@ -34,7 +34,9 @@ Core backend modules:
 
 ## Legacy Copies
 
-Historical exports remain in the repo for reference. Do not delete or mix fixes across them unless a deployment is explicitly pointed at one:
+**Plans UI:** Intentionally hidden in Render3 (desktop nav and More menu). Deep links to `plans` show a coming-soon message. Backend `/api/plans` routes are not implemented yet; `/api/state` returns `"plans": []`.
+
+Expected root FastAPI checks:
 
 - `CleanRun-IQ-Full-App-Render2/`
 - `CleanRun-IQ-FastAPI-Render/`
