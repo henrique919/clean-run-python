@@ -18,7 +18,7 @@ class StoragePathTests(unittest.TestCase):
             def upload(self, *, path, file, file_options):
                 uploaded["path"] = path
 
-            def create_signed_url(self, path, ttl):
+            def create_signed_url(self, path, ttl, options=None):
                 return {"signedURL": f"https://signed.example/{path}?ttl={ttl}"}
 
         class FakeStorage:
@@ -44,8 +44,11 @@ class StoragePathTests(unittest.TestCase):
 
     def test_signed_storage_urls_are_normalized_and_resigned(self) -> None:
         class FakeBucket:
-            def create_signed_url(self, path, ttl):
-                return {"signedURL": f"https://fresh.example/{path}"}
+            def create_signed_url(self, path, ttl, options=None):
+                options = options or {}
+                transform = options.get("transform")
+                suffix = f"?w={transform['width']}" if transform else ""
+                return {"signedURL": f"https://fresh.example/{path}{suffix}"}
 
         class FakeStorage:
             def from_(self, bucket):
@@ -59,6 +62,27 @@ class StoragePathTests(unittest.TestCase):
         self.assertEqual(normalize_photo(expired), "projects/jura/photo.jpg")
         with patch("app.storage.get_supabase_client", return_value=FakeClient()):
             self.assertEqual(resolve_photo_url(expired), "https://fresh.example/projects/jura/photo.jpg")
+            from app.storage import resolve_thumbnail_url
+
+            self.assertEqual(
+                resolve_thumbnail_url("projects/jura/photo.jpg"),
+                "https://fresh.example/projects/jura/photo.jpg?w=200",
+            )
+
+    def test_resolve_photo_url_returns_none_when_signing_fails(self) -> None:
+        class FailingBucket:
+            def create_signed_url(self, path, ttl, options=None):
+                raise RuntimeError("signing failed")
+
+        class FailingStorage:
+            def from_(self, bucket):
+                return FailingBucket()
+
+        class FailingClient:
+            storage = FailingStorage()
+
+        with patch("app.storage.get_supabase_client", return_value=FailingClient()):
+            self.assertIsNone(resolve_photo_url("projects/jura/photo.jpg"))
 
     def test_storage_folder_includes_project_item_and_evidence_type(self) -> None:
         item = Item(

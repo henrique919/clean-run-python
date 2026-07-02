@@ -34,7 +34,7 @@ from app.permissions import (
 from app.services import items as item_service
 from app.services import projects as project_service
 from app.services import reports as report_service
-from app.storage import StorageUploadError, resolve_photo_url
+from app.storage import StorageUploadError, resolve_photo_url, resolve_thumbnail_url
 from app.validation import ValidationError
 from app.workflow import WorkflowError
 
@@ -224,13 +224,13 @@ def sign_item_photos(item: Item) -> Item:
     original_photos = [resolve_photo_url(photo) or photo for photo in item.original_photos]
     rectification_evidence = [
         evidence.model_copy(
-            update={"photo": resolve_photo_url(evidence.photo) if evidence.photo else evidence.photo}
+            update={"photo": (resolve_photo_url(evidence.photo) or evidence.photo) if evidence.photo else evidence.photo}
         )
         for evidence in item.rectification_evidence
     ]
     closeout_evidence = [
         evidence.model_copy(
-            update={"photo": resolve_photo_url(evidence.photo) if evidence.photo else evidence.photo}
+            update={"photo": (resolve_photo_url(evidence.photo) or evidence.photo) if evidence.photo else evidence.photo}
         )
         for evidence in item.closeout_evidence
     ]
@@ -268,6 +268,9 @@ def camel_item(item) -> dict[str, object]:
     for source, target in rename.items():
         if source in payload:
             payload[target] = payload.pop(source)
+    payload["originalPhotoThumbnails"] = [
+        resolve_thumbnail_url(photo) or resolve_photo_url(photo) or photo for photo in item.original_photos
+    ]
     return payload
 
 

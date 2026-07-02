@@ -95,6 +95,17 @@ def test_render3_logout_control_present():
     assert "Sign out" in enhancements
 
 
+def test_render3_phase1_field_speed_ux_markers():
+    """Phase 1 speed UX: quick capture, sticky location, scan cards, capture-next."""
+    enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
+
+    assert 'CLEANRUN_FRONTEND_BUILD="cards28"' in enhancements
+    assert "window.openReport=async function" in enhancements
+    assert "Speak Item" in enhancements or "Speak Item" in (ROOT / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+    assert "Draft form from note" in (ROOT / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
+    assert "cr-scan-card" not in enhancements
+
+
 def test_render3_demo_reset_hidden_in_production_markup():
     """Demo reset must be gated by isProductionApp(); production shows disabled label."""
     index = INDEX.read_text(encoding="utf-8")

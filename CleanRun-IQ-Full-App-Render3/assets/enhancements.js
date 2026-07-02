@@ -1,17 +1,20 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards22";
-  document.documentElement.dataset.cleanrunBuild="cards22";
+  window.CLEANRUN_FRONTEND_BUILD="cards28";
+  document.documentElement.dataset.cleanrunBuild="cards28";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
   const DB_NAME="cleanrun-iq-offline";
   const THEME_KEY="cleanrun-theme";
   const LAST_CAPTURE_KEY="cleanrun-last-capture-fields";
+  const WALK_CONTEXT_KEY="cleanrun-walk-context-v1";
   let capturePhotoMeta=[];
+  let capturePhotoPreviewUrls=[];
   let editPhotos=[];
   let editPhotoMeta=[];
+  let editPhotoPreviewUrls=[];
   let selectedEditItem="";
   let lastChosenPhotoMeta=null;
   let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[]};
@@ -28,6 +31,20 @@
   const offlineId=()=>`offline-${crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random().toString(16).slice(2)}`;
   const MAX_PHOTO_EDGE=1600;
   const PHOTO_QUALITY=.72;
+  const PHOTO_SKIP_BYTES=900000;
+
+  const yieldToMain=()=>new Promise(resolve=>{
+    if(typeof requestAnimationFrame==="function")requestAnimationFrame(()=>setTimeout(resolve,0));
+    else setTimeout(resolve,0);
+  });
+
+  function revokePreviewUrl(url){
+    if(url&&String(url).startsWith("blob:"))try{URL.revokeObjectURL(url)}catch{}
+  }
+
+  function revokePreviewUrls(urls){
+    (urls||[]).forEach(revokePreviewUrl);
+  }
 
   function readFileData(file){
     return new Promise((resolve,reject)=>{
@@ -38,27 +55,71 @@
     });
   }
 
-  function loadImage(src){
+  function blobToDataUrl(blob){
     return new Promise((resolve,reject)=>{
-      const img=new Image();
-      img.onload=()=>resolve(img);
-      img.onerror=reject;
-      img.src=src;
+      const reader=new FileReader();
+      reader.onload=()=>resolve(reader.result);
+      reader.onerror=()=>reject(reader.error);
+      reader.readAsDataURL(blob);
     });
   }
 
+  function canvasToJpegBlob(canvas,quality=PHOTO_QUALITY){
+    return new Promise((resolve,reject)=>{
+      canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Could not compress image.")), "image/jpeg", quality);
+    });
+  }
+
+  async function decodeImageSource(file,objectUrl){
+    if(typeof createImageBitmap==="function"){
+      try{
+        const bitmap=await createImageBitmap(file);
+        return {width:bitmap.width,height:bitmap.height,draw:(ctx,x,y,w,h)=>{ctx.drawImage(bitmap,x,y,w,h);bitmap.close?.()}};
+      }catch{}
+    }
+    const img=await new Promise((resolve,reject)=>{
+      const image=new Image();
+      image.onload=()=>resolve(image);
+      image.onerror=reject;
+      image.src=objectUrl;
+    });
+    return {width:img.naturalWidth,height:img.naturalHeight,draw:(ctx,x,y,w,h)=>ctx.drawImage(img,x,y,w,h)};
+  }
+
+  async function compressImageForUpload(file){
+    if(!file?.type?.startsWith("image/"))return {dataUrl:await readFileData(file),previewUrl:null};
+    const objectUrl=URL.createObjectURL(file);
+    try{
+      await yieldToMain();
+      const decoded=await decodeImageSource(file,objectUrl);
+      const scale=Math.min(1,MAX_PHOTO_EDGE/decoded.width,MAX_PHOTO_EDGE/decoded.height);
+      if(scale>=1&&file.size<PHOTO_SKIP_BYTES){
+        const dataUrl=await readFileData(file);
+        return {dataUrl,previewUrl:URL.createObjectURL(file)};
+      }
+      const width=Math.max(1,Math.round(decoded.width*scale));
+      const height=Math.max(1,Math.round(decoded.height*scale));
+      const canvas=document.createElement("canvas");
+      canvas.width=width;
+      canvas.height=height;
+      const ctx=canvas.getContext("2d",{alpha:false});
+      ctx.fillStyle="#fff";
+      ctx.fillRect(0,0,width,height);
+      decoded.draw(ctx,0,0,width,height);
+      await yieldToMain();
+      const blob=await canvasToJpegBlob(canvas);
+      return {dataUrl:await blobToDataUrl(blob),previewUrl:URL.createObjectURL(blob)};
+    }catch(err){
+      console.warn("[CleanRun] image compression failed; using original",err);
+      const dataUrl=await readFileData(file);
+      return {dataUrl,previewUrl:URL.createObjectURL(file)};
+    }finally{
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   async function fileToUploadData(file){
-    if(!file?.type?.startsWith("image/"))return readFileData(file);
-    const original=await readFileData(file);
-    const img=await loadImage(original);
-    const scale=Math.min(1,MAX_PHOTO_EDGE/img.naturalWidth,MAX_PHOTO_EDGE/img.naturalHeight);
-    if(scale>=1&&file.size<900000)return original;
-    const canvas=document.createElement("canvas");
-    canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
-    canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
-    canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
-    const compressed=canvas.toDataURL("image/jpeg",PHOTO_QUALITY);
-    return compressed.length<original.length?compressed:original;
+    return (await compressImageForUpload(file)).dataUrl;
   }
 
   function setBusyButton(button,label){
@@ -74,15 +135,152 @@
     buttons.forEach(button=>{button.classList.add("is-busy");button.disabled=true;if(button===document.activeElement&&label)button.innerHTML=label});
     return()=>snapshots.forEach(({button,html,disabled})=>{button.classList.remove("is-busy");button.disabled=disabled;button.innerHTML=html});
   }
+  function ensureCaptureDescription(data,voiceText){
+    const text=String(data.description||"").trim();
+    if(text){data.description=text;return data.description}
+    const voice=String(voiceText||"").trim();
+    if(voice){data.description=voice;return data.description}
+    const where=[data.room,data.unit,data.level,data.building].filter(Boolean).join(" · ");
+    data.description=where?`Defect — ${where}`:"Site defect";
+    return data.description;
+  }
+  function itemSearchHaystack(i){
+    return [i.code,i.description,i.building,i.level,i.unit,i.room,i.trade,i.subcontractor,i.status,i.type,labels?.[i.status],typeLabels?.[i.type]].filter(Boolean).join(" ").toLowerCase();
+  }
+  function mergeSavedItem(item){
+    if(!item||!state?.items)return;
+    const idx=state.items.findIndex(x=>x.id===item.id);
+    if(idx>=0)state.items[idx]={...state.items[idx],...item};
+    else state.items.unshift(item);
+    cacheState();
+  }
+  async function refreshStateBackground(){
+    try{state=await api("/api/state");cacheState();updateOfflinePill()}catch{}
+  }
+  window.openReport=async function(reportType,query={}){
+    const params=new URLSearchParams();
+    if(state?.settings?.activeProject)params.set("project",state.settings.activeProject);
+    Object.entries(query||{}).forEach(([key,value])=>{if(value!=null&&String(value).trim())params.set(key,String(value))});
+    const path=`/api/reports/${encodeURIComponent(reportType)}${params.toString()?`?${params}`:""}`;
+    const headers={};
+    if(typeof authToken!=="undefined"&&authToken)headers.Authorization=`Bearer ${authToken}`;
+    toast("Opening report…");
+    try{
+      const res=await fetch(path,{headers,credentials:"same-origin"});
+      if(res.status===401){clearAuthToken();renderLogin("Sign in to continue.");return}
+      if(!res.ok){let message=`Report failed (${res.status})`;try{const data=await res.json();message=data.detail||data.error||message}catch{message=await res.text()||message}throw new Error(message)}
+      const html=await res.text();
+      const url=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));
+      const tab=window.open(url,"_blank");
+      if(!tab){URL.revokeObjectURL(url);return toast("Allow popups to open reports.",true)}
+      setTimeout(()=>URL.revokeObjectURL(url),120000);
+    }catch(err){toast(err.message||"Could not open report.",true)}
+  };
+
   function rememberCaptureFields(data){
     const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,dueDate:data.dueDate,priority:data.priority,type:data.type};
     try{localStorage.setItem(LAST_CAPTURE_KEY,JSON.stringify(keep))}catch{}
+    if(state?.settings?.activeProject){
+      try{
+        const all=JSON.parse(localStorage.getItem(WALK_CONTEXT_KEY)||"{}")||{};
+        all[state.settings.activeProject]={building:keep.building||"",level:keep.level||"",unit:keep.unit||"",room:keep.room||"",trade:keep.trade||"",subcontractor:keep.subcontractor||""};
+        localStorage.setItem(WALK_CONTEXT_KEY,JSON.stringify(all));
+      }catch{}
+    }
   }
+  function readWalkContext(){
+    try{
+      const all=JSON.parse(localStorage.getItem(WALK_CONTEXT_KEY)||"{}")||{};
+      return all[state?.settings?.activeProject]||{};
+    }catch{return {}}
+  }
+  function recentValues(field,limit=4){
+    const project=state?.settings?.activeProject;
+    if(!project)return [];
+    const seen=new Set(),values=[];
+    const push=value=>{const v=String(value||"").trim();if(!v||seen.has(v))return;seen.add(v);values.push(v)};
+    push(readWalkContext()[field]);
+    try{push(JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")[field])}catch{}
+    (state.items||[]).filter(i=>i.project===project).sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||"")).forEach(i=>push(i[field]));
+    return values.slice(0,limit);
+  }
+  function recentChipsRow(label,field,values){
+    if(!values.length)return "";
+    return `<div class="recent-chip-row"><span class="recent-chip-label">${esc(label)}</span>${values.map(v=>`<button type="button" class="recent-chip" onclick="applyRecentField('${field}',decodeURIComponent('${encodeURIComponent(v)}'))">${esc(v)}</button>`).join("")}</div>`;
+  }
+  function locationFieldsMarkup(cfg,values={}){
+    return `<div class="field-list"><label>Project<select name="project">${options(state.settings.projects,values.project||state.settings.activeProject)}</select></label><label>Building *<select name="building" required onchange="updateLocationChip()"><option value="">Select building</option>${options(cfg.buildings||[],values.building||"")}</select></label><label>Level<select name="level" onchange="updateLocationChip()"><option value="">Select level</option>${options(cfg.levels||[],values.level||"")}</select></label><label>Unit / Area *<select name="unit" required onchange="updateLocationChip()"><option value="">Select unit / area</option>${options(cfg.units||[],values.unit||"")}</select></label><label>Room / Location<select name="room" onchange="updateLocationChip()"><option value="">Select room / location</option>${options(cfg.rooms||[],values.room||"")}</select></label></div>`;
+  }
+  function buildLocationSpeedBlock(){
+    const cfg=state.settings.projectConfigs[state.settings.activeProject]||{};
+    const ctx=readWalkContext();
+    let last={};try{last=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{}}catch{}
+    const seed={building:ctx.building||last.building||cfg.buildings?.[0]||"",level:ctx.level||last.level||cfg.levels?.[0]||"",unit:ctx.unit||last.unit||cfg.units?.[0]||"",room:ctx.room||last.room||"",project:state.settings.activeProject};
+    return `<section class="form-card location-speed-card"><div class="spread"><div><h3>Location</h3><p class="meta">Stays set while you walk the site.</p></div><button type="button" class="btn alt small" onclick="toggleLocationDetails()">Change</button></div><button type="button" class="location-context-chip" id="locationContextChip" onclick="toggleLocationDetails()">Set location</button>${recentChipsRow("Recent areas","unit",recentValues("unit"))}${recentChipsRow("Recent buildings","building",recentValues("building"))}<div id="locationDetails" class="location-details hidden">${locationFieldsMarkup(cfg,seed)}</div></section>`;
+  }
+  window.updateLocationChip=function(){
+    const form=$("#app form");if(!form)return;
+    const parts=[form.building?.value,form.level?.value,form.unit?.value,form.room?.value].filter(Boolean);
+    const chip=$("#locationContextChip");
+    if(chip)chip.textContent=parts.length?parts.join(" · "):"Tap to set location";
+  };
+  window.toggleLocationDetails=function(){
+    const panel=$("#locationDetails");
+    if(panel)panel.classList.toggle("hidden");
+  };
+  window.applyRecentField=function(field,value){
+    const form=$("#app form");if(!form?.elements[field])return;
+    form.elements[field].value=value;
+    if(field==="building"||field==="level"||field==="unit"||field==="room")updateLocationChip();
+    toast(`Set ${field} to ${value}`);
+  };
+  window.toggleWalkCapture=function(){
+    walkMode=!walkMode;
+    if(walkMode)sessionStorage.removeItem("walkModeOff");
+    else sessionStorage.setItem("walkModeOff","1");
+    render();
+  };
+  window.quickCapture=function(){
+    sessionStorage.removeItem("walkModeOff");
+    walkMode=true;
+    go("capture");
+  };
   function applyCaptureDefaults(){
     let keep={};try{keep=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{}}catch{}
+    const ctx=readWalkContext();
     const form=$("#app form");if(!form)return;
-    for(const [key,value] of Object.entries(keep)){if(value&&form.elements[key])form.elements[key].value=value}
+    const cfg=state.settings.projectConfigs[state.settings.activeProject]||{};
+    const merged={...keep,...ctx};
+    for(const key of ["project","building","level","unit","room","trade","subcontractor","dueDate","priority","type"]){
+      const value=merged[key]||(key==="building"?cfg.buildings?.[0]:key==="unit"?cfg.units?.[0]:key==="level"?cfg.levels?.[0]:"");
+      if(value&&form.elements[key])form.elements[key].value=value;
+    }
     photoHint?.();toggleRaised?.();
+  }
+  function resetCaptureForNext(){
+    const form=$("#app form");
+    if(form?.description)form.description.value="";
+    if($("#voiceText")){$("#voiceText").value="";captureVoiceCaptured=false;updateCaptureVoiceState()}
+    clearCapturePhotoState();
+    const host=$("#capturePreviews");if(host)host.innerHTML="";
+    updatePhotoCount();
+    applyCaptureDefaults();
+    form?.querySelector('input[type="file"][capture="environment"]')?.focus?.();
+  }
+  function mountQuickCaptureFab(){
+    let fab=$("#quickCaptureFab");
+    if(!fab){
+      fab=document.createElement("button");
+      fab.id="quickCaptureFab";
+      fab.type="button";
+      fab.className="quick-capture-fab";
+      fab.setAttribute("aria-label","Quick Capture");
+      fab.innerHTML='<span class="quick-capture-fab__icon">+</span><span class="quick-capture-fab__label">Quick</span>';
+      fab.onclick=()=>quickCapture();
+      document.body.appendChild(fab);
+    }
+    const hide=!state||route==="capture"||matchMedia("(min-width:1024px)").matches;
+    fab.hidden=hide;
   }
   function preferredTheme(){
     return localStorage.getItem(THEME_KEY)||state?.settings?.theme||"light";
@@ -109,27 +307,95 @@
     });
   }
 
-  async function filesWithMeta(files){
+  async function filesWithMeta(files,onRecord){
     const list=[...files];
-    const [sources,geo]=await Promise.all([Promise.all(list.map(fileToUploadData)),locatePhoto()]);
-    return sources.map((src,n)=>({src,meta:{...geo,fileName:list[n]?.name||`photo-${n+1}.jpg`,mimeType:list[n]?.type||"image/jpeg",compressed:!!list[n]?.type?.startsWith("image/")}}));
+    if(!list.length)return [];
+    const geo=await locatePhoto();
+    const records=[];
+    for(let n=0;n<list.length;n++){
+      const file=list[n];
+      await yieldToMain();
+      const packed=await compressImageForUpload(file);
+      const record={
+        src:packed.dataUrl,
+        previewUrl:packed.previewUrl||packed.dataUrl,
+        meta:{...geo,fileName:file?.name||`photo-${n+1}.jpg`,mimeType:file?.type||"image/jpeg",compressed:!!file?.type?.startsWith("image/")}
+      };
+      records.push(record);
+      onRecord?.(record,n);
+    }
+    return records;
   }
 
   filesToData=async function(files){
-    return Promise.all([...files].map(fileToUploadData));
+    const records=await filesWithMeta(files);
+    return records.map(record=>record.src);
   };
+
+  window.formatFieldDate=function(iso){
+    try{
+      const d=new Date(iso);
+      if(Number.isNaN(d.getTime()))return iso||"";
+      const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      if(/^\d{4}-\d{2}-\d{2}$/.test(String(iso||"").trim()))return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+      const h=d.getHours()%12||12,m=String(d.getMinutes()).padStart(2,"0"),ampm=d.getHours()<12?"am":"pm";
+      return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${h}:${m}${ampm}`;
+    }catch{return iso||""}
+  };
+  fmt=window.formatFieldDate;
+
+  function issueHistoryForItem(item){
+    let rows=[...(item?.issueHistory||[])];
+    if(!rows.length&&item?.auditEvents?.length){
+      rows=item.auditEvents.filter(e=>/^(Re-issued|Issued) to /.test(e.action||"")).map(e=>({
+        at:e.at,to:(e.action||"").replace(/^(Re-issued|Issued) to /,""),by:e.by,reissue:(e.action||"").startsWith("Re-issued"),note:e.note
+      }));
+    }
+    if(!rows.length&&item&&item.status!=="open"&&item.issuedAt){
+      rows=[{at:item.issuedAt,to:item.subcontractor||"",by:item.createdBy,reissue:false}];
+    }
+    return rows;
+  }
+
+  cardPhoto=function(i){
+    const src=(i.originalPhotoThumbnails||i.originalPhotos||[])[0];
+    if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
+    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence" loading="lazy" decoding="async" width="200" height="200">`;
+  };
+
+  fileToData=async function(file){
+    if(file?.type?.startsWith("image/")){try{return await fileToUploadData(file)}catch(e){console.warn("[CleanRun] image compression failed; using original",e)}}
+    return readFileDataUrl(file);
+  };
+
+  function previewSrc(mode,index){
+    if(mode==="capture")return capturePhotoPreviewUrls[index]||capturePhotos[index];
+    if(mode==="edit")return editPhotoPreviewUrls[index]||editPhotos[index];
+    return "";
+  }
 
   function previewFigure(src,meta,index,mode){
     const safeTitle=mode==="edit"?"Retrospective evidence":"Issue evidence";
-    return `<figure><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})"><figcaption class="photo-caption">${esc(geoLabel(meta))}</figcaption><div class="photo-tools"><button class="btn alt" type="button" onclick="markupEvidencePhoto('${mode}',${index})">Mark up</button><button class="btn alt" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
+    return `<figure data-photo-index="${index}"><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})"><figcaption class="photo-caption">${esc(geoLabel(meta))}</figcaption><div class="photo-tools"><button class="btn alt" type="button" onclick="markupEvidencePhoto('${mode}',${index})">Mark up</button><button class="btn alt" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
+  }
+
+  function updatePhotoCount(){
+    const count=$("#photoCount");
+    if(count)count.textContent=capturePhotos.length?`${capturePhotos.length} photo${capturePhotos.length===1?"":"s"} attached`:"No photos attached yet";
+    document.querySelector("[data-photo-card]")?.classList.toggle("needs-photo",capturePhotos.length===0);
+  }
+
+  function appendCapturePreview(index){
+    const host=$("#capturePreviews");
+    if(!host)return;
+    host.insertAdjacentHTML("beforeend",previewFigure(previewSrc("capture",index),capturePhotoMeta[index],index,"capture"));
+    updatePhotoCount();
   }
 
   function renderCapturePreviews(){
     const host=$("#capturePreviews");
-    if(host)host.innerHTML=capturePhotos.map((src,n)=>previewFigure(src,capturePhotoMeta[n],n,"capture")).join("");
-    const count=$("#photoCount");
-    if(count)count.textContent=capturePhotos.length?`${capturePhotos.length} photo${capturePhotos.length===1?"":"s"} attached`:"No photos attached yet";
-    document.querySelector("[data-photo-card]")?.classList.toggle("needs-photo",capturePhotos.length===0);
+    if(host)host.innerHTML=capturePhotos.map((_,n)=>previewFigure(previewSrc("capture",n),capturePhotoMeta[n],n,"capture")).join("");
+    updatePhotoCount();
   }
 
   function renderEditPreviews(){
@@ -137,7 +403,7 @@
     if(!host)return;
     host.innerHTML=editPhotos.map((src,n)=>src.startsWith("seed://")
       ?`<figure><span class="thumb">${seedThumb(src)}</span><figcaption class="photo-caption">Original seeded evidence</figcaption></figure>`
-      :previewFigure(src,editPhotoMeta[n],n,"edit")).join("")||'<span class="meta">No photos attached.</span>';
+      :previewFigure(previewSrc("edit",n),editPhotoMeta[n],n,"edit")).join("")||'<span class="meta">No photos attached.</span>';
   }
 
   window.openEvidencePhoto=function(mode,index){
@@ -149,15 +415,44 @@
     const photos=mode==="edit"?editPhotos:capturePhotos;
     const src=photos[index];
     if(!src||src.startsWith("seed://"))return toast("Seed previews cannot be marked up.",true);
-    openWorkbench(src,"Mark up evidence",data=>{photos[index]=data;mode==="edit"?renderEditPreviews():renderCapturePreviews()});
+    openWorkbench(src,"Mark up evidence",data=>{
+      photos[index]=data;
+      if(mode==="edit"){
+        revokePreviewUrl(editPhotoPreviewUrls[index]);
+        editPhotoPreviewUrls[index]=null;
+        renderEditPreviews();
+      }else{
+        revokePreviewUrl(capturePhotoPreviewUrls[index]);
+        capturePhotoPreviewUrls[index]=null;
+        renderCapturePreviews();
+      }
+    });
   };
   window.removeEvidencePhoto=function(mode,index){
-    if(mode==="edit"){editPhotos.splice(index,1);editPhotoMeta.splice(index,1);renderEditPreviews()}
-    else{capturePhotos.splice(index,1);capturePhotoMeta.splice(index,1);renderCapturePreviews()}
+    if(mode==="edit"){
+      revokePreviewUrl(editPhotoPreviewUrls[index]);
+      editPhotos.splice(index,1);editPhotoMeta.splice(index,1);editPhotoPreviewUrls.splice(index,1);renderEditPreviews();
+    }else{
+      revokePreviewUrl(capturePhotoPreviewUrls[index]);
+      capturePhotos.splice(index,1);capturePhotoMeta.splice(index,1);capturePhotoPreviewUrls.splice(index,1);renderCapturePreviews();
+    }
   };
   window.addEditPhotos=async function(input){
-    const records=await filesWithMeta(input.files||[]);
-    editPhotos.push(...records.map(r=>r.src));editPhotoMeta.push(...records.map(r=>r.meta));renderEditPreviews();input.value="";
+    const files=input.files||[];
+    if(!files.length)return;
+    const start=editPhotos.length;
+    await filesWithMeta(files,record=>{
+      editPhotos.push(record.src);
+      editPhotoMeta.push(record.meta);
+      editPhotoPreviewUrls.push(record.previewUrl);
+    });
+    const host=$("#editPhotoGrid");
+    if(host){
+      for(let n=start;n<editPhotos.length;n++){
+        host.insertAdjacentHTML("beforeend",previewFigure(previewSrc("edit",n),editPhotoMeta[n],n,"edit"));
+      }
+    }else renderEditPreviews();
+    input.value="";
   };
 
   function ensureWorkbench(){
@@ -168,61 +463,89 @@
     const style=ctx=>{ctx.strokeStyle=$("#markupColor").value;ctx.fillStyle=$("#markupColor").value;ctx.lineWidth=Number($("#markupWidth").value);ctx.lineCap="round";ctx.lineJoin="round";ctx.font="700 22px Inter, system-ui, sans-serif"};
     const arrow=(ctx,a,b)=>{const angle=Math.atan2(b.y-a.y,b.x-a.x),head=22+ctx.lineWidth;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-head*Math.cos(angle-Math.PI/6),b.y-head*Math.sin(angle-Math.PI/6));ctx.lineTo(b.x-head*Math.cos(angle+Math.PI/6),b.y-head*Math.sin(angle+Math.PI/6));ctx.closePath();ctx.fill()};
     const shape=(ctx,tool,a,b)=>{style(ctx);const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(b.x-a.x),h=Math.abs(b.y-a.y);if(tool==="box"){ctx.strokeRect(x,y,w,h)}else if(tool==="circle"){ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,Math.max(1,w/2),Math.max(1,h/2),0,0,Math.PI*2);ctx.stroke()}else if(tool==="arrow"){arrow(ctx,a,b)}};
-    const start=e=>{if(!workbench.save)return;e.preventDefault();const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");workbench.history.push(canvas.toDataURL("image/png"));if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));return}workbench.drawing=true;workbench.last=p;workbench.start=p;workbench.snapshot=canvas.toDataURL("image/png")};
-    const move=e=>{if(!workbench.drawing)return;e.preventDefault();const p=point(e),tool=$("#markupTool").value,ctx=canvas.getContext("2d");if(tool==="pen"){style(ctx);ctx.beginPath();ctx.moveTo(workbench.last.x,workbench.last.y);ctx.lineTo(p.x,p.y);ctx.stroke();workbench.last=p;return}const img=new Image();img.onload=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0);shape(ctx,tool,workbench.start,p)};img.src=workbench.snapshot};
-    const stop=e=>{if(!workbench.drawing)return;const tool=$("#markupTool").value;if(tool!=="pen")shape(canvas.getContext("2d"),tool,workbench.start,point(e));workbench.drawing=false;workbench.last=null;workbench.start=null;workbench.snapshot=null};
+    const start=e=>{if(!workbench.save)return;e.preventDefault();const tool=$("#markupTool").value,p=point(e),ctx=canvas.getContext("2d");const base=document.createElement("canvas");base.width=canvas.width;base.height=canvas.height;base.getContext("2d").drawImage(canvas,0,0);workbench.baseCanvas=base;workbench.history.push(base);if(tool==="text"){const text=prompt("Markup text:","");if(!text){workbench.history.pop();workbench.baseCanvas=null;return}style(ctx);const pad=10,lines=text.split(/\n/).slice(0,4),width=Math.max(...lines.map(line=>ctx.measureText(line).width))+pad*2,height=lines.length*28+pad*2;ctx.fillStyle="rgba(255,255,255,.88)";ctx.fillRect(p.x,p.y,width,height);ctx.strokeStyle=$("#markupColor").value;ctx.strokeRect(p.x,p.y,width,height);ctx.fillStyle=$("#markupColor").value;lines.forEach((line,n)=>ctx.fillText(line,p.x+pad,p.y+pad+22+n*28));workbench.baseCanvas=null;return}workbench.drawing=true;workbench.last=p;workbench.start=p};
+    const move=e=>{if(!workbench.drawing||!workbench.baseCanvas)return;e.preventDefault();const p=point(e),tool=$("#markupTool").value,ctx=canvas.getContext("2d");if(tool==="pen"){style(ctx);ctx.beginPath();ctx.moveTo(workbench.last.x,workbench.last.y);ctx.lineTo(p.x,p.y);ctx.stroke();workbench.last=p;return}ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(workbench.baseCanvas,0,0);shape(ctx,tool,workbench.start,p)};
+    const stop=e=>{if(!workbench.drawing)return;const tool=$("#markupTool").value;if(tool!=="pen")shape(canvas.getContext("2d"),tool,workbench.start,point(e));workbench.drawing=false;workbench.last=null;workbench.start=null;workbench.baseCanvas=null};
     canvas.addEventListener("pointerdown",start);canvas.addEventListener("pointermove",move);canvas.addEventListener("pointerup",stop);canvas.addEventListener("pointerleave",stop);
   }
 
   function drawSource(src){
     const img=new Image();img.onload=()=>{const canvas=$("#markupCanvas"),scale=Math.min(1,1400/img.naturalWidth,900/img.naturalHeight);canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);workbench.history=[]};img.src=src;
   }
-  function restoreCanvas(src){
-    const img=new Image();img.onload=()=>{const canvas=$("#markupCanvas");canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height)};img.src=src;
+  function restoreCanvas(base){
+    const canvas=$("#markupCanvas");
+    if(!canvas||!base)return;
+    canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+    canvas.getContext("2d").drawImage(base,0,0,canvas.width,canvas.height);
   }
-  function openWorkbench(src,title,onSave){ensureWorkbench();workbench={source:src,title,save:onSave,drawing:false,last:null,history:[]};$("#photoWorkbenchTitle").textContent=title;$("#saveMarkup").hidden=!onSave;$("#photoWorkbench").hidden=false;drawSource(src)}
+  function openWorkbench(src,title,onSave){ensureWorkbench();workbench={source:src,title,save:onSave,drawing:false,last:null,history:[],baseCanvas:null};$("#photoWorkbenchTitle").textContent=title;$("#saveMarkup").hidden=!onSave;$("#photoWorkbench").hidden=false;drawSource(src)}
   window.closePhotoWorkbench=()=>{$("#photoWorkbench").hidden=true};
   window.resetPhotoMarkup=()=>drawSource(workbench.source);
   window.undoPhotoMarkup=()=>{const previous=workbench.history.pop();if(previous)restoreCanvas(previous)};
-  window.savePhotoMarkup=()=>{const data=$("#markupCanvas").toDataURL("image/jpeg",.92);workbench.save?.(data);closePhotoWorkbench();toast("Marked-up evidence saved")};
+  window.savePhotoMarkup=async function(){
+    const canvas=$("#markupCanvas");
+    if(!canvas||!workbench.save)return;
+    await yieldToMain();
+    const blob=await canvasToJpegBlob(canvas,.92);
+    workbench.save?.(await blobToDataUrl(blob));
+    closePhotoWorkbench();
+    toast("Marked-up evidence saved");
+  };
 
-  const originalLoadCapturePhotos=loadCapturePhotos;
+  function clearCapturePhotoState(){
+    revokePreviewUrls(capturePhotoPreviewUrls);
+    capturePhotos=[];
+    capturePhotoMeta=[];
+    capturePhotoPreviewUrls=[];
+  }
+
   loadCapturePhotos=async function(input){
-    const records=await filesWithMeta(input.files||[]);
-    capturePhotos.push(...records.map(r=>r.src));capturePhotoMeta.push(...records.map(r=>r.meta));renderCapturePreviews();input.value="";
+    const files=input.files||[];
+    if(!files.length)return;
+    const button=input.closest("label");
+    const release=button?setBusyButton(button,"Processing…"):()=>{};
+    try{
+      await filesWithMeta(files,record=>{
+        capturePhotos.push(record.src);
+        capturePhotoMeta.push(record.meta);
+        capturePhotoPreviewUrls.push(record.previewUrl);
+        appendCapturePreview(capturePhotos.length-1);
+      });
+    }catch(err){
+      toast(err.message||"Could not read photo.",true);
+    }finally{
+      release();
+      input.value="";
+    }
   };
 
-  let captureVoiceCaptured=false;
-  function updateCaptureVoiceState(){
-    const card=$("#captureVoiceCard"),text=$("#voiceText");
-    if(card)card.hidden=captureVoiceCaptured&&!!text?.value.trim();
-  }
-  function wireCaptureVoice(){
-    const text=$("#voiceText");
-    if(!text)return;
-    text.addEventListener("input",()=>{captureVoiceCaptured=false;updateCaptureVoiceState()},{once:false});
-    updateCaptureVoiceState();
-  }
-  const originalDraftVoice=draftVoice;
-  draftVoice=async function(){
-    await originalDraftVoice();
-    captureVoiceCaptured=!!$("#voiceText")?.value.trim();
-    updateCaptureVoiceState();
-  };
-  const originalStartDictation=startDictation;
   startDictation=function(){
-    captureVoiceCaptured=false;
-    updateCaptureVoiceState();
-    return originalStartDictation();
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR)return toast("Speech recognition unavailable — type the note instead.",true);
+    const r=new SR();
+    r.lang="en-AU";
+    r.onresult=e=>{const voice=$("#voiceText");if(voice)voice.value=e.results[0][0].transcript};
+    r.onerror=()=>toast("Speech recognition failed — type the note instead.",true);
+    r.start();
+    toast("Listening…");
+  };
+
+  const originalGo=go;
+  go=function(next){
+    if(next==="capture"&&!sessionStorage.getItem("walkModeOff"))walkMode=true;
+    return originalGo(next);
   };
 
   const originalCaptureView=captureView;
   captureView=function(){
-    const html=originalCaptureView()
+    const walkBanner=walkMode?`<div class="walk-session-banner">Walk mode · ${walkCount} captured this walk · next save loops back here</div>`:"";
+    let html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
-      .replace("Start with evidence. Defects and client defects require at least one photo.", "Start with proof from site. Defects and client defects cannot be saved without original evidence.")
-      .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Voice-to-Note AI</div><textarea id=\"voiceText\" placeholder=\"Speak or type the note, then draft the form\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak Note</button><button class=\"btn\" type=\"button\" onclick=\"draftVoice()\">Draft from Note</button></div></section>");
-    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice()},0);
+      .replace("Start with evidence. Defects and client defects require at least one photo.", "Take a photo first. Add a short note, then save.")
+      .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
+      .replace('onclick="walkMode=!walkMode;render()"','onclick="toggleWalkCapture()"')
+      .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`);
+    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews()},0);
     return html;
   };
 
@@ -236,18 +559,8 @@
     setTimeout(()=>card?.classList.remove("photo-required-pulse"),1800);
   }
 
-  saveCapture=async function(e){
-    e.preventDefault();const form=e.currentTarget,data=Object.fromEntries(new FormData(form)),mode=e.submitter?.value||"save";
-    const release=setBusyButton(e.submitter,mode==="issue"?"Issuing…":"Saving…");
-    data.id=offlineId();data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
-    const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
-    if(data.type==="client"&&!data.raisedBy){release();return toast("A Client Defect requires a Raised By / source.",true)}
-    if(mode==="issue"&&(!data.trade||!data.subcontractor)){release();return toast("Issue Now requires a trade and subcontractor.",true)}
-    try{const path=mode==="issue"?"/api/items?issue_now=true":"/api/items";const item=await api(path,{method:"POST",body:JSON.stringify(data)});capturePhotos=[];capturePhotoMeta=[];if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved - continue walk`)}else{await reload();route="items";render();toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}}catch(err){toast(err.message,true)}finally{release()}
-  };
-
   editItemForm=function(id){
-    const i=state.items.find(x=>x.id===id);selectedEditItem=id;editPhotos=[...(i.originalPhotos||[])];editPhotoMeta=[...(i.originalPhotoMeta||[])];while(editPhotoMeta.length<editPhotos.length)editPhotoMeta.push({capturedAt:i.createdAt});
+    const i=state.items.find(x=>x.id===id);selectedEditItem=id;editPhotos=[...(i.originalPhotos||[])];editPhotoMeta=[...(i.originalPhotoMeta||[])];editPhotoPreviewUrls=editPhotos.map(()=>null);while(editPhotoMeta.length<editPhotos.length)editPhotoMeta.push({capturedAt:i.createdAt});
     $("#modalTitle").textContent=`Edit ${i.code}`;
     $("#modalBody").innerHTML=`<form class="field-list" onsubmit="saveItemEdit(event,'${id}')"><div class="fields admin-form-grid"><label>Item type<select name="type">${options(["defect","incomplete","client"],i.type)}</select></label><label>Project<select name="project">${options(state.settings.projects,i.project)}</select></label><label>Building<input name="building" value="${esc(i.building)}"></label><label>Level<input name="level" value="${esc(i.level)}"></label><label>Unit / Area<input name="unit" value="${esc(i.unit)}"></label><label>Room / Location<input name="room" value="${esc(i.room)}"></label><label>Trade<select name="trade"><option value=""></option>${options(trades,i.trade)}</select></label><label>Subcontractor<select name="subcontractor"><option value=""></option>${options(state.settings.subcontractors,i.subcontractor)}</select></label><label>Priority<select name="priority">${options(["high","urgent"],i.priority)}</select></label><label>Due date<input type="date" name="dueDate" value="${esc(i.dueDate)}"></label><label class="span">Description<textarea name="description">${esc(i.description)}</textarea></label></div><section class="edit-evidence"><div class="spread"><div><b>Original issue photos</b><div class="meta">Add evidence retrospectively, enlarge it or mark it up.</div></div><label class="btn alt">＋ Add photos<input hidden type="file" accept="image/*" multiple onchange="addEditPhotos(this)"></label></div><div class="edit-photo-grid" id="editPhotoGrid"></div></section><button class="btn">Save changes and evidence</button></form>`;
     renderEditPreviews();
@@ -255,7 +568,7 @@
 
   saveItemEdit=async function(e,id){
     e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));data.by=state.settings.preparedBy;data.originalPhotos=editPhotos;data.originalPhotoMeta=editPhotoMeta;
-    try{await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});await reload();showItem(id);toast("Item details and evidence updated")}catch(err){toast(err.message,true)}
+    try{await yieldToMain();await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});await reload();showItem(id);toast("Item details and evidence updated")}catch(err){toast(err.message,true)}
   };
 
   chooseImage=function(){return new Promise(resolve=>{
@@ -276,19 +589,22 @@
     const release=setBusyForm(form,mode==="issue"?"Issuing…":"Saving…");
     form.dataset.captureRequestId=form.dataset.captureRequestId||offlineId();
     data.id=form.dataset.captureRequestId;data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
-    rememberCaptureFields(data);
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
+    ensureCaptureDescription(data,voice);
+    rememberCaptureFields(data);
     const fail=message=>{captureSubmitting=false;release();toast(message,true)};
     if(data.type==="client"&&!data.raisedBy)return fail("A Client Defect requires a Raised By / source.");
     if(requireOriginalPhoto(data)){focusPhotoEvidence();return fail("Attach original photo evidence, or change Item Type to Incomplete Work.")}
     if(mode==="issue"&&(!data.trade||!data.subcontractor))return fail("Issue Now requires a trade and subcontractor.");
     try{
-      toast(capturePhotos.length?"Compressing and uploading evidence…":"Saving item…");
+      toast(capturePhotos.length?"Uploading evidence…":"Saving item…");
       if(mode==="issue"){data.issueOnCreate=true;data.issueTo=data.subcontractor}
       const path=mode==="issue"?"/api/items?issue_now=true":"/api/items";
+      await yieldToMain();
       const item=await api(path,{method:"POST",body:JSON.stringify(data)});
-      capturePhotos=[];capturePhotoMeta=[];
-      if(walkMode){walkCount++;await reload();route="capture";render();toast(`${item.code} saved · continue walk`)}
+      clearCapturePhotoState();
+      form.dataset.captureRequestId="";
+      if(walkMode){walkCount++;mergeSavedItem(item);route="capture";render();resetCaptureForNext();toast(`${item.code} saved · capture next`);refreshStateBackground()}
       else{await reload();route="items";render();setTimeout(()=>scrollTo(0,0),0);toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`)}
     }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
   };
@@ -335,6 +651,11 @@
   const originalShowItem=showItem;
   showItem=function(id){
     originalShowItem(id);const i=state.items.find(x=>x.id===id),cards=[...document.querySelectorAll("#modalBody .native-card")],original=cards.find(c=>c.querySelector("h2")?.textContent==="Original Issue");
+    const historyCard=cards.find(c=>c.querySelector("h2")?.textContent==="Assignment & Issue History");
+    if(historyCard){
+      const rows=issueHistoryForItem(i);
+      historyCard.innerHTML=`<h2>Assignment & Issue History</h2>${rows.length?rows.map(e=>`<div class="event"><b>${e.reissue?"Re-issued":"Issued"} to ${esc(e.to)}</b><div class="meta">${esc(e.by||"")} · ${esc(fmt(e.at))}</div>${e.note?`<p>${esc(e.note)}</p>`:""}</div>`).join(""):'<div class="meta">Not yet issued to a subcontractor.</div>'}`;
+    }
     if(original){const photos=[...original.querySelectorAll(".photo-preview img")];photos.forEach((img,n)=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,`${i.code} · Original issue ${n+1}`,null);const meta=i.originalPhotoMeta?.[n];if(meta){const cap=document.createElement("div");cap.className="photo-caption";cap.textContent=geoLabel(meta);img.insertAdjacentElement("afterend",cap)}});const add=document.createElement("button");add.className="btn alt small";add.textContent="＋ Add / mark up photos";add.onclick=()=>editItemForm(id);original.querySelector("h2")?.insertAdjacentElement("afterend",add)}
     document.querySelectorAll("#modalBody .evidence img").forEach(img=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,img.alt||"Evidence photo",null)});
   };
@@ -452,9 +773,11 @@
   };
   const originalItemsView=itemsView;
   itemsView=function(){
-    const html=originalItemsView();
+    let html=originalItemsView();
     const chips=["All","Captured","Issued","Ready","Rejected","Overdue","Closed"].map(v=>`<button class="filter-chip light ${v===itemStatusFilter?'active':''}" data-value="${v}" onclick="setFilter(this,'status')">${v}</button>`).join("");
-    return html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div></div><div class="screen-scroll">`);
+    html=html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div></div><div class="screen-scroll">`);
+    html=html.replace('<div class="screen-title">Items</div>','<div class="items-header-copy"><div class="screen-title">Items</div><button type="button" class="btn small quick-capture-inline" onclick="quickCapture()">Quick Capture</button></div>');
+    return html;
   };
 
   function siteStatus(item){
@@ -465,28 +788,8 @@
     if(["issued","in_progress"].includes(item.status))return {label:"ISSUED",tone:"issued"};
     return {label:"CAPTURED",tone:"captured"};
   }
-  function cardPhoto(item){
-    const src=(item.originalPhotos||[])[0];
-    if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
-    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence">`;
-  }
   const cardActionLocks=new Set();
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
-  itemCard=function(i){
-    const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`,location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ");
-    const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onclick="return cardAction(event,'${i.id}','issue')">Issue ›</button>`:"";
-    const reissue=i.status==="rejected"?`<button class="cr-card-action" type="button" onclick="return cardAction(event,'${i.id}','issue')">Re-Issue ›</button>`:"";
-    return `<article class="native-card native-item cr-item-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code">${esc(i.code).toUpperCase()}</span><span class="cr-card-type">${esc(typeLabels[i.type]||i.type).toUpperCase()}</span></div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}</div><div class="cr-card-copy"><div class="cr-card-trade">${esc(i.trade||"No trade")}</div><div class="cr-card-sub">${esc(i.subcontractor||"Unassigned")}</div><div class="cr-card-desc">${esc(i.description||"No description")}</div><div class="cr-card-meta"><span>${esc(location||"NO LOCATION").toUpperCase()}</span><span>${dateText}</span></div></div></div><div class="cr-card-actions">${issueButton}${reissue}${urgent?'<span class="badge overdue">URGENT</span>':""}</div></article>`;
-  };
-
-  itemCard=function(i){
-    const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent";
-    const dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`;
-    const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ");
-    const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">ISSUE ›</button>`:"";
-    const reissue=i.status==="rejected"?`<button class="cr-card-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">RE-ISSUE ›</button>`:"";
-    return `<article class="native-card native-item cr-item-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code">${esc(i.code).toUpperCase()}</span><span class="cr-card-type">${esc(typeLabels[i.type]||i.type).toUpperCase()}</span></div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}</div><div class="cr-card-copy"><div class="cr-card-location">${esc(location||"NO LOCATION").toUpperCase()}</div><div class="cr-card-desc">${esc(i.description||"No description")}</div><div class="cr-card-assignment"><div><div class="cr-card-trade">${esc(i.trade||"No trade")}</div><div class="cr-card-sub">${esc(i.subcontractor||"Unassigned")}</div></div><div class="cr-card-date">${dateText}</div></div></div></div><div class="cr-card-actions" onclick="event.stopPropagation()">${issueButton}${reissue}${urgent?'<span class="badge overdue">URGENT</span>':""}</div></article>`;
-  };
 
   dashboardView=function(){
     const p=state.settings.activeProject,items=state.items.filter(i=>i.project===p),today=new Date().toISOString().slice(0,10);
@@ -503,7 +806,10 @@
 
   const commandDashboardView=dashboardView;
   dashboardView=function(){
-    const html=commandDashboardView();
+    let html=commandDashboardView();
+    html=html.replace(`onclick="go('capture')"`,`onclick="quickCapture()"`);
+    html=html.replace("<b>Capture Item</b><small>Photo, voice-to-note or walk capture</small>","<b>Quick Capture</b><small>Photo first · walk the site · save and next</small>");
+    if(matchMedia("(max-width:1023px)").matches)html=html.replace(/<form class="command-home[\s\S]*?<\/form>/,"");
     return html.includes("command-home")?html:html.replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
   };
 
@@ -546,7 +852,7 @@
     const ready=(state?.items||[]).filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).length;
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review",ready?`Review ${ready}`:"Review","✓"],["more","More",navIcon?.more||"•••"]];
     const active=["reports","settings","setup","subcontractor"].includes(route)?"more":route;
-    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
 
   function renderDesktopNav(){
@@ -559,19 +865,20 @@
       ["more","More",navIcon?.more||"•••"]
     ];
     const active=["reports","setup","settings","subcontractor"].includes(route)?"more":route;
-    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
   renderDesktopNav=function(){
     if(!matchMedia("(min-width:1024px)").matches)return;
     const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
-    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="go('${to}')"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
+    $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   };
   const originalRender=render;
   render=function(){
     document.body.dataset.route=route;applyTheme();
     if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();updateOfflinePill();return}
     originalRender();renderMobileNav();renderDesktopNav();
-    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");renderCapturePreviews()}
+    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
+    mountQuickCaptureFab();
     updateOfflinePill();
   };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
@@ -616,13 +923,12 @@
   window.setItemFocusValue=function(value){itemFocusValue=value;const [mode]=focusTokenParts();if(mode)itemFocusMode=mode;filterItems()};
   const focusedItemsView=itemsView;
   itemsView=function(){const cfg=state.settings.projectConfigs?.[state.settings.activeProject]||{};itemProjectScope=cfg.itemsProjectScope||itemProjectScope||"active";itemFocusMode=cfg.itemsFocusMode||itemFocusMode||"level";const html=focusedItemsView();return html.replace("</div></div><div class=\"screen-scroll\">",`</div>${itemFocusControls()}</div><div class="screen-scroll">`)};
-  filterItems=function(){const search=$("#search");if(!search)return;const q=search.value.toLowerCase();const [focusMode,focusValue]=focusTokenParts();const list=state.items.filter(i=>{const focusMatch=!focusValue||String(i[focusMode]||"")===focusValue;return scopeMatches(i)&&(!itemBuildingValue||i.building===itemBuildingValue)&&focusMatch&&(itemTypeFilter==="all"||i.type===itemTypeFilter)&&statusMatch(i,itemStatusFilter)&&JSON.stringify(i).toLowerCase().includes(q)}).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$("#itemCount").textContent=`${list.length} item${list.length===1?"":"s"}`;$("#itemList").innerHTML=list.map(itemCard).join("")||'<div class="empty">No items match<br><span class="meta">Try a different project, building, focus area or capture a new item.</span></div>'};
+  filterItems=function(){const search=$("#search");if(!search)return;const q=search.value.toLowerCase();const [focusMode,focusValue]=focusTokenParts();const list=state.items.filter(i=>{const focusMatch=!focusValue||String(i[focusMode]||"")===focusValue;return scopeMatches(i)&&(!itemBuildingValue||i.building===itemBuildingValue)&&focusMatch&&(itemTypeFilter==="all"||i.type===itemTypeFilter)&&statusMatch(i,itemStatusFilter)&&(!q||itemSearchHaystack(i).includes(q))}).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$("#itemCount").textContent=`${list.length} item${list.length===1?"":"s"}`;$("#itemList").innerHTML=list.map(itemCard).join("")||'<div class="empty">No items match<br><span class="meta">Try a different project, building, focus area or capture a new item.</span></div>'};
   window.saveItemsProjectScope=async function(scope){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsProjectScope=scope;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items project scope saved")};
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};
   const setupWithFocus=setupView;
   setupView=function(){const html=setupWithFocus(),cfg=state.settings.projectConfigs[state.settings.activeProject]||{},scope=cfg.itemsProjectScope||"active",mode=cfg.itemsFocusMode||"level";const card=`${codePrefixCard(cfg)}${spreadsheetImportCard()}<section class="form-card"><h2>Items page focus</h2><p class="meta">Choose the default project scope and third filter group for this project.</p><label>Project scope<select onchange="saveItemsProjectScope(this.value)">${projectScopeOptions().map(([value,label])=>`<option value="${esc(value)}" ${value===scope?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label>Default focus group<select onchange="saveItemsFocusMode(this.value)">${FOCUS_MODES.map(([value,label])=>`<option value="${value}" ${value===mode?"selected":""}>${label}</option>`).join("")}</select></label></section>`;return html.replace("</section>",`</section>${card}`)};
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});await reload();if(route==="items")filterItems();else render();toast(act==="issue"?"ISSUED - moved to Issued":"Item updated")})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
-  itemCard=function(i){const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",code=itemDisplayCode(i);const dateText=closed?"CLOSED":`DUE ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})).toUpperCase()}`;const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" - ");const issueButton=i.status==="open"?`<button class="cr-issue-cta" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">ISSUE</button>`:"";const reissue=i.status==="rejected"?`<button class="cr-card-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">RE-ISSUE</button>`:"";return `<article class="native-card native-item cr-item-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code" title="${esc(i.code)}" data-full-code="${esc(i.code)}">${esc(code).toUpperCase()}</span><span class="cr-card-type">${esc(typeLabels[i.type]||i.type).toUpperCase()}</span></div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}<div class="cr-card-date under-photo">${dateText}</div></div><div class="cr-card-copy"><div class="cr-card-location">${esc(location||"NO LOCATION").toUpperCase()}</div><div class="cr-card-desc">${esc(i.description||"No description")}</div><div class="cr-card-assignment"><div class="cr-card-sub">${esc(i.subcontractor||"Unassigned")}</div><div class="cr-card-trade">${esc(i.trade||"No trade")}</div></div></div></div><div class="cr-card-actions" onclick="event.stopPropagation()">${issueButton}${reissue}${urgent?'<span class="badge overdue">URGENT</span>':""}</div></article>`};
   function planFit(plan){return {x:0,y:0,scale:1,...(plan?.fit||{})}}
   function pdfSrc(plan){const src=String(plan?.image||"");return src.includes("#")?src:`${src}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
   function activePlan(){return state.plans.filter(p=>p.project===state.settings.activeProject)[0]}
@@ -636,10 +942,9 @@
   plansView=function(){const html=fitPlansView(),plan=activePlan();return plan?html.replace('<p class="meta">Tap anywhere on the plan to drop a pin</p>',`${fitControls(plan)}<p class="meta">Tap anywhere on the plan to drop a pin</p>`):html}
   const fitWirePlan=wirePlan;
   wirePlan=function(){fitWirePlan();const plan=activePlan(),canvas=$("#planCanvas");if(canvas&&plan)applyPlanFit(plan,canvas)}
-  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Items grouped by responsible subcontractor for targeted follow-up"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?items.length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>`<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="location.href='/api/reports/${id}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.href='/api/reports/${id}'}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} item${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   window.openSubcontractorReportPicker=function(){const project=state.settings.activeProject,names=uniqueValues(state.items.filter(i=>i.project===project&&i.subcontractor).map(i=>i.subcontractor));if(!names.length)return toast("No subcontractors found for this project.",true);$("#modalTitle").textContent="Subcontractor Summary";$("#modalBody").innerHTML=`<div class="field-list"><label>Subcontractor<select id="reportSubcontractor">${names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("")}</select></label><button class="btn" type="button" onclick="openSelectedSubcontractorReport()">Open report</button></div>`;$("#modal").hidden=false};
-  window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);location.href=`/api/reports/subcontractor?subcontractor=${encodeURIComponent(value)}`};
-  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`location.href='/api/reports/${id}'`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
+  window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);closeModal();openReport("subcontractor",{subcontractor:value})};
+  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   function rerenderLatestHome(){if(typeof state!=="undefined"&&state&&route==="home")render()}
   ensureWorkbench();updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
 })();

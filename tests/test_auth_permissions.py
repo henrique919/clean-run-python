@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from app import main as app_main
 from app.auth import _user_from_claims
-from app.models import ItemCreate
+from app.models import ItemCreate, RectificationEvidence
 from app.store import CleanRunStore
 
 
@@ -132,8 +132,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards23", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards23", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards28", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards28", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
@@ -297,6 +297,42 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["items"][0]["original_photos"][0].startswith("https://signed.example/"))
+
+    def test_bootstrap_falls_back_to_raw_path_when_evidence_signing_fails(self) -> None:
+        item = self.store.snapshot().items[0]
+        raw_path = "cleanrun/public/projects/demo/items/def-1001/rectification/photo.jpg"
+        item = item.model_copy(
+            update={
+                "rectification_evidence": [
+                    RectificationEvidence(photo=raw_path, comment="Fixed", by="Sterling Tiling")
+                ]
+            }
+        )
+        self.store._write(self.store._read().model_copy(update={"items": [item]}))
+
+        with patch("app.main.resolve_photo_url", return_value=None):
+            response = self.client.get("/api/bootstrap", headers=bearer("dev-site-manager"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["items"][0]["rectification_evidence"][0]["photo"], raw_path)
+
+    def test_report_endpoint_shows_placeholder_and_keeps_count_when_signing_fails(self) -> None:
+        item = self.store.snapshot().items[0]
+        item = item.model_copy(
+            update={"original_photos": ["cleanrun/public/projects/demo/items/def-1001/original/photo.jpg"]}
+        )
+        self.store._write(self.store._read().model_copy(update={"items": [item]}))
+
+        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")), patch(
+            "app.storage.get_public_supabase_client", side_effect=RuntimeError("signing failed")
+        ):
+            response = self.client.get("/api/reports/register", headers=bearer("dev-site-manager"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Evidence photo unavailable", response.text)
+        self.assertNotIn("<img", response.text)
+        self.assertIn(item.code, response.text)
 
     def test_register_and_exceptions_reports_filter_items(self) -> None:
         overdue = self.create_direct_item(subcontractor="H&L Roofing")
