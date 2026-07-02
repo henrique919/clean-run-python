@@ -95,6 +95,24 @@ def test_render3_logout_control_present():
     assert "Sign out" in enhancements
 
 
+def test_render3_phase1_field_speed_ux_markers():
+    """Phase 1 speed UX: quick capture, sticky location, scan cards, capture-next."""
+    enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
+
+    assert 'CLEANRUN_FRONTEND_BUILD="cards26"' in enhancements
+    assert "window.quickCapture=function()" in enhancements
+    assert "quick-capture-fab" in enhancements
+    assert "WALK_CONTEXT_KEY" in enhancements
+    assert "locationContextChip" in enhancements
+    assert "recent-chip" in enhancements
+    assert "resetCaptureForNext" in enhancements
+    assert "cr-scan-card" in enhancements
+    assert "Speak & fill" in enhancements
+    assert "ensureCaptureDescription" in enhancements
+    assert "itemSearchHaystack" in enhancements
+    assert "refreshStateBackground" in enhancements
+
+
 def test_render3_demo_reset_hidden_in_production_markup():
     """Demo reset must be gated by isProductionApp(); production shows disabled label."""
     index = INDEX.read_text(encoding="utf-8")
