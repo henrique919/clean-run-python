@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards33";
-  document.documentElement.dataset.cleanrunBuild="cards33";
+  window.CLEANRUN_FRONTEND_BUILD="cards36";
+  document.documentElement.dataset.cleanrunBuild="cards36";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -306,8 +306,6 @@
     render();
   };
   window.quickCapture=function(){
-    sessionStorage.removeItem("walkModeOff");
-    walkMode=true;
     go("capture");
   };
   function applyCaptureDefaults(){
@@ -340,7 +338,7 @@
       fab.id="quickCaptureFab";
       fab.type="button";
       fab.className="quick-capture-fab";
-      fab.setAttribute("aria-label","Quick Capture");
+      fab.setAttribute("aria-label","Walk capture");
       fab.innerHTML='<span class="quick-capture-fab__icon">+</span><span class="quick-capture-fab__label">Quick</span>';
       fab.onclick=()=>quickCapture();
       document.body.appendChild(fab);
@@ -670,6 +668,7 @@
       .replace("Start with evidence. Defects and client defects require at least one photo.", "Take a photo first. Add a short note, then save.")
       .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
       .replace('onclick="walkMode=!walkMode;render()"','onclick="toggleWalkCapture()"')
+      .replace(">Walk Capture</button>",'>Walk mode</button>')
       .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`);
     setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews()},0);
     return html;
@@ -892,7 +891,7 @@
     }
     const find=q.match(/^(?:find|show|search)\s+(?:all\s+)?(?:(open|captured|issued|ready|closed|overdue|rejected)\s+)?(?:items?|defects?|works?)?\s*(.*)$/i);
     if(find){closeModal();openDashboardSearch(cleanCommandText(find[2]),commandStatus(find[1]));return}
-    if(/^capture|new defect|new item/i.test(q)){closeModal();go("capture");return}
+    if(/^capture|new defect|new item/i.test(q)){closeModal();quickCapture();return}
     if(/^review/i.test(q)){closeModal();go("review");return}
     closeModal();openDashboardSearch(q,"All");
   };
@@ -915,7 +914,7 @@
     let html=originalItemsView();
     const chips=["All","Captured","Issued","Ready","Rejected","Overdue","Closed"].map(v=>`<button class="filter-chip light ${v===itemStatusFilter?'active':''}" data-value="${v}" onclick="setFilter(this,'status')">${v}</button>`).join("");
     html=html.replace(/<div class="hscroll" id="statusFilters">[\s\S]*?<\/div><\/div><div class="screen-scroll">/,`<div class="hscroll" id="statusFilters">${chips}</div></div><div class="screen-scroll">`);
-    html=html.replace('<div class="screen-title">Items</div>','<div class="items-header-copy"><div class="screen-title">Items</div><button type="button" class="btn small quick-capture-inline" onclick="quickCapture()">Quick Capture</button></div>');
+    html=html.replace('<div class="screen-title">Items</div>','<div class="items-header-copy"><div class="screen-title">Items</div><button type="button" class="btn small quick-capture-inline" onclick="quickCapture()">Walk Capture</button></div>');
     return html;
   };
 
@@ -947,7 +946,7 @@
   dashboardView=function(){
     let html=commandDashboardView();
     html=html.replace(`onclick="go('capture')"`,`onclick="quickCapture()"`);
-    html=html.replace("<b>Capture Item</b><small>Photo, voice-to-note or walk capture</small>","<b>Quick Capture</b><small>Photo first · walk the site · save and next</small>");
+    html=html.replace("<b>Capture Item</b><small>Photo, voice-to-note or walk capture</small>","<b>Walk Capture</b><small>Photo first · add a note · save</small>");
     if(matchMedia("(max-width:1023px)").matches)html=html.replace(/<form class="command-home[\s\S]*?<\/form>/,"");
     return html.includes("command-home")?html:html.replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
   };
