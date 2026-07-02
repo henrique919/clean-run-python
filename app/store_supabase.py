@@ -134,7 +134,16 @@ class SupabaseCleanRunStore(CleanRunStore):
 
     def _read_code_index(self) -> list[Item]:
         rows = self.client.table("items").select("code, project").execute().data or []
-        return [Item(code=row["code"], project=row.get("project") or "") for row in rows if row.get("code")]
+        return [
+            Item(
+                code=row["code"],
+                project=row.get("project") or "",
+                due_date="",
+                description="",
+            )
+            for row in rows
+            if row.get("code")
+        ]
 
     def _read_create_context(self) -> AppData:
         """Lightweight snapshot for code allocation and duplicate-create checks."""

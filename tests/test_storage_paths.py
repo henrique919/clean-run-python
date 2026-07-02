@@ -232,6 +232,28 @@ class StoragePathTests(unittest.TestCase):
         self.assertEqual([code for code, _settings in calls], ["DEF-1002"])
         self.assertIs(calls[0][1], settings)
 
+    def test_read_code_index_builds_valid_items(self) -> None:
+        rows = [{"code": "DEF-1044", "project": "Esplanade Drive"}]
+        items = [
+            Item(
+                code=row["code"],
+                project=row.get("project") or "",
+                due_date="",
+                description="",
+            )
+            for row in rows
+            if row.get("code")
+        ]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].code, "DEF-1044")
+        code = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore).next_code(
+            items,
+            "defect",
+            project="Esplanade Drive",
+            settings=seed_settings(),
+        )
+        self.assertEqual(code, "DEF-1045")
+
 
 if __name__ == "__main__":
     unittest.main()
