@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -10,7 +11,7 @@ from urllib.request import Request as UrlRequest, urlopen
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.config import is_production
+from app.config import is_production, login_required
 from app.supabase_client import reset_supabase_access_token, set_supabase_access_token
 
 try:
@@ -22,6 +23,8 @@ except Exception:  # pragma: no cover - production dependency guard
 bearer_scheme = HTTPBearer(auto_error=False)
 DEFAULT_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
 DEFAULT_LAUNCH_ADMIN_EMAILS = "info@cleanruniq.com,harrysfuel@outlook.com"
+_OPEN_ACCESS_TOKEN_TTL_SECONDS = 50 * 60
+_open_access_token_cache: tuple[float, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,78 @@ def _dev_users() -> dict[str, AuthUser]:
             auth_method="dev",
         ),
     }
+
+
+def _open_access_user() -> AuthUser:
+    actor_email = (os.getenv("CLEANRUN_OPEN_ACCESS_ACTOR_EMAIL") or "info@cleanruniq.com").strip()
+    return AuthUser(
+        id="open-access",
+        email=actor_email,
+        company_id=DEFAULT_COMPANY_ID,
+        company_role="admin",
+        project_roles={"*": "project_manager"},
+        is_demo_admin=True,
+        auth_method="open_access",
+    )
+
+
+def _fetch_password_token(email: str, password: str) -> str:
+    supabase_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    if not supabase_url or not publishable_key:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Auth is not configured")
+
+    request = UrlRequest(
+        f"{supabase_url}/auth/v1/token?grant_type=password",
+        data=json.dumps({"email": email, "password": password}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "apikey": publishable_key,
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=12) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code in {400, 401, 403}:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Open access login is not configured. Set CLEANRUN_OPEN_ACCESS_EMAIL and CLEANRUN_OPEN_ACCESS_PASSWORD on Render.",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Auth provider unavailable") from exc
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Auth provider unavailable") from exc
+
+    token = str(payload.get("access_token") or "").strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Open access login is not configured. Set CLEANRUN_OPEN_ACCESS_EMAIL and CLEANRUN_OPEN_ACCESS_PASSWORD on Render.",
+        )
+    return token
+
+
+def _open_access_supabase_token() -> str | None:
+    global _open_access_token_cache
+
+    direct = (os.getenv("CLEANRUN_OPEN_ACCESS_SUPABASE_TOKEN") or "").strip()
+    if direct:
+        return direct
+
+    email = (os.getenv("CLEANRUN_OPEN_ACCESS_EMAIL") or "").strip()
+    password = os.getenv("CLEANRUN_OPEN_ACCESS_PASSWORD") or ""
+    if not email or not password:
+        return None
+
+    now = time.time()
+    if _open_access_token_cache and _open_access_token_cache[0] > now:
+        return _open_access_token_cache[1]
+
+    token = _fetch_password_token(email, password)
+    _open_access_token_cache = (now + _OPEN_ACCESS_TOKEN_TTL_SECONDS, token)
+    return token
 
 
 def _claim_list(value: Any) -> set[str]:
@@ -208,6 +283,16 @@ def _request_token(request: Request, credentials: HTTPAuthorizationCredentials |
 
 
 def _authenticate(token: str | None) -> AuthUser:
+    if not login_required():
+        if not token:
+            return _open_access_user()
+        if not is_production() and token in _dev_users():
+            return _dev_users()[token]
+        try:
+            return _decode_supabase_jwt(token)
+        except HTTPException:
+            return _open_access_user()
+
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
@@ -230,7 +315,12 @@ async def get_request_context(
     user: AuthUser = Depends(get_current_user),
 ) -> RequestContext:
     token = _request_token(request, credentials)
-    supabase_token = token if user.auth_method == "jwt" else None
+    if user.auth_method == "jwt":
+        supabase_token = token
+    elif user.auth_method == "open_access":
+        supabase_token = _open_access_supabase_token()
+    else:
+        supabase_token = None
     context_token = set_supabase_access_token(supabase_token)
     request.state.user = user
     request.state.supabase_access_token = supabase_token

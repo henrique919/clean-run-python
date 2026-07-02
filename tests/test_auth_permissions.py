@@ -124,16 +124,23 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_anonymous_production_requests_are_rejected(self) -> None:
-        with patch.dict(os.environ, {"APP_ENV": "production", "CLEANRUN_ENV": "production"}, clear=False):
+        with patch.dict(os.environ, {"APP_ENV": "production", "CLEANRUN_ENV": "production", "CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
             self.assertEqual(self.client.get("/api/bootstrap").status_code, 401)
+
+    def test_open_access_when_login_not_required(self) -> None:
+        with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "false"}, clear=False):
+            self.assertEqual(self.client.get("/api/bootstrap", headers=bearer("dev-site-manager")).status_code, 200)
+            self.assertEqual(self.client.get("/api/bootstrap").status_code, 200)
+            config = self.client.get("/api/auth/config").json()
+            self.assertFalse(config["login_required"])
 
     def test_root_route_serves_restored_full_field_app(self) -> None:
         response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards41", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards41", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards42", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards42", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
