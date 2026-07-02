@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards26";
-  document.documentElement.dataset.cleanrunBuild="cards26";
+  window.CLEANRUN_FRONTEND_BUILD="cards27";
+  document.documentElement.dataset.cleanrunBuild="cards27";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -160,9 +160,28 @@
   function focusCaptureNote(){
     const field=$("#app form textarea[name='description']");
     if(!field)return;
-    field.scrollIntoView({behavior:"smooth",block:"nearest"});
     if(!field.value.trim())field.focus({preventScroll:true});
   }
+  window.openReport=async function(reportType,query={}){
+    const params=new URLSearchParams();
+    if(state?.settings?.activeProject)params.set("project",state.settings.activeProject);
+    Object.entries(query||{}).forEach(([key,value])=>{if(value!=null&&String(value).trim())params.set(key,String(value))});
+    const path=`/api/reports/${encodeURIComponent(reportType)}${params.toString()?`?${params}`:""}`;
+    const headers={};
+    if(typeof authToken!=="undefined"&&authToken)headers.Authorization=`Bearer ${authToken}`;
+    toast("Opening report…");
+    try{
+      const res=await fetch(path,{headers,credentials:"same-origin"});
+      if(res.status===401){clearAuthToken();renderLogin("Sign in to continue.");return}
+      if(!res.ok){let message=`Report failed (${res.status})`;try{const data=await res.json();message=data.detail||data.error||message}catch{message=await res.text()||message}throw new Error(message)}
+      const html=await res.text();
+      const url=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));
+      const tab=window.open(url,"_blank");
+      if(!tab){URL.revokeObjectURL(url);return toast("Allow popups to open reports.",true)}
+      setTimeout(()=>URL.revokeObjectURL(url),120000);
+    }catch(err){toast(err.message||"Could not open report.",true)}
+  };
+
   function rememberCaptureFields(data){
     const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,dueDate:data.dueDate,priority:data.priority,type:data.type};
     try{localStorage.setItem(LAST_CAPTURE_KEY,JSON.stringify(keep))}catch{}
@@ -241,7 +260,7 @@
       const value=merged[key]||(key==="building"?cfg.buildings?.[0]:key==="unit"?cfg.units?.[0]:key==="level"?cfg.levels?.[0]:"");
       if(value&&form.elements[key])form.elements[key].value=value;
     }
-    photoHint?.();toggleRaised?.();updateLocationChip();
+    photoHint?.();toggleRaised?.();
   }
   function resetCaptureForNext(){
     const form=$("#app form");
@@ -461,7 +480,6 @@
         capturePhotoPreviewUrls.push(record.previewUrl);
         appendCapturePreview(capturePhotos.length-1);
       });
-      if(capturePhotos.length)focusCaptureNote();
     }catch(err){
       toast(err.message||"Could not read photo.",true);
     }finally{
@@ -470,41 +488,13 @@
     }
   };
 
-  let captureVoiceCaptured=false;
-  function updateCaptureVoiceState(){
-    const card=$("#captureVoiceCard"),text=$("#voiceText");
-    if(card)card.hidden=captureVoiceCaptured&&!!text?.value.trim();
-  }
-  function wireCaptureVoice(){
-    const text=$("#voiceText");
-    if(!text)return;
-    text.addEventListener("input",()=>{captureVoiceCaptured=false;updateCaptureVoiceState()},{once:false});
-    updateCaptureVoiceState();
-  }
-  const originalDraftVoice=draftVoice;
-  draftVoice=async function(){
-    await originalDraftVoice();
-    captureVoiceCaptured=!!$("#voiceText")?.value.trim();
-    updateCaptureVoiceState();
-  };
-  const originalStartDictation=startDictation;
   startDictation=function(){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR)return toast("Speech recognition unavailable — type the note instead.",true);
-    captureVoiceCaptured=false;
-    updateCaptureVoiceState();
     const r=new SR();
     r.lang="en-AU";
-    r.onresult=e=>{
-      const text=e.results[0][0].transcript;
-      const voice=$("#voiceText");
-      if(voice)voice.value=text;
-      captureVoiceCaptured=!!text.trim();
-      updateCaptureVoiceState();
-      draftVoice().catch(err=>toast(err.message||"Could not draft from note.",true));
-    };
+    r.onresult=e=>{const voice=$("#voiceText");if(voice)voice.value=e.results[0][0].transcript};
     r.onerror=()=>toast("Speech recognition failed — type the note instead.",true);
-    r.onend=()=>{};
     r.start();
     toast("Listening…");
   };
@@ -523,13 +513,8 @@
       .replace("Start with evidence. Defects and client defects require at least one photo.", "Take a photo first. Add a short note, then save.")
       .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
       .replace('onclick="walkMode=!walkMode;render()"','onclick="toggleWalkCapture()"')
-      .replace(/<div class="form-group"><h3>Location<\/h3><div class="field-list">[\s\S]*?<\/div><\/div>/,buildLocationSpeedBlock())
-      .replace('<label>Trade<select name="trade">',`${recentChipsRow("Recent trades","trade",recentValues("trade"))}<label>Trade<select name="trade">`)
-      .replace('<label>Subcontractor<select name="subcontractor">',`${recentChipsRow("Recent subs","subcontractor",recentValues("subcontractor"))}<label>Subcontractor<select name="subcontractor">`)
-      .replace('<textarea name="description" required placeholder','<textarea name="description" placeholder')
-      .replace("<section class=\"voice-box\"><div class=\"voice-head\">🎙 Voice-to-Note AI</div><p class=\"subtle\">After adding evidence, describe the item and CleanRun IQ will draft the fields.</p><textarea id=\"voiceText\" placeholder=\"No mic? Type the note instead\"></textarea><div class=\"actions\" style=\"margin-top:8px\"><button class=\"btn alt small\" type=\"button\" onclick=\"startDictation()\">Speak Item</button><button class=\"btn small\" type=\"button\" onclick=\"draftVoice()\">Draft form from note</button></div></section>", "<section class=\"voice-box capture-voice\" id=\"captureVoiceCard\"><div class=\"voice-head\">Speak note</div><p class=\"subtle\">Tap mic, describe the defect, and the form fills automatically.</p><textarea id=\"voiceText\" placeholder=\"Or type a short note\"></textarea><div class=\"capture-voice-actions\"><button class=\"btn alt\" type=\"button\" onclick=\"startDictation()\">Speak & fill</button></div></section>")
       .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`);
-    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureVoice();updateLocationChip()},0);
+    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews()},0);
     return html;
   };
 
@@ -767,25 +752,8 @@
     if(["issued","in_progress"].includes(item.status))return {label:"ISSUED",tone:"issued"};
     return {label:"CAPTURED",tone:"captured"};
   }
-  function cardPhoto(item){
-    const src=(item.originalPhotos||[])[0];
-    if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
-    return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence" loading="lazy" decoding="async">`;
-  }
   const cardActionLocks=new Set();
   window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue"){item.status="issued";item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to:body.to,by:body.by,reissue:!!body.reissue});render();toast("ISSUED · moved to Issued")}await reload();if(route==="items")filterItems();else render()})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
-  itemCard=function(i){
-    const status=siteStatus(i),closed=["closed","complete"].includes(i.status),urgent=i.priority==="urgent",code=itemDisplayCode(i);
-    const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location";
-    const photoCount=(i.originalPhotos||[]).length;
-    const dateText=closed?"Closed":(i.dueDate?`Due ${esc(new Date(i.dueDate+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short"}))}`:"");
-    const title=esc((i.description||"No description").trim().split(/\s+/).slice(0,8).join(" "));
-    const issueBtn=i.status==="open"?`<button class="cr-fast-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">Issue</button>`:"";
-    const reissueBtn=i.status==="rejected"?`<button class="cr-fast-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardAction(event,'${i.id}','issue')">Re-issue</button>`:"";
-    const photoBtn=`<button class="cr-fast-action alt" type="button" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();editItemForm('${i.id}')">+ Photo</button>`;
-    const openBtn=`<button class="cr-fast-action alt" type="button" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();showItem('${i.id}')">Open</button>`;
-    return `<article class="native-card native-item cr-item-card cr-scan-card status-${status.tone}" onclick="showItem('${i.id}')"><div class="cr-card-band"><div><span class="cr-card-code" title="${esc(i.code)}">${esc(code).toUpperCase()}</span>${photoCount?`<span class="cr-photo-count">${photoCount} photo${photoCount===1?"":"s"}</span>`:""}</div><span class="cr-card-status badge ${status.tone}">${status.label}</span></div><div class="cr-card-main"><div class="cr-card-media">${cardPhoto(i)}</div><div class="cr-card-copy"><div class="cr-card-title">${title}</div><div class="cr-card-location">${esc(location)}</div><div class="cr-card-assignment"><span>${esc(i.trade||"No trade")}</span><span>${esc(i.subcontractor||"Unassigned")}</span></div><div class="cr-card-meta-row">${dateText?`<span>${dateText}</span>`:""}${urgent?'<span class="badge overdue">Urgent</span>':""}</div></div></div><div class="cr-card-actions cr-fast-actions" onclick="event.stopPropagation()">${issueBtn}${reissueBtn}${photoBtn}${openBtn}</div></article>`;
-  };
 
   dashboardView=function(){
     const p=state.settings.activeProject,items=state.items.filter(i=>i.project===p),today=new Date().toISOString().slice(0,10);
@@ -938,10 +906,9 @@
   plansView=function(){const html=fitPlansView(),plan=activePlan();return plan?html.replace('<p class="meta">Tap anywhere on the plan to drop a pin</p>',`${fitControls(plan)}<p class="meta">Tap anywhere on the plan to drop a pin</p>`):html}
   const fitWirePlan=wirePlan;
   wirePlan=function(){fitWirePlan();const plan=activePlan(),canvas=$("#planCanvas");if(canvas&&plan)applyPlanFit(plan,canvas)}
-  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Items grouped by responsible subcontractor for targeted follow-up"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?items.length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>`<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="location.href='/api/reports/${id}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.href='/api/reports/${id}'}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} item${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   window.openSubcontractorReportPicker=function(){const project=state.settings.activeProject,names=uniqueValues(state.items.filter(i=>i.project===project&&i.subcontractor).map(i=>i.subcontractor));if(!names.length)return toast("No subcontractors found for this project.",true);$("#modalTitle").textContent="Subcontractor Summary";$("#modalBody").innerHTML=`<div class="field-list"><label>Subcontractor<select id="reportSubcontractor">${names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("")}</select></label><button class="btn" type="button" onclick="openSelectedSubcontractorReport()">Open report</button></div>`;$("#modal").hidden=false};
-  window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);location.href=`/api/reports/subcontractor?subcontractor=${encodeURIComponent(value)}`};
-  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`location.href='/api/reports/${id}'`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
+  window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);closeModal();openReport("subcontractor",{subcontractor:value})};
+  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   function rerenderLatestHome(){if(typeof state!=="undefined"&&state&&route==="home")render()}
   ensureWorkbench();updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
 })();
