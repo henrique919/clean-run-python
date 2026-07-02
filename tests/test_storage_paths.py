@@ -193,7 +193,8 @@ class StoragePathTests(unittest.TestCase):
         ]
         calls = []
         store.lock = RLock()
-        store._read = lambda: AppData(items=items, settings=settings)
+        store._read_settings = lambda: settings
+        store._read_item_by_id = lambda item_id: next((item for item in items if item.id == item_id), None)
         store._upsert_item = lambda item, current_settings: calls.append((item.code, current_settings))
 
         changed = store._patch(items[1].id, lambda item: item.model_copy(update={"description": "Changed"}))
@@ -208,7 +209,8 @@ class StoragePathTests(unittest.TestCase):
         existing = Item(code="DEF-1001", project="Jura Noosa", due_date="2026-07-07", description="One")
         calls = []
         store.lock = RLock()
-        store._read = lambda: AppData(items=[existing], settings=settings)
+        store._read_create_context = lambda: AppData(items=[existing], settings=settings)
+        store._read_code_index = lambda: [existing]
         store._upsert_item = lambda item, current_settings: calls.append((item.code, current_settings))
 
         created = store.create_item(

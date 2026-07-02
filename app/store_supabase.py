@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from threading import RLock
 from typing import Any, Callable
 from uuid import UUID
@@ -34,6 +35,16 @@ from app.validation import validate_capture
 logger = logging.getLogger(__name__)
 SETTINGS_ID = "default"
 DEFAULT_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
+CREATE_CONTEXT_SELECT = (
+    "id, code, type, project, building, level, unit, room, trade, subcontractor, "
+    "due_date, description, created_by_label, created_at"
+)
+ITEM_ROW_SELECT = (
+    "id, code, type, status, project, building, level, unit, room, trade, subcontractor, "
+    "priority, due_date, description, raised_by, created_by_label, rejection_reason, "
+    "issued_at, started_at, ready_at, inspected_at, closed_at, created_at, updated_at, payload"
+)
+UPLOAD_MAX_WORKERS = int(os.getenv("CLEANRUN_UPLOAD_MAX_WORKERS", "4"))
 
 
 def _enum_value(value: Any) -> Any:
@@ -121,15 +132,60 @@ class SupabaseCleanRunStore(CleanRunStore):
         if not response.data:
             self.update_settings(seed_settings())
 
+    def _read_code_index(self) -> list[Item]:
+        rows = self.client.table("items").select("code, project").execute().data or []
+        return [Item(code=row["code"], project=row.get("project") or "") for row in rows if row.get("code")]
+
+    def _read_create_context(self) -> AppData:
+        """Lightweight snapshot for code allocation and duplicate-create checks."""
+        with self.lock:
+            item_rows = (
+                self.client.table("items")
+                .select(CREATE_CONTEXT_SELECT)
+                .order("created_at", desc=True)
+                .limit(200)
+                .execute()
+                .data
+                or []
+            )
+            items = [self._item_stub_from_row(row) for row in item_rows]
+            return AppData(items=items, settings=self._read_settings())
+
+    def _item_stub_from_row(self, row: dict[str, Any]) -> Item:
+        return Item(
+            id=str(row["id"]),
+            code=row["code"],
+            type=row["type"],
+            project=row.get("project") or "",
+            building=row.get("building") or "",
+            level=row.get("level") or "",
+            unit=row.get("unit") or "",
+            room=row.get("room") or "",
+            trade=row.get("trade") or "",
+            subcontractor=row.get("subcontractor") or "",
+            due_date=str(row.get("due_date") or ""),
+            description=row.get("description") or "",
+            created_by=row.get("created_by_label"),
+            created_at=row.get("created_at"),
+        )
+
+    def _read_item_by_id(self, item_id: str) -> Item | None:
+        with self.lock:
+            response = self.client.table("items").select(ITEM_ROW_SELECT).eq("id", item_id).limit(1).execute()
+            if not response.data:
+                return None
+            row = response.data[0]
+            db_item_id = str(row["id"])
+            photos = self._children_by_item("item_photos", [db_item_id]).get(db_item_id, [])
+            comments = self._children_by_item("item_comments", [db_item_id]).get(db_item_id, [])
+            audit_events = self._children_by_item("item_audit_events", [db_item_id]).get(db_item_id, [])
+            return self._item_from_rows(row, photos, comments, audit_events)
+
     def _read(self) -> AppData:
         with self.lock:
             item_rows = (
                 self.client.table("items")
-                .select(
-                    "id, code, type, status, project, building, level, unit, room, trade, subcontractor, "
-                    "priority, due_date, description, raised_by, created_by_label, rejection_reason, "
-                    "issued_at, started_at, ready_at, inspected_at, closed_at, created_at, updated_at, payload"
-                )
+                .select(ITEM_ROW_SELECT)
                 .order("updated_at", desc=True)
                 .execute()
                 .data
@@ -353,12 +409,12 @@ class SupabaseCleanRunStore(CleanRunStore):
 
     def create_item(self, payload: ItemCreate, *, issue_now: bool = False, actor: dict[str, Any] | None = None) -> Item:
         validate_capture(payload, for_issue=issue_now)
-        data = self._read()
+        data = self._read_create_context()
         now = now_iso()
         duplicate = self._recent_duplicate(data.items, payload, now)
         if duplicate:
             return duplicate
-        code = self.next_code(data.items, payload.type, project=payload.project, settings=data.settings)
+        code = self.next_code(self._read_code_index(), payload.type, project=payload.project, settings=data.settings)
         payload_data = payload.model_dump(exclude={"status"})
         item = Item(
             **payload_data,
@@ -376,17 +432,14 @@ class SupabaseCleanRunStore(CleanRunStore):
         return item
 
     def _patch(self, item_id: str, mutator: Callable[[Item], Item]) -> Item:
-        data = self._read()
-        changed: Item | None = None
-        for item in data.items:
-            if item.id == item_id:
-                changed = mutator(item)
-                changed.updated_at = now_iso()
-                break
-        if changed is None:
+        settings = self._read_settings()
+        item = self._read_item_by_id(item_id)
+        if item is None:
             raise KeyError(item_id)
+        changed = mutator(item)
+        changed.updated_at = now_iso()
         with self.lock:
-            self._upsert_item(changed, data.settings)
+            self._upsert_item(changed, settings)
         return changed
 
     def _upsert_item(self, item: Item, settings: Settings) -> str:
@@ -433,18 +486,37 @@ class SupabaseCleanRunStore(CleanRunStore):
         self._upsert_audit_events(company_id, project_id, db_item_id, item)
         return db_item_id
 
+    def _normalize_photos_parallel(self, photos: list[str], *, folder: str) -> list[str | None]:
+        if not photos:
+            return []
+        if len(photos) == 1:
+            return [normalize_photo(photos[0], folder=folder)]
+        workers = min(UPLOAD_MAX_WORKERS, len(photos))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(lambda photo: normalize_photo(photo, folder=folder), photos))
+
     def _with_storage_photos(self, item: Item) -> Item:
-        original_photos = [
-            normalize_photo(photo, folder=_storage_folder(item, "original"))
-            for photo in item.original_photos
-        ]
+        original_photos = self._normalize_photos_parallel(
+            item.original_photos,
+            folder=_storage_folder(item, "original"),
+        )
+        rect_folder = _storage_folder(item, "rectification")
+        rect_photos = self._normalize_photos_parallel(
+            [evidence.photo for evidence in item.rectification_evidence],
+            folder=rect_folder,
+        )
         rectification_evidence = [
-            evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder=_storage_folder(item, "rectification"))})
-            for evidence in item.rectification_evidence
+            evidence.model_copy(update={"photo": photo})
+            for evidence, photo in zip(item.rectification_evidence, rect_photos, strict=True)
         ]
+        close_folder = _storage_folder(item, "closeout")
+        close_photos = self._normalize_photos_parallel(
+            [evidence.photo for evidence in item.closeout_evidence],
+            folder=close_folder,
+        )
         closeout_evidence = [
-            evidence.model_copy(update={"photo": normalize_photo(evidence.photo, folder=_storage_folder(item, "closeout"))})
-            for evidence in item.closeout_evidence
+            evidence.model_copy(update={"photo": photo})
+            for evidence, photo in zip(item.closeout_evidence, close_photos, strict=True)
         ]
         return item.model_copy(
             update={

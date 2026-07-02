@@ -783,6 +783,11 @@ def update_item(item_id: str, payload: dict[str, object], by: str | None = Query
         raise workflow_http_error(exc)
 
 
+def action_item_response(item) -> dict[str, object]:
+    prefetch_item_photo_urls([item])
+    return camel_item(item)
+
+
 @app.post("/api/items/{item_id}/actions/{action}")
 def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ctx: RequestContext = Depends(get_request_context)):
     item = get_authorized_item(item_id, ctx)
@@ -791,19 +796,19 @@ def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ct
     try:
         if action == "issue":
             require_issue_item(ctx.user, item)
-            return camel_item(store.issue_item(item_id, to=str(payload.get("to") or item.subcontractor), by=actor_label(ctx), note=payload.get("note"), reissue=bool(payload.get("reissue")), actor=actor_context(ctx)))
+            return action_item_response(store.issue_item(item_id, to=str(payload.get("to") or item.subcontractor), by=actor_label(ctx), note=payload.get("note"), reissue=bool(payload.get("reissue")), actor=actor_context(ctx)))
         if action == "start":
             require_rectification_access(ctx.user, item)
-            return camel_item(store.mark_in_progress(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+            return action_item_response(store.mark_in_progress(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
         if action == "ready":
             require_rectification_access(ctx.user, item)
-            return camel_item(store.mark_ready(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+            return action_item_response(store.mark_ready(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
         if action == "inspect":
             require_close_item(ctx.user, item)
-            return camel_item(store.start_inspection(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
+            return action_item_response(store.start_inspection(item_id, by=actor_label(ctx), actor=actor_context(ctx)))
         if action == "reject":
             require_close_item(ctx.user, item)
-            return camel_item(store.reject(item_id, by=actor_label(ctx), reason=str(payload.get("reason") or ""), actor=actor_context(ctx)))
+            return action_item_response(store.reject(item_id, by=actor_label(ctx), reason=str(payload.get("reason") or ""), actor=actor_context(ctx)))
         if action == "close":
             require_close_item(ctx.user, item)
             evidence = CloseoutEvidence(
@@ -813,15 +818,15 @@ def legacy_item_action(item_id: str, action: str, payload: dict[str, object], ct
                 note=payload.get("note"),
                 confirmation=str(payload.get("confirmation") or payload.get("confirmed") or ""),
             )
-            return camel_item(store.close_with_evidence(item_id, evidence, actor=actor_context(ctx)))
+            return action_item_response(store.close_with_evidence(item_id, evidence, actor=actor_context(ctx)))
         if action == "rectification":
             require_rectification_access(ctx.user, item)
             evidence = RectificationEvidence(photo=payload.get("photo"), comment=payload.get("comment"), by=actor_label(ctx))
-            return camel_item(store.add_rectification(item_id, evidence, advance_to_ready=bool(payload.get("advanceToReady") or payload.get("advance_to_ready")), actor=actor_context(ctx)))
+            return action_item_response(store.add_rectification(item_id, evidence, advance_to_ready=bool(payload.get("advanceToReady") or payload.get("advance_to_ready")), actor=actor_context(ctx)))
         if action == "comment":
             require_comment_access(ctx.user, item)
             comment = Comment(text=str(payload.get("text") or ""), by=actor_label(ctx))
-            return camel_item(store.add_comment(item_id, comment, actor=actor_context(ctx)))
+            return action_item_response(store.add_comment(item_id, comment, actor=actor_context(ctx)))
     except (WorkflowError, ValidationError) as exc:
         raise workflow_http_error(exc)
     except StorageUploadError as exc:

@@ -15,8 +15,8 @@ class Phase2LocalChecklist(unittest.TestCase):
         self.enh = ENHANCEMENTS.read_text(encoding="utf-8")
         self.css = STYLES.read_text(encoding="utf-8")
 
-    def test_build_tag_cards40(self) -> None:
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards40"', self.enh)
+    def test_build_tag_cards41(self) -> None:
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards41"', self.enh)
 
     def test_defaults_strip_containment(self) -> None:
         for marker in (
@@ -51,7 +51,8 @@ class Phase2LocalChecklist(unittest.TestCase):
         self.assertIn("captureDescriptionEdited", self.enh)
         self.assertIn("preserveDescription", self.enh)
 
-    def test_walk_save_skips_background_reload(self) -> None:
+    def test_save_skips_background_reload(self) -> None:
+        self.assertIn("applyCardActionResult", self.enh)
         self.assertIn("stateNeedsGlobalRefresh=true", self.enh)
         self.assertNotIn("reload().then(fresh=>{state=fresh;walkMode=true", self.enh)
 
