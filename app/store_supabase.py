@@ -128,7 +128,7 @@ class SupabaseCleanRunStore(CleanRunStore):
                 .select(
                     "id, code, type, status, project, building, level, unit, room, trade, subcontractor, "
                     "priority, due_date, description, raised_by, created_by_label, rejection_reason, "
-                    "issued_at, started_at, ready_at, inspected_at, closed_at, created_at, updated_at"
+                    "issued_at, started_at, ready_at, inspected_at, closed_at, created_at, updated_at, payload"
                 )
                 .order("updated_at", desc=True)
                 .execute()
@@ -197,6 +197,51 @@ class SupabaseCleanRunStore(CleanRunStore):
             deduped.append(row)
         return deduped
 
+    def _hydrate_issue_history(
+        self,
+        issue_history: list[IssueEvent],
+        audit_rows: list[dict[str, Any]],
+        row: dict[str, Any],
+    ) -> list[IssueEvent]:
+        if issue_history:
+            return issue_history
+        rebuilt: list[IssueEvent] = []
+        for event in audit_rows:
+            action = (event.get("message") or event.get("event_type") or "").strip()
+            if action.startswith("Re-issued to "):
+                rebuilt.append(
+                    IssueEvent(
+                        at=event.get("created_at"),
+                        to=action[len("Re-issued to ") :],
+                        by=event.get("created_by_label"),
+                        note=event.get("note"),
+                        reissue=True,
+                    )
+                )
+            elif action.startswith("Issued to "):
+                rebuilt.append(
+                    IssueEvent(
+                        at=event.get("created_at"),
+                        to=action[len("Issued to ") :],
+                        by=event.get("created_by_label"),
+                        note=event.get("note"),
+                        reissue=False,
+                    )
+                )
+        if rebuilt:
+            return rebuilt
+        status = row.get("status")
+        if status not in {ItemStatus.OPEN, ItemStatus.OPEN.value, None, ""} and row.get("issued_at"):
+            return [
+                IssueEvent(
+                    at=row.get("issued_at"),
+                    to=row.get("subcontractor") or "",
+                    by=row.get("created_by_label"),
+                    reissue=False,
+                )
+            ]
+        return []
+
 
     def _item_from_rows(
         self,
@@ -260,6 +305,7 @@ class SupabaseCleanRunStore(CleanRunStore):
             for event in payload.get("issue_history", [])
             if isinstance(event, dict)
         ]
+        issue_history = self._hydrate_issue_history(issue_history, audit_rows, row)
         inspection_history = [
             InspectionEvent.model_validate(event)
             for event in payload.get("inspection_history", [])
