@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards37";
-  document.documentElement.dataset.cleanrunBuild="cards37";
+  window.CLEANRUN_FRONTEND_BUILD="cards38";
+  document.documentElement.dataset.cleanrunBuild="cards38";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -10,6 +10,11 @@
   const THEME_KEY="cleanrun-theme";
   const LAST_CAPTURE_KEY="cleanrun-last-capture-fields";
   const WALK_CONTEXT_KEY="cleanrun-walk-context-v1";
+  const RECENTS_KEY="cleanrun-capture-recents-v1";
+  const RECENT_FIELDS=["building","level","unit","room","trade","subcontractor"];
+  const RECENT_LIMIT=3;
+  let captureDefaultsExpanded=null;
+  let captureDraftHighlights=new Set();
   let capturePhotoMeta=[];
   let capturePhotoPreviewUrls=[];
   let editPhotos=[];
@@ -245,6 +250,7 @@
   function rememberCaptureFields(data){
     const keep={project:data.project,building:data.building,level:data.level,unit:data.unit,room:data.room,trade:data.trade,subcontractor:data.subcontractor,priority:data.priority,type:data.type};
     try{localStorage.setItem(LAST_CAPTURE_KEY,JSON.stringify(keep))}catch{}
+    recordCaptureRecents(data);
     if(state?.settings?.activeProject){
       try{
         const all=JSON.parse(localStorage.getItem(WALK_CONTEXT_KEY)||"{}")||{};
@@ -252,6 +258,156 @@
         localStorage.setItem(WALK_CONTEXT_KEY,JSON.stringify(all));
       }catch{}
     }
+  }
+  function readCaptureRecents(){
+    const project=state?.settings?.activeProject;
+    if(!project)return {};
+    try{
+      const all=JSON.parse(localStorage.getItem(RECENTS_KEY)||"{}")||{};
+      return all[project]||{};
+    }catch{return {}}
+  }
+  function recordCaptureRecents(data){
+    const project=data?.project||state?.settings?.activeProject;
+    if(!project)return;
+    try{
+      const all=JSON.parse(localStorage.getItem(RECENTS_KEY)||"{}")||{};
+      const bucket=all[project]=all[project]||{};
+      for(const field of RECENT_FIELDS){
+        const value=String(data[field]||"").trim();
+        if(!value)continue;
+        const list=(bucket[field]||[]).filter(v=>v!==value);
+        list.unshift(value);
+        bucket[field]=list.slice(0,RECENT_LIMIT);
+      }
+      localStorage.setItem(RECENTS_KEY,JSON.stringify(all));
+    }catch{}
+  }
+  function selectOptionsWithRecents(field,choices,selected="",placeholder=""){
+    const recents=(readCaptureRecents()[field]||[]).slice(0,RECENT_LIMIT);
+    const seen=new Set();
+    let html=placeholder?`<option value="">${esc(placeholder)}</option>`:"";
+    const recentList=recents.filter(v=>{
+      const t=String(v||"").trim();
+      if(!t||seen.has(t))return false;
+      seen.add(t);
+      return true;
+    });
+    if(recentList.length){
+      html+=`<optgroup label="Recent">${recentList.map(v=>`<option value="${esc(v)}" ${v===selected?"selected":""}>${esc(v)}</option>`).join("")}</optgroup>`;
+    }
+    const main=(choices||[]).filter(v=>!seen.has(v));
+    const opts=main.map(v=>`<option value="${esc(v)}" ${v===selected?"selected":""}>${esc(v)}</option>`).join("");
+    if(recentList.length&&opts)html+=`<optgroup label="All">${opts}</optgroup>`;
+    else html+=opts;
+    return html;
+  }
+  function hasProjectCaptureDefaults(){
+    const project=state?.settings?.activeProject;
+    if(!project)return false;
+    const ctx=readWalkContext();
+    if(ctx.building||ctx.unit||ctx.trade||ctx.subcontractor)return true;
+    try{
+      const last=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{};
+      if(last.project===project&&(last.building||last.unit||last.trade||last.subcontractor))return true;
+    }catch{}
+    return false;
+  }
+  function captureFieldLabel(name,value){
+    if(name==="type")return typeLabels[value]||value||"";
+    if(name==="priority")return value?String(value).charAt(0).toUpperCase()+String(value).slice(1):"";
+    if(name==="dueDate"&&value){
+      try{
+        const d=new Date(value+"T00:00:00");
+        return `Due ${d.toLocaleDateString(undefined,{day:"numeric",month:"short"})}`;
+      }catch{return `Due ${value}`}
+    }
+    return String(value||"").trim();
+  }
+  function stripSegmentHtml(name,text){
+    const body=esc(text||"—");
+    if(captureDraftHighlights.has(name))return `<span class="strip-draft-changed" data-strip-field="${esc(name)}">${body}</span>`;
+    return `<span data-strip-field="${esc(name)}">${body}</span>`;
+  }
+  function updateCaptureDefaultsStrip(){
+    const host=$("#captureDefaultsStripText");
+    const form=$("#app form");
+    if(!host||!form)return;
+    const locParts=[];
+    [["building",form.building?.value],["level",form.level?.value],["unit",form.unit?.value],["room",form.room?.value]].forEach(([name,value])=>{
+      const text=String(value||"").trim();
+      if(text)locParts.push(stripSegmentHtml(name,text));
+    });
+    const locHtml=locParts.length?locParts.join('<span class="strip-sep"> · </span>'):"<span class=\"strip-placeholder\">Set location</span>";
+    const trade=stripSegmentHtml("trade",captureFieldLabel("trade",form.trade?.value)||"—");
+    const sub=stripSegmentHtml("subcontractor",form.subcontractor?.value||"—");
+    const type=stripSegmentHtml("type",captureFieldLabel("type",form.type?.value)||"—");
+    const priority=stripSegmentHtml("priority",captureFieldLabel("priority",form.priority?.value)||"—");
+    const due=stripSegmentHtml("dueDate",captureFieldLabel("dueDate",form.dueDate?.value)||"—");
+    host.innerHTML=`${locHtml}<span class="strip-sep"> / </span>${trade}<span class="strip-sep"> · </span>${sub}<span class="strip-sep"> · </span>${type}<span class="strip-sep"> · </span>${priority}<span class="strip-sep"> · </span>${due}`;
+  }
+  function setCaptureDefaultsExpanded(expanded){
+    captureDefaultsExpanded=expanded;
+    const details=$("#captureDefaultsDetails");
+    const collapse=$("#captureDefaultsCollapse");
+    const strip=$("#captureDefaultsStrip");
+    if(details)details.classList.toggle("hidden",!expanded);
+    if(collapse)collapse.hidden=!expanded;
+    if(strip)strip.setAttribute("aria-expanded",expanded?"true":"false");
+    if(!expanded)updateCaptureDefaultsStrip();
+  }
+  window.expandCaptureDefaultsSections=function(){
+    setCaptureDefaultsExpanded(true);
+  };
+  window.collapseCaptureDefaultsSections=function(){
+    setCaptureDefaultsExpanded(false);
+    updateCaptureDefaultsStrip();
+  };
+  window.onCaptureFieldChange=function(el){
+    if(el?.name)captureDraftHighlights.delete(el.name);
+    updateCaptureDefaultsStrip();
+    if(el?.name==="type"){photoHint?.();toggleRaised?.()}
+    if(["building","level","unit","room"].includes(el?.name))updateLocationChip?.();
+  };
+  function expandCaptureSectionForInvalid(form){
+    const invalid=[...form.elements].find(el=>el.name&&!el.validity.valid);
+    if(!invalid)return invalid;
+    const defaultsFields=["type","raisedBy","priority","project","building","level","unit","room","trade","subcontractor","dueDate"];
+    if(defaultsFields.includes(invalid.name)){
+      setCaptureDefaultsExpanded(true);
+      const label=invalid.closest("label")||invalid;
+      label.scrollIntoView({behavior:"smooth",block:"center"});
+      label.classList.add("capture-field-invalid");
+      setTimeout(()=>label.classList.remove("capture-field-invalid"),2200);
+    }
+    return invalid;
+  }
+  function expandCaptureSectionForNames(names){
+    if(!names?.length)return;
+    setCaptureDefaultsExpanded(true);
+    const form=$("#app form");
+    const first=names.map(n=>form?.elements[n]).find(Boolean);
+    const label=first?.closest?.("label")||first;
+    label?.scrollIntoView?.({behavior:"smooth",block:"center"});
+    label?.classList?.add("capture-field-invalid");
+    setTimeout(()=>label?.classList?.remove("capture-field-invalid"),2200);
+  }
+  function buildCaptureDefaultsPanel(s,cfg,due){
+    const expanded=captureDefaultsExpanded!==null?captureDefaultsExpanded:!hasProjectCaptureDefaults();
+    const detailsClass=expanded?"":" hidden";
+    const collapseHidden=expanded?"":" hidden";
+    return `<section class="form-panel capture-form-panel"><div class="capture-defaults-strip-row"><button type="button" class="capture-defaults-strip" id="captureDefaultsStrip" onclick="expandCaptureDefaultsSections()" aria-expanded="${expanded}"><span id="captureDefaultsStripText" class="capture-defaults-strip__text">Set task, location and assignment</span></button><button type="button" class="capture-defaults-collapse btn alt small"${collapseHidden} id="captureDefaultsCollapse" onclick="collapseCaptureDefaultsSections()" aria-label="Collapse task, location and assignment">Collapse</button></div><div id="captureDefaultsDetails" class="capture-defaults-details${detailsClass}"><div class="form-group" data-capture-section="task"><h3>Task</h3><div class="field-list"><label>Item type<select name="type" id="capType" onchange="onCaptureFieldChange(this)"><option value="defect">Defect</option><option value="incomplete">Incomplete Work</option><option value="client">Client Defect</option></select></label><label id="raisedField" hidden>Raised by *<select name="raisedBy" onchange="onCaptureFieldChange(this)"><option value="">Who raised this?</option>${options(["Client PM","Superintendent","Consultant","Architect","Buyer","Other"])}</select></label><label>Priority<select name="priority" onchange="onCaptureFieldChange(this)"><option value="high">High</option><option value="urgent">Urgent</option></select></label></div></div><div class="form-group" data-capture-section="location"><h3>Location</h3><div class="field-list"><label>Project<select name="project" onchange="onCaptureFieldChange(this)">${options(s.projects,s.activeProject)}</select></label><label>Building *<select name="building" required onchange="onCaptureFieldChange(this)"><option value="">Select building</option>${selectOptionsWithRecents("building",cfg.buildings||[])}</select></label><label>Level<select name="level" onchange="onCaptureFieldChange(this)"><option value="">Select level</option>${selectOptionsWithRecents("level",cfg.levels||[])}</select></label><label>Unit / Area<select name="unit" onchange="onCaptureFieldChange(this)"><option value="">Select unit / area</option>${selectOptionsWithRecents("unit",cfg.units||[])}</select></label><label>Room / Location<select name="room" onchange="onCaptureFieldChange(this)"><option value="">Select room / location</option>${selectOptionsWithRecents("room",cfg.rooms||[])}</select></label></div></div><div class="form-group" data-capture-section="assign"><h3>Assign</h3><div class="field-list"><label>Trade<select name="trade" onchange="onCaptureFieldChange(this)"><option value="">Select trade</option>${selectOptionsWithRecents("trade",trades)}</select></label><label>Subcontractor<select name="subcontractor" onchange="onCaptureFieldChange(this)"><option value="">Select subcontractor</option>${selectOptionsWithRecents("subcontractor",s.subcontractors)}</select></label><label>Due date<input type="date" name="dueDate" value="${due}" required onchange="onCaptureFieldChange(this)"></label></div></div></div><div class="form-group capture-description-group"><h3>Description</h3><textarea name="description" required placeholder="Short, specific. e.g. Cracked tile under vanity, replace and regrout."></textarea></div></section>`;
+  }
+  function wireCaptureDefaultsForm(){
+    const form=$("#app form");
+    if(!form||form.dataset.defaultsWired)return;
+    form.dataset.defaultsWired="1";
+    form.addEventListener("invalid",e=>{
+      if(e.target?.name)expandCaptureSectionForInvalid(form);
+    },true);
+    updateCaptureDefaultsStrip();
+    photoHint?.();
+    toggleRaised?.();
   }
   function readWalkContext(){
     try{
@@ -297,6 +453,7 @@
     const form=$("#app form");if(!form?.elements[field])return;
     form.elements[field].value=value;
     if(field==="building"||field==="level"||field==="unit"||field==="room")updateLocationChip();
+    onCaptureFieldChange?.(form.elements[field]);
     toast(`Set ${field} to ${value}`);
   };
   window.toggleWalkCapture=function(){
@@ -320,6 +477,7 @@
     }
     if(form.elements.dueDate)form.elements.dueDate.value=defaultCaptureDueDate();
     photoHint?.();toggleRaised?.();
+    updateCaptureDefaultsStrip?.();
   }
   function resetCaptureForNext(){
     const form=$("#app form");
@@ -465,7 +623,7 @@
   function previewFigure(src,meta,index,mode){
     const safeTitle=mode==="edit"?"Retrospective evidence":"Issue evidence";
     const caption=geoLabel(meta);
-    return `<figure data-photo-index="${index}"><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})">${caption?`<figcaption class="photo-caption">${esc(caption)}</figcaption>`:""}<div class="photo-tools"><button class="btn alt" type="button" onclick="markupEvidencePhoto('${mode}',${index})">Mark up</button><button class="btn alt" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
+    return `<figure data-photo-index="${index}"><img src="${src}" alt="${safeTitle} ${index+1}" onclick="openEvidencePhoto('${mode}',${index})">${caption?`<figcaption class="photo-caption">${esc(caption)}</figcaption>`:""}<div class="photo-tools"><button class="btn photo-markup-btn" type="button" onclick="markupEvidencePhoto('${mode}',${index})">✎ Mark up</button><button class="btn alt photo-remove-btn" type="button" onclick="removeEvidencePhoto('${mode}',${index})">Remove</button></div></figure>`;
   }
 
   function updatePhotoCount(){
@@ -546,7 +704,7 @@
 
   function ensureWorkbench(){
     if($("#photoWorkbench"))return;
-    document.body.insertAdjacentHTML("beforeend",`<section class="photo-workbench" id="photoWorkbench" hidden aria-modal="true"><div class="photo-workbench__panel"><header class="photo-workbench__head"><strong id="photoWorkbenchTitle">Photo evidence</strong><button type="button" onclick="closePhotoWorkbench()">Close</button></header><div class="photo-workbench__stage"><canvas id="markupCanvas"></canvas></div><footer class="photo-workbench__tools"><label>Tool <select id="markupTool"><option value="pen">Pen</option><option value="circle">Circle</option><option value="box">Box</option><option value="arrow">Arrow</option><option value="text">Text box</option></select></label><label>Colour <input id="markupColor" type="color" value="#E5483B"></label><label>Width <input id="markupWidth" type="range" min="2" max="18" value="6"></label><button type="button" onclick="undoPhotoMarkup()">Undo</button><button type="button" onclick="resetPhotoMarkup()">Reset</button><button class="primary" id="saveMarkup" type="button" onclick="savePhotoMarkup()">Save marked-up copy</button></footer></div></section>`);
+    document.body.insertAdjacentHTML("beforeend",`<section class="photo-workbench" id="photoWorkbench" hidden aria-modal="true"><div class="photo-workbench__panel"><header class="photo-workbench__head"><strong id="photoWorkbenchTitle">Photo evidence</strong><button type="button" onclick="closePhotoWorkbench()">Close</button></header><div class="photo-workbench__stage"><canvas id="markupCanvas"></canvas></div><footer class="photo-workbench__tools"><label>Tool <select id="markupTool"><option value="arrow">Arrow</option><option value="pen">Pen</option><option value="circle">Circle</option><option value="box">Box</option><option value="text">Text box</option></select></label><label>Colour <input id="markupColor" type="color" value="#E5483B"></label><label>Width <input id="markupWidth" type="range" min="2" max="18" value="6"></label><button type="button" onclick="undoPhotoMarkup()">Undo</button><button type="button" onclick="resetPhotoMarkup()">Reset</button><button class="primary" id="saveMarkup" type="button" onclick="savePhotoMarkup()">Save marked-up copy</button></footer></div></section>`);
     const canvas=$("#markupCanvas");
     const point=e=>{const r=canvas.getBoundingClientRect(),p=e.touches?.[0]||e;return{x:(p.clientX-r.left)*canvas.width/r.width,y:(p.clientY-r.top)*canvas.height/r.height}};
     const style=ctx=>{ctx.strokeStyle=$("#markupColor").value;ctx.fillStyle=$("#markupColor").value;ctx.lineWidth=Number($("#markupWidth").value);ctx.lineCap="round";ctx.lineJoin="round";ctx.font="700 22px Inter, system-ui, sans-serif"};
@@ -595,6 +753,8 @@
   }
   async function openWorkbench(src,title,onSave){
     ensureWorkbench();
+    const tool=$("#markupTool");
+    if(tool)tool.value="arrow";
     workbench={source:src,title,save:onSave,drawing:false,last:null,history:[],baseCanvas:null,ready:false};
     const panel=$("#photoWorkbench");
     const saveBtn=$("#saveMarkup");
@@ -682,8 +842,25 @@
     toast("Listening…");
   };
 
+  const baseDraftVoice=draftVoice;
+  draftVoice=async function(){
+    const form=$("#app form");
+    const before={};
+    if(form)[...form.elements].forEach(el=>{if(el.name)before[el.name]=el.value});
+    await baseDraftVoice();
+    captureDraftHighlights=new Set();
+    if(form)[...form.elements].forEach(el=>{
+      if(el.name&&before[el.name]!==undefined&&String(before[el.name])!==String(el.value))captureDraftHighlights.add(el.name);
+    });
+    updateCaptureDefaultsStrip();
+  };
+
   const originalCaptureView=captureView;
   captureView=function(){
+    const s=state.settings;
+    const cfg=s.projectConfigs[s.activeProject]||{};
+    const days=Number(cfg.defaultDueDays??7)||7;
+    const due=(typeof defaultCaptureDueDate==="function"?defaultCaptureDueDate():new Date(Date.now()+days*86400000).toISOString().slice(0,10));
     const walkBanner=walkMode?`<div class="walk-session-banner">Walk mode · ${walkCount} captured this walk · next save loops back here</div>`:"";
     let html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
@@ -691,8 +868,9 @@
       .replace(/<div class="photo-preview" id="capturePreviews"[^>]*>[\s\S]*?<\/div>/, '<div class="photo-preview" id="capturePreviews"></div>')
       .replace('onclick="walkMode=!walkMode;render()"','onclick="toggleWalkCapture()"')
       .replace(">Walk Capture</button>",'>Walk mode</button>')
-      .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`);
-    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews()},0);
+      .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`)
+      .replace(/<section class="form-panel">[\s\S]*?<\/section>/,buildCaptureDefaultsPanel(s,cfg,due));
+    setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureDefaultsForm()},0);
     return html;
   };
 
@@ -738,11 +916,19 @@
     data.id=form.dataset.captureRequestId;data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
     ensureCaptureDescription(data,voice);
-    rememberCaptureFields(data);
     const fail=message=>{captureSubmitting=false;release();toast(message,true)};
-    if(data.type==="client"&&!data.raisedBy)return fail("A Client Defect requires a Raised By / source.");
+    if(!form.checkValidity()){
+      const invalid=expandCaptureSectionForInvalid(form);
+      invalid?.reportValidity?.();
+      return fail(invalid?.validationMessage||"Please complete the required fields.");
+    }
+    rememberCaptureFields(data);
+    if(data.type==="client"&&!data.raisedBy){expandCaptureSectionForNames(["raisedBy"]);return fail("A Client Defect requires a Raised By / source.")}
     if(requireOriginalPhoto(data)){focusPhotoEvidence();return fail("Attach original photo evidence, or change Item Type to Incomplete Work.")}
-    if(mode==="issue"&&(!data.trade||!data.subcontractor))return fail("Issue Now requires a trade and subcontractor.");
+    if(mode==="issue"&&(!data.trade||!data.subcontractor)){
+      expandCaptureSectionForNames([!data.trade?"trade":null,!data.subcontractor?"subcontractor":null].filter(Boolean));
+      return fail("Issue Now requires a trade and subcontractor.");
+    }
     try{
       toast(capturePhotos.length?"Uploading evidence…":"Saving item…");
       if(mode==="issue"){data.issueOnCreate=true;data.issueTo=data.subcontractor}
@@ -753,6 +939,7 @@
       form.dataset.captureRequestId="";
       mergeSavedItem(item);
       if(walkMode){
+        captureDefaultsExpanded=false;
         walkCount++;
         route="capture";
         render();

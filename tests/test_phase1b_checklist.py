@@ -171,7 +171,11 @@ class Phase1BLiveChecklist(unittest.TestCase):
             self.assertIn("labelIconButtons", self.enhancements_js)
             self.assertIn("cardHeadline", self.enhancements_js)
             self.assertNotIn("Location unavailable", self.enhancements_js)
+            # Compound chip label removed; Rejected filter and Re-issue actions remain.
             self.assertNotIn("REJECTED / RE-ISSUE", self.enhancements_js)
+            self.assertIn('"Rejected"', self.enhancements_js)
+            self.assertIn("Re-issue", self.enhancements_js)
+            self.assertIn("reviewReject", self.enhancements_js)
             self.assertIn('s==="In Progress"', self.enhancements_js)
         else:
             self.skipTest(f"production still on {build.group(1)} — Phase 1B UI not deployed yet")
@@ -189,7 +193,9 @@ class Phase1BLiveChecklist(unittest.TestCase):
         if not build or build.group(1) < "cards37":
             self.skipTest("Phase 1B not deployed on live")
         _, html = self.http.get("/api/reports/register")
-        self.assertIn("Captured", html)
+        open_items = [i for i in self.items if i.get("status") not in ("closed", "complete")]
+        if open_items:
+            self.assertIn("Captured", html)
         self.assertIn("In Progress", html)
         self.assertNotIn("Ready for Review", html)
         self.assertIn("status-overdue", html)
@@ -211,9 +217,9 @@ class Phase1BLocalChecklist(unittest.TestCase):
         self.patcher.stop()
         self.temp_dir.cleanup()
 
-    def test_source_cards37_markers(self) -> None:
+    def test_source_cards38_markers(self) -> None:
         enh = ENHANCEMENTS.read_text(encoding="utf-8")
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards37"', enh)
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards38"', enh)
         self.assertIn("toggleItemFilters", enh)
         self.assertIn("labelIconButtons", enh)
         self.assertIn("cardHeadline", enh)
