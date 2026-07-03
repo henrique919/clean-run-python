@@ -39,6 +39,7 @@ from app.services import reports as report_service
 from app.storage import (
     StorageUploadError,
     collect_item_sign_requests,
+    is_markup_source_path_allowed,
     list_thumbnail_transform,
     prefetch_item_photo_urls,
     prefetch_report_photo_urls,
@@ -721,7 +722,7 @@ def markup_photo_source(url: str = Query(...), ctx: RequestContext = Depends(get
         for item in visible_items(ctx.user, data.items)
         for request_path, _ in collect_item_sign_requests(item)
     }
-    if path not in allowed:
+    if path not in allowed and not is_markup_source_path_allowed(path):
         raise HTTPException(status_code=404, detail="Photo not found")
     try:
         body, content_type = read_storage_bytes(path)
@@ -744,7 +745,7 @@ def refresh_photo_url(payload: PhotoRefreshPayload, ctx: RequestContext = Depend
         for item in visible_items(ctx.user, data.items)
         for request_path, _ in collect_item_sign_requests(item)
     }
-    if path not in allowed:
+    if path not in allowed and not is_markup_source_path_allowed(path):
         raise HTTPException(status_code=404, detail="Photo not found")
     transform = list_thumbnail_transform() if "/render/image/sign/" in value else None
     try:

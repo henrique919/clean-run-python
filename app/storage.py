@@ -433,12 +433,53 @@ def upload_data_url(value: str, *, folder: str = "evidence") -> str:
     return path
 
 
+def is_staging_storage_path(path: str | None) -> bool:
+    if not path:
+        return False
+    normalized = f"/{path.strip('/')}/"
+    return "/staging/" in normalized
+
+
+def is_public_launch_storage_path(path: str | None) -> bool:
+    if not path:
+        return False
+    return _uses_public_launch_prefix(path)
+
+
+def is_markup_source_path_allowed(path: str | None) -> bool:
+    return is_staging_storage_path(path) or is_public_launch_storage_path(path)
+
+
+def promote_staged_photo(path: str, *, folder: str) -> str:
+    """Copy a background-staged capture photo into the final item evidence folder."""
+    data, content_type = read_storage_bytes(path)
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in CONTENT_TYPE_EXT.values():
+        ext = CONTENT_TYPE_EXT.get(content_type, ".jpg")
+    dest = _object_path(folder, ext)
+    client = _client_for_storage_path(dest)
+    _ensure_bucket(client)
+    client.storage.from_(BUCKET_NAME).upload(
+        path=dest,
+        file=data,
+        file_options={
+            "content-type": content_type,
+            "cache-control": "31536000",
+            "upsert": "false",
+        },
+    )
+    return dest
+
+
 def normalize_photo(value: str | None, *, folder: str = "evidence") -> str | None:
     if not value:
         return value
     if is_data_url(value):
         return upload_data_url(value, folder=folder)
-    return storage_path_from_value(value)
+    path = storage_path_from_value(value)
+    if path and is_staging_storage_path(path):
+        return promote_staged_photo(path, folder=folder)
+    return path
 
 
 def read_storage_bytes(path: str) -> tuple[bytes, str]:
