@@ -302,7 +302,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("CLEANRUN_SERVE_LEGACY_EXPORT", main)
         self.assertIn("renderLogin", full_app)
         self.assertIn("bottom-nav", full_app)
-        self.assertIn("enhancements.js?v=cards43", full_app)
+        self.assertIn("enhancements.js?v=cards44", full_app)
 
     def test_plans_navigation_is_disabled_in_production_ui(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -323,6 +323,22 @@ class RecoveryTests(unittest.TestCase):
         for source in (enhancements, full_app):
             self.assertIn("/api/items?issue_now=true", source)
             self.assertNotIn('if(mode==="issue")await api(`/api/items/${item.id}/actions/issue`', source)
+
+    def test_capture_perf_markers_present(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")
+        main = (root / "app/main.py").read_text(encoding="utf-8")
+
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards44"', enhancements)
+        self.assertIn("stateApiPath", enhancements)
+        self.assertIn("bootWorkspace", enhancements)
+        self.assertIn("stageCapturedPhoto", enhancements)
+        self.assertIn("walkCaptureDefaultsPinned", enhancements)
+        self.assertIn("/api/photos/markup-source", enhancements)
+        self.assertIn('/api/photos/stage', enhancements)
+        self.assertIn('scope: str = Query(default="all")', main)
+        self.assertIn("/api/photos/stage", main)
+        self.assertIn("/api/photos/markup-source", main)
 
 
 if __name__ == "__main__":
