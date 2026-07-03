@@ -29,6 +29,10 @@ SIGN_URL_RETRY_BACKOFF_SECONDS = float(os.getenv("CLEANRUN_SIGN_URL_RETRY_BACKOF
 # Item card is 142×108 CSS px; thumbnails are centre-cropped at 2× for retina.
 LIST_CARD_THUMB_WIDTH = 284
 LIST_CARD_THUMB_HEIGHT = 216
+# Shared report files inline mid-size images instead of originals. Width-only
+# resize preserves aspect ratio; quality tracks the client capture quality (0.72).
+SHARE_IMAGE_WIDTH = int(os.getenv("CLEANRUN_SHARE_IMAGE_WIDTH", "1200"))
+SHARE_IMAGE_QUALITY = int(os.getenv("CLEANRUN_SHARE_IMAGE_QUALITY", "75"))
 
 CONTENT_TYPE_EXT = {
     "image/jpeg": ".jpg",
@@ -186,6 +190,19 @@ class SignedUrlCache:
                 if self._pending.get(key) is pending and pending.done():
                     self._pending.pop(key, None)
 
+    def refresh(self, path: str, *, transform: dict[str, object] | None = None) -> str:
+        """Force a re-sign for one path/variant when the client saw its URL fail."""
+        key = _sign_cache_key(path, transform)
+        with self._lock:
+            self._entries.pop(key, None)
+            pending = self._pending_future(key, path, transform)
+        try:
+            return pending.result()
+        finally:
+            with self._lock:
+                if self._pending.get(key) is pending and pending.done():
+                    self._pending.pop(key, None)
+
     def prefetch(self, requests: list[tuple[str, dict[str, object] | None]]) -> None:
         """Warm the cache for many paths using the signing thread pool."""
         unique: dict[str, tuple[str, dict[str, object] | None]] = {}
@@ -255,6 +272,17 @@ def list_thumbnail_transform(
     }
 
 
+def report_share_transform(
+    *,
+    width: int = SHARE_IMAGE_WIDTH,
+    quality: int = SHARE_IMAGE_QUALITY,
+) -> dict[str, object]:
+    return {
+        "width": max(1, min(int(width), 2500)),
+        "quality": max(20, min(int(quality), 100)),
+    }
+
+
 def collect_item_sign_requests(item) -> list[tuple[str, dict[str, object] | None]]:
     """Collect unique storage paths and transform variants needed for one item."""
     requests: list[tuple[str, dict[str, object] | None]] = []
@@ -286,6 +314,37 @@ def prefetch_item_photo_urls(items) -> None:
     signed_url_cache.prefetch(requests)
 
 
+def collect_report_sign_requests(item) -> list[tuple[str, dict[str, object] | None]]:
+    """Reports render full-size photos and offer mid-size share variants."""
+    requests: list[tuple[str, dict[str, object] | None]] = []
+    share_transform = report_share_transform()
+
+    def add(value: str | None) -> None:
+        path = storage_path_from_value(value)
+        if not path or path.startswith(("data:image/", "seed://")):
+            return
+        requests.append((path, None))
+        requests.append((path, share_transform))
+
+    for photo in item.original_photos:
+        add(photo)
+    for evidence in item.rectification_evidence:
+        if evidence.photo:
+            add(evidence.photo)
+    for evidence in item.closeout_evidence:
+        if evidence.photo:
+            add(evidence.photo)
+    return requests
+
+
+def prefetch_report_photo_urls(items) -> None:
+    """Parallel prefetch so report opens stay fast with the share variant added."""
+    requests: list[tuple[str, dict[str, object] | None]] = []
+    for item in items:
+        requests.extend(collect_report_sign_requests(item))
+    signed_url_cache.prefetch(requests)
+
+
 def resolve_photo_url(value: str | None) -> str | None:
     return _resolve_storage_url(value)
 
@@ -299,6 +358,12 @@ def resolve_thumbnail_url(
     if not value or value.startswith(("data:image/", "seed://")):
         return value
     return _resolve_storage_url(value, transform=list_thumbnail_transform(width=width, height=height))
+
+
+def resolve_share_photo_url(value: str | None) -> str | None:
+    if not value or value.startswith(("data:image/", "seed://")):
+        return value
+    return _resolve_storage_url(value, transform=report_share_transform())
 
 
 def _resolve_storage_url(value: str | None, *, transform: dict[str, object] | None = None) -> str | None:

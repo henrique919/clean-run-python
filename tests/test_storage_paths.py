@@ -69,6 +69,52 @@ class StoragePathTests(unittest.TestCase):
             self.assertIn("/render/image/sign/", thumb)
             self.assertIn("projects/jura/photo.jpg", thumb)
 
+    def test_report_share_transform_is_mid_size_width_and_capture_quality(self) -> None:
+        from app.storage import report_share_transform
+
+        self.assertEqual(report_share_transform(), {"width": 1200, "quality": 75})
+
+    def test_resolve_share_photo_url_signs_transform_variant(self) -> None:
+        from app.storage import resolve_share_photo_url, signed_url_cache
+
+        class FakeBucket:
+            def create_signed_url(self, path, ttl, options=None):
+                transform = (options or {}).get("transform")
+                assert transform == {"width": 1200, "quality": 75}
+                return {"signedURL": f"https://fresh.example/storage/v1/render/image/sign/cleanrun-evidence/{path}?token=share"}
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        signed_url_cache.clear()
+        with patch("app.storage.get_supabase_client", return_value=FakeClient()):
+            share = resolve_share_photo_url("projects/jura/share-photo.jpg")
+        self.assertIn("/render/image/sign/", share)
+        self.assertIn("projects/jura/share-photo.jpg", share)
+        self.assertEqual(resolve_share_photo_url("seed://amber/Cracked tile"), "seed://amber/Cracked tile")
+
+    def test_resolve_share_photo_url_returns_none_when_signing_fails(self) -> None:
+        from app.storage import resolve_share_photo_url, signed_url_cache
+
+        class FailingBucket:
+            def create_signed_url(self, path, ttl, options=None):
+                raise RuntimeError("signing failed")
+
+        class FailingStorage:
+            def from_(self, bucket):
+                return FailingBucket()
+
+        class FailingClient:
+            storage = FailingStorage()
+
+        signed_url_cache.clear()
+        with patch("app.storage.get_supabase_client", return_value=FailingClient()):
+            self.assertIsNone(resolve_share_photo_url("projects/jura/share-fail.jpg"))
+
     def test_resolve_photo_url_returns_none_when_signing_fails(self) -> None:
         class FailingBucket:
             def create_signed_url(self, path, ttl, options=None):

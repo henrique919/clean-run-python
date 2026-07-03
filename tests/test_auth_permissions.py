@@ -147,8 +147,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards42", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards42", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards43", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards43", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
@@ -350,6 +350,134 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertIn("Evidence photo unavailable", response.text)
         self.assertNotIn("<img", response.text)
         self.assertIn(item.code, response.text)
+
+    def _fake_signing_client(self):
+        class FakeBucket:
+            def create_signed_url(self, path, ttl, options=None):
+                transform = (options or {}).get("transform")
+                if transform:
+                    return {"signedURL": f"https://fresh.example/storage/v1/render/image/sign/cleanrun-evidence/{path}?w={transform.get('width')}"}
+                return {"signedURL": f"https://fresh.example/storage/v1/object/sign/cleanrun-evidence/{path}?token=full"}
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        return FakeClient()
+
+    def _set_first_item_photo(self, path: str):
+        item = self.store.snapshot().items[0]
+        item = item.model_copy(update={"original_photos": [path]})
+        data = self.store._read()
+        items = [item if current.id == item.id else current for current in data.items]
+        self.store._write(data.model_copy(update={"items": items}))
+        return item
+
+    def test_photo_refresh_requires_auth(self) -> None:
+        with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
+            response = self.client.post("/api/photos/refresh-url", json={"url": "https://x.supabase.co/storage/v1/object/sign/cleanrun-evidence/p.jpg?token=old"})
+        self.assertEqual(response.status_code, 401)
+
+    def test_photo_refresh_resigns_full_and_thumbnail_variants(self) -> None:
+        from app.storage import signed_url_cache
+
+        signed_url_cache.clear()
+        path = "cleanrun/public/projects/demo/items/def-2001/original/refresh.jpg"
+        self._set_first_item_photo(path)
+        stale_full = f"https://x.supabase.co/storage/v1/object/sign/cleanrun-evidence/{path}?token=expired"
+        stale_thumb = f"https://x.supabase.co/storage/v1/render/image/sign/cleanrun-evidence/{path}?token=expired"
+
+        with patch("app.storage._client_for_storage_path", return_value=self._fake_signing_client()):
+            full = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": stale_full})
+            thumb = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": stale_thumb})
+
+        self.assertEqual(full.status_code, 200)
+        self.assertIn("/object/sign/", full.json()["url"])
+        self.assertIn(path, full.json()["url"])
+        self.assertEqual(thumb.status_code, 200)
+        self.assertIn("/render/image/sign/", thumb.json()["url"])
+
+    def test_photo_refresh_rejects_paths_outside_visible_items(self) -> None:
+        hidden = self.create_direct_item(project="Other Project", subcontractor="Other Trade")
+        hidden_path = "cleanrun/public/projects/other/items/def-9001/original/secret.jpg"
+        data = self.store._read()
+        items = [
+            current.model_copy(update={"original_photos": [hidden_path]}) if current.id == hidden.id else current
+            for current in data.items
+        ]
+        self.store._write(data.model_copy(update={"items": items}))
+        stale = f"https://x.supabase.co/storage/v1/object/sign/cleanrun-evidence/{hidden_path}?token=expired"
+
+        with patch("app.storage._client_for_storage_path", return_value=self._fake_signing_client()):
+            response = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": stale})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_photo_refresh_rejects_non_storage_values(self) -> None:
+        for value in ("https://evil.example/photo.jpg", "seed://amber/Cracked tile", "", "data:image/png;base64,aGk="):
+            response = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": value})
+            self.assertEqual(response.status_code, 404, value)
+
+    def test_photo_refresh_returns_502_when_signing_fails(self) -> None:
+        from app.storage import signed_url_cache
+
+        signed_url_cache.clear()
+        path = "cleanrun/public/projects/demo/items/def-2002/original/broken.jpg"
+        self._set_first_item_photo(path)
+        stale = f"https://x.supabase.co/storage/v1/object/sign/cleanrun-evidence/{path}?token=expired"
+
+        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")), patch(
+            "app.storage.get_public_supabase_client", side_effect=RuntimeError("signing failed")
+        ):
+            response = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": stale})
+
+        self.assertEqual(response.status_code, 502)
+
+    def test_report_images_carry_mid_size_share_variant(self) -> None:
+        from app.storage import signed_url_cache
+
+        signed_url_cache.clear()
+        path = "cleanrun/public/projects/demo/items/def-2003/original/share.jpg"
+        item = self._set_first_item_photo(path)
+
+        with patch("app.storage._client_for_storage_path", return_value=self._fake_signing_client()):
+            response = self.client.get("/api/reports/register", headers=bearer("dev-site-manager"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(item.code, response.text)
+        self.assertIn("data-share-src=", response.text)
+        self.assertIn(f"/render/image/sign/cleanrun-evidence/{path}?w=1200", response.text)
+        self.assertIn(f"/object/sign/cleanrun-evidence/{path}", response.text)
+
+    def test_report_omits_share_variant_when_share_signing_fails(self) -> None:
+        from app.storage import signed_url_cache
+
+        signed_url_cache.clear()
+        path = "cleanrun/public/projects/demo/items/def-2004/original/share-fail.jpg"
+        self._set_first_item_photo(path)
+
+        class FullOnlyBucket:
+            def create_signed_url(self, bucket_path, ttl, options=None):
+                if (options or {}).get("transform"):
+                    raise RuntimeError("transforms unavailable")
+                return {"signedURL": f"https://fresh.example/storage/v1/object/sign/cleanrun-evidence/{bucket_path}?token=full"}
+
+        class FullOnlyStorage:
+            def from_(self, bucket):
+                return FullOnlyBucket()
+
+        class FullOnlyClient:
+            storage = FullOnlyStorage()
+
+        with patch("app.storage._client_for_storage_path", return_value=FullOnlyClient()):
+            response = self.client.get("/api/reports/register", headers=bearer("dev-site-manager"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"/object/sign/cleanrun-evidence/{path}", response.text)
+        self.assertNotIn("data-share-src=", response.text)
 
     def test_register_and_exceptions_reports_filter_items(self) -> None:
         overdue = self.create_direct_item(subcontractor="H&L Roofing")

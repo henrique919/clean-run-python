@@ -6,7 +6,7 @@ from html import escape
 
 from app.datetime_format import format_field_date
 from app.models import Item, ItemStatus, Settings, STATUS_LABEL, TYPE_LABEL
-from app.storage import resolve_photo_url
+from app.storage import resolve_photo_url, resolve_share_photo_url
 
 REPORT_TITLES = {
     "handover": "Closed / Handover Evidence",
@@ -58,13 +58,17 @@ async function shareReport(){
     const src=img.getAttribute("src");
     if(!src||src.startsWith("data:"))continue;
     restore.push([img,src]);
-    try{
-      const res=await fetch(src);
-      if(!res.ok)continue;
-      const blob=await res.blob();
-      const dataUrl=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(blob)});
-      img.setAttribute("src",dataUrl);
-    }catch(e){}
+    const candidates=[img.getAttribute("data-share-src"),src].filter(Boolean);
+    for(const candidate of candidates){
+      try{
+        const res=await fetch(candidate);
+        if(!res.ok)continue;
+        const blob=await res.blob();
+        const dataUrl=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(blob)});
+        img.setAttribute("src",dataUrl);
+        break;
+      }catch(e){}
+    }
   }
   const html="<!doctype html><html>"+document.documentElement.innerHTML+"</html>";
   restore.forEach(([img,src])=>img.setAttribute("src",src));
@@ -158,7 +162,11 @@ def image_html(value: str | None, alt: str) -> str:
     if resolved is None:
         return '<div class="none">Evidence photo unavailable</div>'
     if resolved.startswith("http") or resolved.startswith("data:image/"):
-        return f'<img src="{escape(resolved)}" alt="{escape(alt)}" />'
+        share = resolve_share_photo_url(value)
+        share_attr = ""
+        if share and share.startswith("http") and share != resolved:
+            share_attr = f' data-share-src="{escape(share)}"'
+        return f'<img src="{escape(resolved)}" alt="{escape(alt)}"{share_attr} />'
     return ""
 
 
