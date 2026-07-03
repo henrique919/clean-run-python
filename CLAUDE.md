@@ -1,105 +1,92 @@
-# CleanRun IQ — Claude Code onboarding
+# CLAUDE.md — CleanRun IQ working rules
 
-Python/FastAPI field workflow app for construction closeout: **capture the item, assign the trade, close it with proof.**
+## What this product is
+CleanRun IQ is a construction defect capture and closeout app for the Australian
+market (app.cleanruniq.com). Core loop: site manager captures defects with photo
+evidence on a phone → issues to subcontractors → subs upload rectification
+evidence → supervisor reviews and closes → closeout/handover reports.
+The product promise is SPEED and SIMPLICITY in the field: "30 defects in under
+20 minutes", one-handed phone use, no training required. Every change is judged
+against that. The owner is a non-coder tradesman-founder: explain technical
+decisions in plain English in all summaries.
 
-Production: https://app.cleanruniq.com (Render service `clean-run-python`).
+## Repo and deployment truth
+- THIS repo serves production. FastAPI app (`app/main.py`), started via
+  `python app.py`, hosted on Render (service: cleanrun-iq-python).
+- **Merging to `main` auto-deploys to production.** Never merge without the
+  owner's explicit approval ("Yes, proceed" or equivalent). Open a PR, post a
+  summary, STOP.
+- The live UI is `CleanRun-IQ-Full-App-Render3/` (index.html + assets/
+  enhancements.js + assets/enhancements.css). Vanilla JS enhancement pattern —
+  NO new frameworks, NO build tooling, NO npm dependencies.
+- Other `CleanRun-IQ-*` folders are historical exports. Do not edit them.
+- Every UI change bumps the build tag (cardsNN) in index.html and the test
+  files that assert it.
+- Supabase is the backend store (items, photos in `cleanrun-evidence` bucket,
+  signed URLs with transforms for thumbnails). No schema, RLS, or auth changes
+  without explicit approval.
+- Render PR previews: label a PR `render-preview` (or `[render preview]` in
+  title) to get a *.onrender.com URL. Previews share PRODUCTION Supabase env
+  vars — test captures create real data; use a sandbox project.
+- OpenAI is wired for voice/note parsing (`OPENAI_API_KEY`,
+  `OPENAI_PARSE_MODEL`, default gpt-4o-mini). All AI calls must fail silent
+  and degrade to non-AI behaviour; AI must never block capture.
 
-## What to work on
+## Non-negotiable working rules
+1. **Inspect before coding.** Post a short plan of files/functions to touch,
+   then implement. No rebuilds, no rewrites, no "while I was in there".
+2. **Scoped batches.** Implement exactly the tasks given, nothing else. Any
+   behaviour change beyond the tasks must be declared under "Behaviour changed
+   beyond the tasks" and justified, or reverted.
+3. **Do-not-break list is verified, not assumed.** Golden path: capture with
+   photo (camera, iOS Safari) → markup (arrow, save marked-up copy) → Save +
+   Next loops with walk counter → item appears on Items list → visible in
+   reports. Plus: sticky capture defaults, photo-required validation,
+   voice Speak Item / Draft form from note, all six report types, Review
+   Queue, Subcontractor Mode, Project Setup.
+4. **iOS Safari is the primary target.** Desktop-only APIs have already caused
+   a P0 (createImageBitmap orientation options). Feature-detect; anything
+   touching capture/photos/markup gets flagged for phone QA on a PR preview
+   before merge.
+5. **Run the test suite** (`python3 -m pytest tests/ -q`) before posting a
+   summary. Add tests for new behaviour following existing patterns
+   (test_phaseNN_checklist.py).
+6. **Summary format, every PR:** Files changed · Plan vs implemented ·
+   Each task done/partial/blocked (one line each) · Do-not-break item-by-item
+   pass/fail · Manual checklist results, stating what needs phone QA ·
+   Behaviour changed beyond tasks (must be empty or justified) · Known risks
+   or follow-ups. Then STOP for approval.
+7. **Measure before optimising.** Performance work reports numbers first,
+   proposes ranked fixes, waits for approval.
 
-| Active (edit these) | Legacy (reference only — do not fix or deploy) |
-|---------------------|------------------------------------------------|
-| `app/` — FastAPI backend | `CleanRun-IQ-Full-App-Render2/` |
-| `CleanRun-IQ-Full-App-Render3/` — production UI at `/` | `CleanRun-IQ-FastAPI-Render/` |
-| `tests/` — active test suite | `cleanrun-iq-python-html-render-ready/` |
-| `supabase/` — migrations & RLS | `cleanrun_iq_python_port/` |
-| `render.yaml`, `scripts/` | `rork-cleanrun-iq-3-v3-logo-250-bigger(1)/` |
+## Product decisions already made (do not relitigate)
+- Status vocabulary: Captured / Issued / In Progress / Ready / Rejected /
+  Overdue / Closed — identical wording in filter chips, cards, detail, reports.
+  Status chips show status only; actions (Re-issue) are separate buttons.
+- Colours: Overdue red, Ready BLUE (#1D4ED8), Closed/complete GREEN, Issued
+  gold, Captured neutral. Green means done, blue means action available.
+- Markup NEVER auto-opens after photo attach. User-initiated only. Default
+  tool is Arrow.
+- Walk mode is the default capture state.
+- Thumbnails: single centre-crop (Supabase transform cover at 2x card size +
+  CSS object-fit cover on 142×108). Full-size views use originals.
+- Capture defaults chip strip: collapsed after first save, expanded when no
+  project defaults exist; validation errors auto-expand their section.
+- Descriptions from voice/typed notes are AI-cleaned (defect statement only,
+  location/trade/assignee stripped ONLY when mapped to fields); manual
+  descriptions are never overwritten.
+- Priority: High/Urgent only. Item types: Defect / Incomplete / Client Defect.
 
-See `CODE_HEALTH.md` and `README.md` for architecture detail. `AGENTS.md` has Cursor Cloud–specific notes (overlap is intentional).
+## Deferred — do not build unless explicitly asked
+Subcontractor logins/portal, floor-plan pin-drop, integrations, custom report
+builder, enterprise dashboards, server-side PDF, offline sync rework,
+multi-worker hosting changes, item-data caching (signed-URL caching is fine).
 
-## Stack
-
-- **Backend:** Python 3.12, FastAPI, Pydantic v2, Supabase (Postgres + Storage + Auth)
-- **Frontend:** Static HTML/JS in `CleanRun-IQ-Full-App-Render3/` (`enhancements.js` + `index.html`; bump `cardsNN` cache-bust tag when shipping UI changes)
-- **Deploy:** Render (`python app.py`), `render.yaml` at repo root
-
-## Commands
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Local dev (JSON storage, no Supabase)
-CLEANRUN_STORAGE=local uvicorn app.main:app --reload
-
-# Sanity checks before PR
-python3 -m compileall app
-python3 -m pytest tests/ -q          # scope to tests/ only — never bare pytest at repo root
-node tests/voice-parser.test.js
-```
-
-Open `http://127.0.0.1:8000/` for Render3 (production shell). Modular dev UI with demo login buttons: `http://127.0.0.1:8000/static/index.html`.
-
-## Auth (dev vs production)
-
-- **Local:** `Authorization: Bearer dev-site-manager` (also `dev-project-manager`, `dev-subcontractor`, `dev-viewer`). Only works when `CLEANRUN_ENV` is not `production`.
-- **Production:** Supabase JWT; claims in `app_metadata.cleanrun` (see `SECURITY.md`).
-- **Open access (temporary launch window):** `CLEANRUN_LOGIN_REQUIRED=false` (default in code) skips the sign-in UI; server uses `CLEANRUN_OPEN_ACCESS_EMAIL` / `CLEANRUN_OPEN_ACCESS_PASSWORD` for Supabase writes. Set `CLEANRUN_LOGIN_REQUIRED=true` to restore login.
-
-Never add `SUPABASE_SERVICE_ROLE_KEY` to the web app process.
-
-## API surfaces
-
-| Endpoint | Consumer |
-|----------|----------|
-| `/api/state` | Render3 UI (camelCase items) |
-| `/api/bootstrap` | Modular `/static` UI |
-| `/api/items`, `/api/reports/*` | Both UIs |
-| `/api/auth/config` | Login / open-access flag |
-
-Render3 is the production shell; do not switch `/` to `app/static/index.html` without explicit approval.
-
-## Domain rules
-
-- Item types: Defect, Incomplete Work, Client Defect — Defect/Client require photo evidence; Incomplete Work may save without photo (`app/validation.py`).
-- Full lifecycle: open → issued → in progress → ready for review → inspection → closed/rejected.
-- Signed URL cache + parallel signing in `app/storage.py`; prefetch on `/api/state` and item create/action responses.
-- Save/issue perf: client merges API responses locally (no full `/api/state` reload); server uses lightweight reads on create/patch.
-
-## Testing
-
-- Run `python3 -m pytest tests/ -q` — 100+ tests; do not collect legacy folder tests.
-- After UI changes: update `cardsNN` in `enhancements.js` and `index.html`; update matching assertions in `tests/test_*_checklist.py`, `test_recovery.py`, `test_auth_permissions.py`.
-- Live smoke (optional): `CLEANRUN_LIVE_BASE_URL`, `CLEANRUN_LIVE_EMAIL`, `CLEANRUN_LIVE_PASSWORD`.
-
-## Do not change without explicit approval
-
-- Supabase RLS policies or storage path prefix (`cleanrun/public/...`)
-- Auth verification / launch-admin bypass logic (`app/auth.py`)
-- Removing legacy frontend folders
-- Merging PRs to `main` without user approval on feature work (hotfixes excepted when asked)
-
-## Git / PR workflow
-
-- Branch prefix: `cursor/<descriptive-name>-0ad2`
-- Push: `git push -u origin <branch>`
-- Run tests before commit; clear commit messages; draft PR unless asked to merge
-- Production deploy tracks `main` on Render automatically
-
-## Key files
-
-```
-app/main.py                 Routes, auth, camelCase /api/state
-app/store_supabase.py       Supabase persistence, create/patch perf
-app/storage.py              Evidence upload, signed URL cache
-app/auth.py                 JWT + open-access mode
-CleanRun-IQ-Full-App-Render3/assets/enhancements.js   Production UI logic
-CleanRun-IQ-Full-App-Render3/index.html               Boot, auth shell, cache tags
-render.yaml                 Render env template (dashboard may not auto-sync)
-```
-
-## Gotchas
-
-- Root `pytest` fails on legacy copies — always `pytest tests/`.
-- `render.yaml` env vars are not automatically applied to an existing Render service; verify `/api/auth/config` on production after deploy.
-- Plans UI references `/api/plans` which the backend does not implement (`plans: []` in state).
-- Photo uploads use parallel workers; create uses `_read_create_context()` not full `_read()`.
+## Known follow-ups (logged, build only when assigned)
+- Expired-thumbnail recovery: onerror re-sign/refresh for signed URLs older
+  than TTL while a tab stays open.
+- Share Report file size: inline mid-size transforms (~1200px) instead of
+  originals; ~5.7MB at 15 items today, linear growth.
+- Dashboard "Issued" KPI counts issued + in_progress together (accepted).
+- Field extraction is substring-only ("L01" won't match "Level 1").
+- Rename/verify Render instance type vs render.yaml `starter`.
