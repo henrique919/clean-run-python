@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards44";
-  document.documentElement.dataset.cleanrunBuild="cards44";
+  window.CLEANRUN_FRONTEND_BUILD="cards45";
+  document.documentElement.dataset.cleanrunBuild="cards45";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -134,8 +134,9 @@
 
   async function markupImageSource(src){
     const value=String(src||"");
-    if(!value||value.startsWith("data:")||value.startsWith("blob:"))return value;
-    if(!value.startsWith("http"))return value;
+    if(!value||value.startsWith("data:")||value.startsWith("blob:")||value.startsWith("seed://"))return value;
+    const needsProxy=!value.startsWith("http")||value.includes("/storage/v1/");
+    if(!needsProxy)return value;
     const headers={};
     if(typeof authToken!=="undefined"&&authToken)headers.Authorization=`Bearer ${authToken}`;
     const res=await fetch(`/api/photos/markup-source?url=${encodeURIComponent(value)}`,{headers,credentials:"same-origin"});
@@ -614,8 +615,7 @@
       const staged=await api("/api/photos/stage",{method:"POST",body:JSON.stringify({photo:dataUrl})});
       const path=staged?.path;
       if(path&&capturePhotos[index]===dataUrl){
-        capturePhotos[index]=path;
-        capturePhotoMeta[index]={...capturePhotoMeta[index]||{},staged:true};
+        capturePhotoMeta[index]={...capturePhotoMeta[index]||{},stagedPath:path};
       }
     }catch(err){
       console.warn("[CleanRun] background photo stage failed; will upload on save",err);
@@ -760,7 +760,7 @@
   };
   window.markupEvidencePhoto=function(mode,index){
     const photos=mode==="edit"?editPhotos:capturePhotos;
-    const src=photos[index];
+    const src=previewSrc(mode,index)||photos[index];
     if(!src||src.startsWith("seed://"))return toast("Seed previews cannot be marked up.",true);
     openWorkbench(src,"Mark up evidence",data=>{
       photos[index]=data;

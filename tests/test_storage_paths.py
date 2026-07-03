@@ -5,12 +5,61 @@ from threading import RLock
 from unittest.mock import patch
 
 from app.models import AppData, Item, ItemCreate
-from app.storage import normalize_photo, resolve_photo_url, upload_data_url
+from app.storage import (
+    is_staging_storage_path,
+    normalize_photo,
+    promote_staged_photo,
+    resolve_photo_url,
+    upload_data_url,
+)
 from app.store import seed_settings
 from app.store_supabase import SupabaseCleanRunStore, _child_db_id, _item_db_id, _stable_uuid, _storage_folder
 
 
 class StoragePathTests(unittest.TestCase):
+    def test_staging_storage_paths_are_detected(self) -> None:
+        self.assertTrue(is_staging_storage_path("cleanrun/public/staging/abc123.jpg"))
+        self.assertFalse(is_staging_storage_path("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg"))
+
+    def test_normalize_photo_promotes_staging_path_into_item_folder(self) -> None:
+        staged_path = "cleanrun/public/staging/abc123.jpg"
+        item_folder = "projects/jura-noosa/items/def-1005/original"
+        uploaded: dict[str, object] = {}
+
+        class FakeBucket:
+            def upload(self, *, path, file, file_options):
+                uploaded["path"] = path
+                uploaded["file"] = file
+                uploaded["options"] = file_options
+
+            def download(self, path):
+                assert path == staged_path
+                return b"fake-image"
+
+            def create_signed_url(self, path, ttl, options=None):
+                return {"signedURL": f"https://signed.example/{path}"}
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+            def get_bucket(self, bucket):
+                return {"id": bucket}
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        with patch.dict("os.environ", {"CLEANRUN_STORAGE_PATH_PREFIX": "cleanrun/public"}, clear=False), patch(
+            "app.storage.get_supabase_client", return_value=FakeClient()
+        ), patch(
+            "app.storage.get_public_supabase_client", return_value=FakeClient()
+        ):
+            promoted = normalize_photo(staged_path, folder=item_folder)
+
+        self.assertTrue(str(uploaded["path"]).startswith("cleanrun/public/projects/jura-noosa/items/def-1005/original/"))
+        self.assertEqual(promoted, uploaded["path"])
+        self.assertNotIn("/staging/", promoted)
+
     def test_storage_upload_returns_object_path_not_signed_url(self) -> None:
         uploaded = {}
 
