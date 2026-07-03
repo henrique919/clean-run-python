@@ -244,6 +244,8 @@ def _path_from_signed_url(value: str) -> str | None:
     for marker in (
         f"/storage/v1/object/sign/{BUCKET_NAME}/",
         f"/storage/v1/render/image/sign/{BUCKET_NAME}/",
+        f"/storage/v1/object/authenticated/{BUCKET_NAME}/",
+        f"/storage/v1/object/public/{BUCKET_NAME}/",
     ):
         if marker in parsed.path:
             return unquote(parsed.path.split(marker, 1)[1])
@@ -447,6 +449,8 @@ def is_public_launch_storage_path(path: str | None) -> bool:
 
 
 def is_markup_source_path_allowed(path: str | None) -> bool:
+    if not path or path.startswith(("http", "data:", "seed://")):
+        return False
     return is_staging_storage_path(path) or is_public_launch_storage_path(path)
 
 
@@ -492,3 +496,23 @@ def read_storage_bytes(path: str) -> tuple[bytes, str]:
         "application/octet-stream",
     )
     return data, content_type
+
+
+def read_markup_bytes(value: str) -> tuple[bytes, str]:
+    """Load image bytes for the markup canvas from a storage path or signed URL."""
+    path = storage_path_from_value(value)
+    if path and not str(path).startswith(("http", "data:", "seed://")):
+        return read_storage_bytes(path)
+    if value.strip().startswith("http"):
+        import urllib.error
+        import urllib.request
+
+        request = urllib.request.Request(value, headers={"User-Agent": "CleanRunIQ-Markup/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = response.read()
+                content_type = response.headers.get("Content-Type") or "image/jpeg"
+                return data, content_type.split(";", 1)[0].strip()
+        except urllib.error.URLError as exc:
+            raise StorageUploadError("Could not download photo for markup.") from exc
+    raise StorageUploadError("Photo not found")
