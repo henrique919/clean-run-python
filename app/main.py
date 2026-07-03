@@ -36,7 +36,17 @@ from app.permissions import (
 from app.services import items as item_service
 from app.services import projects as project_service
 from app.services import reports as report_service
-from app.storage import StorageUploadError, prefetch_item_photo_urls, resolve_photo_url, resolve_thumbnail_url
+from app.storage import (
+    StorageUploadError,
+    collect_item_sign_requests,
+    list_thumbnail_transform,
+    prefetch_item_photo_urls,
+    prefetch_report_photo_urls,
+    resolve_photo_url,
+    resolve_thumbnail_url,
+    signed_url_cache,
+    storage_path_from_value,
+)
 from app.validation import ValidationError
 from app.workflow import WorkflowError
 
@@ -54,6 +64,10 @@ store = build_repository()
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 if LEGACY_ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(LEGACY_ASSETS_DIR)), name="assets")
+
+
+class PhotoRefreshPayload(BaseModel):
+    url: str
 
 
 class IssuePayload(BaseModel):
@@ -663,6 +677,29 @@ def legacy_state(ctx: RequestContext = Depends(get_request_context)):
     }
 
 
+@app.post("/api/photos/refresh-url")
+def refresh_photo_url(payload: PhotoRefreshPayload, ctx: RequestContext = Depends(get_request_context)):
+    """Re-sign one photo URL after the browser saw it fail (expired/broken signed URL)."""
+    value = (payload.url or "").strip()
+    path = storage_path_from_value(value)
+    if not path or path.startswith(("http", "data:image/", "seed://")):
+        raise HTTPException(status_code=404, detail="Photo not found")
+    data = store.snapshot()
+    allowed = {
+        request_path
+        for item in visible_items(ctx.user, data.items)
+        for request_path, _ in collect_item_sign_requests(item)
+    }
+    if path not in allowed:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    transform = list_thumbnail_transform() if "/render/image/sign/" in value else None
+    try:
+        return {"url": signed_url_cache.refresh(path, transform=transform)}
+    except Exception:
+        logger.exception("Could not refresh signed URL for %s", path)
+        raise HTTPException(status_code=502, detail="Could not refresh photo URL")
+
+
 @app.patch("/api/settings")
 def update_settings(payload: SettingsPayload, ctx: RequestContext = Depends(get_request_context)):
     require_storage_status_access(ctx.user)
@@ -947,6 +984,7 @@ def report_html(
     require_report_access(ctx.user, project_name)
     items = visible_project_items(ctx, data.items, project_name)
     settings = data.settings.model_copy(update={"active_project": project_name})
+    prefetch_report_photo_urls(report_service.report_items(items, report_type, subcontractor=subcontractor))
     html = report_service.build_report(items, settings, report_type=report_type, subcontractor=subcontractor)
     return HTMLResponse(html)
 

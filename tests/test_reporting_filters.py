@@ -90,6 +90,24 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertEqual(html, "")
         self.assertNotIn("Evidence photo unavailable", html)
 
+    def test_image_html_emits_share_variant_when_it_signs(self) -> None:
+        with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/object/photo.jpg?token=full"), patch(
+            "app.reporting.resolve_share_photo_url", return_value="https://signed.example/render/photo.jpg?w=1200"
+        ):
+            html = image_html("projects/jura/items/def-1/original/photo.jpg", "DEF-1 original evidence")
+
+        self.assertIn('src="https://signed.example/object/photo.jpg?token=full"', html)
+        self.assertIn('data-share-src="https://signed.example/render/photo.jpg?w=1200"', html)
+
+    def test_image_html_omits_share_variant_when_share_signing_fails(self) -> None:
+        with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/object/photo.jpg?token=full"), patch(
+            "app.reporting.resolve_share_photo_url", return_value=None
+        ):
+            html = image_html("projects/jura/items/def-1/original/photo.jpg", "DEF-1 original evidence")
+
+        self.assertIn("<img", html)
+        self.assertNotIn("data-share-src", html)
+
     def test_report_html_shows_placeholder_and_keeps_evidence_badge_on_signing_failure(self) -> None:
         item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
         settings = self.snapshot.settings

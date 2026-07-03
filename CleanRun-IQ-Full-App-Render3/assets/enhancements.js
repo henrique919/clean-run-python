@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards42";
-  document.documentElement.dataset.cleanrunBuild="cards42";
+  window.CLEANRUN_FRONTEND_BUILD="cards43";
+  document.documentElement.dataset.cleanrunBuild="cards43";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -1080,6 +1080,52 @@
     if(sent){try{state=await networkApi("/api/state");cacheState();render()}catch{}}
     updateOfflinePill();if(sent)toast(`${sent} offline change${sent===1?"":"s"} synced`);
   }
+
+  // Signed photo URLs can expire (or break) while a tab stays open. On an image
+  // error, ask the server to re-sign that photo once; if that fails, swap in the
+  // existing placeholder styling instead of a broken-image icon.
+  const photoRefreshInflight=new Map();
+  function refreshSignedPhotoUrl(url){
+    if(!photoRefreshInflight.has(url)){
+      const request=networkApi("/api/photos/refresh-url",{method:"POST",body:JSON.stringify({url})}).finally(()=>photoRefreshInflight.delete(url));
+      photoRefreshInflight.set(url,request);
+    }
+    return photoRefreshInflight.get(url);
+  }
+  function patchStatePhotoUrl(stale,fresh){
+    if(typeof state==="undefined"||!state?.items)return;
+    const swap=list=>{if(Array.isArray(list))list.forEach((value,index)=>{if(value===stale)list[index]=fresh})};
+    state.items.forEach(item=>{
+      swap(item.originalPhotos);
+      swap(item.originalPhotoThumbnails);
+      (item.rectificationEvidence||[]).forEach(e=>{if(e.photo===stale)e.photo=fresh});
+      (item.closeoutEvidence||[]).forEach(e=>{if(e.photo===stale)e.photo=fresh});
+    });
+  }
+  function photoUnavailablePlaceholder(img){
+    const placeholder=document.createElement("div");
+    if(img.classList.contains("cr-card-photo")){placeholder.className="cr-card-photo empty";placeholder.textContent="PHOTO UNAVAILABLE"}
+    else{placeholder.className="review-photo-placeholder";placeholder.textContent="Photo unavailable"}
+    img.replaceWith(placeholder);
+  }
+  document.addEventListener("error",event=>{
+    try{
+      const img=event.target;
+      if(!img||img.tagName!=="IMG")return;
+      const src=img.currentSrc||img.src||"";
+      if(!/^https?:/i.test(src))return;
+      if(img.dataset.crPhotoRetry){photoUnavailablePlaceholder(img);return}
+      img.dataset.crPhotoRetry="1";
+      refreshSignedPhotoUrl(src)
+        .then(value=>{
+          const fresh=value&&value.url;
+          if(!fresh||fresh===src)return photoUnavailablePlaceholder(img);
+          patchStatePhotoUrl(src,fresh);
+          img.src=fresh;
+        })
+        .catch(()=>photoUnavailablePlaceholder(img));
+    }catch{}
+  },true);
 
   window.openHomeBucket=function(bucket){
     route="items";

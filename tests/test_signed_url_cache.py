@@ -62,6 +62,29 @@ class SignedUrlCacheTests(unittest.TestCase):
         self.assertEqual(full, full_again)
         self.assertEqual(len(client.storage.bucket.calls), 2)
 
+    def test_refresh_evicts_and_resigns(self) -> None:
+        client = FakeClient()
+        with patch("app.storage._client_for_storage_path", return_value=client):
+            first = signed_url_cache.get("projects/demo/photo.jpg")
+            refreshed = signed_url_cache.refresh("projects/demo/photo.jpg")
+            again = signed_url_cache.get("projects/demo/photo.jpg")
+        self.assertEqual(first, refreshed)
+        self.assertEqual(refreshed, again)
+        # get signs once, refresh forces a second signing, final get is served from cache.
+        self.assertEqual(len(client.storage.bucket.calls), 2)
+
+    def test_refresh_of_one_variant_keeps_other_variant_cached(self) -> None:
+        client = FakeClient()
+        transform = {"width": 284, "height": 216, "resize": "cover"}
+        with patch("app.storage._client_for_storage_path", return_value=client):
+            signed_url_cache.get("projects/demo/photo.jpg")
+            signed_url_cache.get("projects/demo/photo.jpg", transform=transform)
+            signed_url_cache.refresh("projects/demo/photo.jpg", transform=transform)
+            signed_url_cache.get("projects/demo/photo.jpg")
+            signed_url_cache.get("projects/demo/photo.jpg", transform=transform)
+        # full + thumb + thumb refresh; both trailing gets come from cache.
+        self.assertEqual(len(client.storage.bucket.calls), 3)
+
     def test_cache_expires_before_supabase_ttl(self) -> None:
         self.assertLess(SIGNED_URL_CACHE_MAX_AGE_SECONDS, SIGNED_URL_TTL_SECONDS)
         self.assertGreaterEqual(SIGNED_URL_CACHE_MAX_AGE_SECONDS, SIGNED_URL_TTL_SECONDS - 86400)
