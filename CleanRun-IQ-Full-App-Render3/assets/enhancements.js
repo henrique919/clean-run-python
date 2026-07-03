@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards45";
-  document.documentElement.dataset.cleanrunBuild="cards45";
+  window.CLEANRUN_FRONTEND_BUILD="cards46";
+  document.documentElement.dataset.cleanrunBuild="cards46";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -132,11 +132,17 @@
     });
   }
 
+  function markupPhotoRef(mode,index){
+    const photos=mode==="edit"?editPhotos:capturePhotos;
+    const previews=mode==="edit"?editPhotoPreviewUrls:capturePhotoPreviewUrls;
+    const stored=photos[index];
+    if(mode==="capture"&&stored&&String(stored).startsWith("data:image/"))return stored;
+    return previews[index]||stored;
+  }
+
   async function markupImageSource(src){
     const value=String(src||"");
     if(!value||value.startsWith("data:")||value.startsWith("blob:")||value.startsWith("seed://"))return value;
-    const needsProxy=!value.startsWith("http")||value.includes("/storage/v1/");
-    if(!needsProxy)return value;
     const headers={};
     if(typeof authToken!=="undefined"&&authToken)headers.Authorization=`Bearer ${authToken}`;
     const res=await fetch(`/api/photos/markup-source?url=${encodeURIComponent(value)}`,{headers,credentials:"same-origin"});
@@ -754,13 +760,12 @@
   }
 
   window.openEvidencePhoto=function(mode,index){
-    const photos=mode==="edit"?editPhotos:capturePhotos;
-    const src=photos[index];
+    const src=markupPhotoRef(mode,index);
     if(src&&!src.startsWith("seed://"))openWorkbench(src,"Evidence photo",null);
   };
   window.markupEvidencePhoto=function(mode,index){
     const photos=mode==="edit"?editPhotos:capturePhotos;
-    const src=previewSrc(mode,index)||photos[index];
+    const src=markupPhotoRef(mode,index);
     if(!src||src.startsWith("seed://"))return toast("Seed previews cannot be marked up.",true);
     openWorkbench(src,"Mark up evidence",data=>{
       photos[index]=data;

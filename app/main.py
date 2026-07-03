@@ -710,25 +710,30 @@ def stage_photo(payload: dict[str, object], ctx: RequestContext = Depends(get_re
 @app.get("/api/photos/markup-source")
 def markup_photo_source(url: str = Query(...), ctx: RequestContext = Depends(get_request_context)):
     """Same-origin image bytes for markup canvas (avoids tainted canvas on signed URLs)."""
-    from app.storage import read_storage_bytes
+    from app.storage import read_markup_bytes
 
     value = (url or "").strip()
-    path = storage_path_from_value(value)
-    if not path or path.startswith(("http", "data:image/", "seed://")):
+    if not value or value.startswith(("data:image/", "seed://")):
         raise HTTPException(status_code=404, detail="Photo not found")
-    data = store.snapshot()
-    allowed = {
-        request_path
-        for item in visible_items(ctx.user, data.items)
-        for request_path, _ in collect_item_sign_requests(item)
-    }
-    if path not in allowed and not is_markup_source_path_allowed(path):
+    path = storage_path_from_value(value)
+    if path and not str(path).startswith("http"):
+        data = store.snapshot()
+        allowed = {
+            request_path
+            for item in visible_items(ctx.user, data.items)
+            for request_path, _ in collect_item_sign_requests(item)
+        }
+        if path not in allowed and not is_markup_source_path_allowed(path):
+            raise HTTPException(status_code=404, detail="Photo not found")
+    elif not value.startswith("http"):
         raise HTTPException(status_code=404, detail="Photo not found")
     try:
-        body, content_type = read_storage_bytes(path)
+        body, content_type = read_markup_bytes(value)
         return Response(body, media_type=content_type, headers={"Cache-Control": "private, max-age=300"})
+    except StorageUploadError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("Could not load markup source for %s", path)
+        logger.exception("Could not load markup source for %s", value)
         raise HTTPException(status_code=502, detail="Could not load photo for markup.") from exc
 
 
@@ -745,7 +750,7 @@ def refresh_photo_url(payload: PhotoRefreshPayload, ctx: RequestContext = Depend
         for item in visible_items(ctx.user, data.items)
         for request_path, _ in collect_item_sign_requests(item)
     }
-    if path not in allowed and not is_markup_source_path_allowed(path):
+    if path not in allowed:
         raise HTTPException(status_code=404, detail="Photo not found")
     transform = list_thumbnail_transform() if "/render/image/sign/" in value else None
     try:

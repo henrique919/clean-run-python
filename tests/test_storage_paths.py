@@ -6,10 +6,13 @@ from unittest.mock import patch
 
 from app.models import AppData, Item, ItemCreate
 from app.storage import (
+    is_markup_source_path_allowed,
     is_staging_storage_path,
     normalize_photo,
     promote_staged_photo,
+    read_markup_bytes,
     resolve_photo_url,
+    storage_path_from_value,
     upload_data_url,
 )
 from app.store import seed_settings
@@ -20,6 +23,44 @@ class StoragePathTests(unittest.TestCase):
     def test_staging_storage_paths_are_detected(self) -> None:
         self.assertTrue(is_staging_storage_path("cleanrun/public/staging/abc123.jpg"))
         self.assertFalse(is_staging_storage_path("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg"))
+
+    def test_markup_source_paths_allow_staging_and_project_evidence(self) -> None:
+        self.assertTrue(is_markup_source_path_allowed("cleanrun/public/staging/abc.jpg"))
+        with patch.dict("os.environ", {"CLEANRUN_ENV": "production"}, clear=False):
+            self.assertTrue(is_markup_source_path_allowed("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg"))
+        self.assertFalse(is_markup_source_path_allowed("projects/demo/items/def-1001/original/abc.jpg"))
+        self.assertFalse(is_markup_source_path_allowed("https://example.com/photo.jpg"))
+
+    def test_storage_path_from_signed_render_url(self) -> None:
+        signed = (
+            "https://project.supabase.co/storage/v1/render/image/sign/cleanrun-evidence/"
+            "cleanrun/public/projects/demo/items/def-1001/original/abc.jpg?token=thumb"
+        )
+        self.assertEqual(
+            storage_path_from_value(signed),
+            "cleanrun/public/projects/demo/items/def-1001/original/abc.jpg",
+        )
+
+    def test_read_markup_bytes_downloads_storage_path(self) -> None:
+        class FakeBucket:
+            def download(self, path):
+                assert path == "cleanrun/public/projects/demo/items/def-1001/original/abc.jpg"
+                return b"jpeg-bytes"
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        with patch("app.storage.get_supabase_client", return_value=FakeClient()), patch(
+            "app.storage.get_public_supabase_client", return_value=FakeClient()
+        ):
+            data, content_type = read_markup_bytes("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg")
+
+        self.assertEqual(data, b"jpeg-bytes")
+        self.assertEqual(content_type, "image/jpeg")
 
     def test_normalize_photo_promotes_staging_path_into_item_folder(self) -> None:
         staged_path = "cleanrun/public/staging/abc123.jpg"
