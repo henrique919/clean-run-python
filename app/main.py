@@ -259,8 +259,9 @@ def sign_item_photos(item: Item) -> Item:
     )
 
 
-def camel_item(item) -> dict[str, object]:
-    payload = sign_item_photos(item).model_dump(mode="json")
+def camel_item(item, *, sign_photos: bool = True) -> dict[str, object]:
+    source_item = sign_item_photos(item) if sign_photos else item
+    payload = source_item.model_dump(mode="json")
     rename = {
         "due_date": "dueDate",
         "original_photos": "originalPhotos",
@@ -284,9 +285,12 @@ def camel_item(item) -> dict[str, object]:
     for source, target in rename.items():
         if source in payload:
             payload[target] = payload.pop(source)
-    payload["originalPhotoThumbnails"] = [
-        resolve_thumbnail_url(photo) or resolve_photo_url(photo) or photo for photo in item.original_photos
-    ]
+    if sign_photos:
+        payload["originalPhotoThumbnails"] = [
+            resolve_thumbnail_url(photo) or resolve_photo_url(photo) or photo for photo in item.original_photos
+        ]
+    else:
+        payload["originalPhotoThumbnails"] = []
     return payload
 
 
@@ -662,19 +666,69 @@ def bootstrap(ctx: RequestContext = Depends(get_request_context)):
 
 
 @app.get("/api/state")
-def legacy_state(ctx: RequestContext = Depends(get_request_context)):
+def legacy_state(
+    scope: str = Query(default="all"),
+    photos: str = Query(default="full"),
+    ctx: RequestContext = Depends(get_request_context),
+):
     data = store.snapshot()
     settings = scoped_settings(data.settings, ctx)
     visible = visible_items(ctx.user, data.items)
-    prefetch_item_photo_urls(visible)
+    if scope == "active":
+        visible = [item for item in visible if item.project == settings.active_project]
+    sign_photos = photos != "lazy"
+    if sign_photos:
+        prefetch_item_photo_urls(visible)
     return {
         "settings": camel_settings(settings),
-        "items": [camel_item(item) for item in visible],
+        "items": [camel_item(item, sign_photos=sign_photos) for item in visible],
         "plans": [],
         "trades": TRADES,
         "raisedByOptions": RAISED_BY_OPTIONS,
         "user": user_payload(ctx, camel=True),
     }
+
+
+@app.post("/api/photos/stage")
+def stage_photo(payload: dict[str, object], ctx: RequestContext = Depends(get_request_context)):
+    """Upload capture evidence while the user is still filling the form."""
+    from app.storage import StorageUploadError, upload_data_url
+
+    photo = str(payload.get("photo") or "").strip()
+    if not photo.startswith("data:image/"):
+        raise HTTPException(status_code=422, detail="Photo must be a browser data URL.")
+    try:
+        return {"path": upload_data_url(photo, folder="staging")}
+    except StorageUploadError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Photo stage upload failed for user=%s", ctx.user.email)
+        raise HTTPException(status_code=503, detail="Could not upload photo evidence.") from exc
+
+
+@app.get("/api/photos/markup-source")
+def markup_photo_source(url: str = Query(...), ctx: RequestContext = Depends(get_request_context)):
+    """Same-origin image bytes for markup canvas (avoids tainted canvas on signed URLs)."""
+    from app.storage import read_storage_bytes
+
+    value = (url or "").strip()
+    path = storage_path_from_value(value)
+    if not path or path.startswith(("http", "data:image/", "seed://")):
+        raise HTTPException(status_code=404, detail="Photo not found")
+    data = store.snapshot()
+    allowed = {
+        request_path
+        for item in visible_items(ctx.user, data.items)
+        for request_path, _ in collect_item_sign_requests(item)
+    }
+    if path not in allowed:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    try:
+        body, content_type = read_storage_bytes(path)
+        return Response(body, media_type=content_type, headers={"Cache-Control": "private, max-age=300"})
+    except Exception as exc:
+        logger.exception("Could not load markup source for %s", path)
+        raise HTTPException(status_code=502, detail="Could not load photo for markup.") from exc
 
 
 @app.post("/api/photos/refresh-url")

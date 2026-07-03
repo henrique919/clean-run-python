@@ -147,9 +147,20 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards43", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards43", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards44", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards44", response.text)
         self.assertIn("renderLogin", response.text)
+
+    def test_state_scope_active_returns_only_active_project(self) -> None:
+        self.create_direct_item(project="Other Project", subcontractor="Other Trade")
+        active = self.client.get("/api/state?scope=active&photos=lazy", headers=bearer("dev-site-manager")).json()
+        full = self.client.get("/api/state?scope=all&photos=full", headers=bearer("dev-site-manager")).json()
+        active_project = active["settings"]["activeProject"]
+
+        self.assertTrue(all(item["project"] == active_project for item in active["items"]))
+        self.assertGreaterEqual(len(full["items"]), len(active["items"]))
+        if active["items"]:
+            self.assertEqual(active["items"][0].get("originalPhotoThumbnails"), [])
 
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
         response = self.client.post(

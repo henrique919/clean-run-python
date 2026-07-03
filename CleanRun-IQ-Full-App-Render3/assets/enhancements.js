@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards43";
-  document.documentElement.dataset.cleanrunBuild="cards43";
+  window.CLEANRUN_FRONTEND_BUILD="cards44";
+  document.documentElement.dataset.cleanrunBuild="cards44";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -17,6 +17,7 @@
   // Dashboard stat chips and the Review nav badge can lag until home/review is opened or reload() runs.
   let stateNeedsGlobalRefresh=false;
   let captureDefaultsExpanded=null;
+  let walkCaptureDefaultsPinned=false;
   let captureDraftHighlights=new Set();
   let captureDescriptionEdited=false;
   let capturePhotoMeta=[];
@@ -121,13 +122,25 @@
     return imageBitmapOrientationSupported;
   }
 
-  function loadImageElement(src){
+  function loadImageElement(src,options={}){
     return new Promise((resolve,reject)=>{
       const image=new Image();
+      if(options.crossOrigin)image.crossOrigin=options.crossOrigin;
       image.onload=()=>resolve(image);
       image.onerror=()=>reject(new Error("Could not read image."));
       image.src=src;
     });
+  }
+
+  async function markupImageSource(src){
+    const value=String(src||"");
+    if(!value||value.startsWith("data:")||value.startsWith("blob:"))return value;
+    if(!value.startsWith("http"))return value;
+    const headers={};
+    if(typeof authToken!=="undefined"&&authToken)headers.Authorization=`Bearer ${authToken}`;
+    const res=await fetch(`/api/photos/markup-source?url=${encodeURIComponent(value)}`,{headers,credentials:"same-origin"});
+    if(!res.ok)throw new Error("Could not load photo for markup.");
+    return URL.createObjectURL(await res.blob());
   }
 
   function isImageFile(file){
@@ -227,10 +240,29 @@
     cacheState();
   }
   const baseReload=reload;
-  reload=async function(){
+  function stateApiPath(scope="active",photos="lazy"){
+    const params=new URLSearchParams();
+    if(scope)params.set("scope",scope);
+    if(photos)params.set("photos",photos);
+    return `/api/state?${params}`;
+  }
+  reload=async function(options={}){
+    const scope=options.scope||"all";
+    const photos=options.photos||(scope==="all"?"full":"lazy");
     stateNeedsGlobalRefresh=false;
-    await baseReload();
+    state=await api(stateApiPath(scope,photos));
+    cacheState();
+    render();
   };
+  async function refreshStateBackground(){
+    try{
+      const fresh=await api(stateApiPath("all","full"));
+      state=fresh;
+      cacheState();
+      updateOfflinePill();
+      if(route==="home"||route==="items"||route==="review")render();
+    }catch{}
+  }
   const baseGo=go;
   go=function(next){
     if(stateNeedsGlobalRefresh&&(next==="home"||next==="review")){
@@ -240,9 +272,6 @@
     }
     baseGo(next);
   };
-  async function refreshStateBackground(){
-    try{state=await api("/api/state");cacheState();updateOfflinePill()}catch{}
-  }
   window.openReport=async function(reportType,query={}){
     const params=new URLSearchParams();
     if(state?.settings?.activeProject)params.set("project",state.settings.activeProject);
@@ -319,6 +348,29 @@
     if(recentList.length&&opts)html+=`<optgroup label="All">${opts}</optgroup>`;
     else html+=opts;
     return html;
+  }
+  function shouldExpandCaptureDefaults(){
+    if(walkMode&&!walkCaptureDefaultsPinned)return true;
+    if(captureDefaultsExpanded!==null)return captureDefaultsExpanded;
+    return !hasProjectCaptureDefaults();
+  }
+  function captureDefaultValues(){
+    const ctx=readWalkContext();
+    let last={};
+    try{last=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{}}catch{}
+    const cfg=state?.settings?.projectConfigs?.[state?.settings?.activeProject]||{};
+    const merged={...last,...ctx};
+    return {
+      project:merged.project||state?.settings?.activeProject||"",
+      building:merged.building||"",
+      level:merged.level||"",
+      unit:merged.unit||"",
+      room:merged.room||"",
+      trade:merged.trade||"",
+      subcontractor:merged.subcontractor||"",
+      type:merged.type||"defect",
+      priority:merged.priority||"high",
+    };
   }
   function hasProjectCaptureDefaults(){
     const project=state?.settings?.activeProject;
@@ -411,10 +463,11 @@
     setTimeout(()=>label?.classList?.remove("capture-field-invalid"),2200);
   }
   function buildCaptureDefaultsPanel(s,cfg,due){
-    const expanded=captureDefaultsExpanded!==null?captureDefaultsExpanded:!hasProjectCaptureDefaults();
+    const defaults=captureDefaultValues();
+    const expanded=shouldExpandCaptureDefaults();
     const detailsClass=expanded?"":" hidden";
     const collapseHidden=expanded?"":" hidden";
-    return `<section class="form-panel capture-form-panel"><div class="capture-defaults-strip-row"><button type="button" class="capture-defaults-strip" id="captureDefaultsStrip" onclick="expandCaptureDefaultsSections()" aria-expanded="${expanded}"><span id="captureDefaultsStripText" class="capture-defaults-strip__text">Set task, location and assignment</span></button><button type="button" class="capture-defaults-collapse btn alt small"${collapseHidden} id="captureDefaultsCollapse" onclick="collapseCaptureDefaultsSections()" aria-label="Collapse task, location and assignment">Collapse</button></div><div id="captureDefaultsDetails" class="capture-defaults-details${detailsClass}"><div class="form-group" data-capture-section="task"><h3>Task</h3><div class="field-list"><label>Item type<select name="type" id="capType" onchange="onCaptureFieldChange(this)"><option value="defect">Defect</option><option value="incomplete">Incomplete Work</option><option value="client">Client Defect</option></select></label><label id="raisedField" hidden>Raised by *<select name="raisedBy" onchange="onCaptureFieldChange(this)"><option value="">Who raised this?</option>${options(["Client PM","Superintendent","Consultant","Architect","Buyer","Other"])}</select></label><label>Priority<select name="priority" onchange="onCaptureFieldChange(this)"><option value="high">High</option><option value="urgent">Urgent</option></select></label></div></div><div class="form-group" data-capture-section="location"><h3>Location</h3><div class="field-list"><label>Project<select name="project" onchange="onCaptureFieldChange(this)">${options(s.projects,s.activeProject)}</select></label><label>Building *<select name="building" required onchange="onCaptureFieldChange(this)"><option value="">Select building</option>${selectOptionsWithRecents("building",cfg.buildings||[])}</select></label><label>Level<select name="level" onchange="onCaptureFieldChange(this)"><option value="">Select level</option>${selectOptionsWithRecents("level",cfg.levels||[])}</select></label><label>Unit / Area<select name="unit" onchange="onCaptureFieldChange(this)"><option value="">Select unit / area</option>${selectOptionsWithRecents("unit",cfg.units||[])}</select></label><label>Room / Location<select name="room" onchange="onCaptureFieldChange(this)"><option value="">Select room / location</option>${selectOptionsWithRecents("room",cfg.rooms||[])}</select></label></div></div><div class="form-group" data-capture-section="assign"><h3>Assign</h3><div class="field-list"><label>Trade<select name="trade" onchange="onCaptureFieldChange(this)"><option value="">Select trade</option>${selectOptionsWithRecents("trade",trades)}</select></label><label>Subcontractor<select name="subcontractor" onchange="onCaptureFieldChange(this)"><option value="">Select subcontractor</option>${selectOptionsWithRecents("subcontractor",s.subcontractors)}</select></label><label>Due date<input type="date" name="dueDate" value="${due}" required onchange="onCaptureFieldChange(this)"></label></div></div></div><div class="form-group capture-description-group"><h3>Description</h3><textarea name="description" required placeholder="Short, specific. e.g. Cracked tile under vanity, replace and regrout."></textarea></div></section>`;
+    return `<section class="form-panel capture-form-panel"><div class="capture-defaults-strip-row"><button type="button" class="capture-defaults-strip" id="captureDefaultsStrip" onclick="expandCaptureDefaultsSections()" aria-expanded="${expanded}"><span id="captureDefaultsStripText" class="capture-defaults-strip__text">Set task, location and assignment</span></button><button type="button" class="capture-defaults-collapse btn alt small"${collapseHidden} id="captureDefaultsCollapse" onclick="collapseCaptureDefaultsSections()" aria-label="Collapse task, location and assignment">Collapse</button></div><div id="captureDefaultsDetails" class="capture-defaults-details${detailsClass}"><div class="form-group" data-capture-section="task"><h3>Task</h3><div class="field-list"><label>Item type<select name="type" id="capType" onchange="onCaptureFieldChange(this)"><option value="defect" ${defaults.type==="defect"?"selected":""}>Defect</option><option value="incomplete" ${defaults.type==="incomplete"?"selected":""}>Incomplete Work</option><option value="client" ${defaults.type==="client"?"selected":""}>Client Defect</option></select></label><label id="raisedField" hidden>Raised by *<select name="raisedBy" onchange="onCaptureFieldChange(this)"><option value="">Who raised this?</option>${options(["Client PM","Superintendent","Consultant","Architect","Buyer","Other"])}</select></label><label>Priority<select name="priority" onchange="onCaptureFieldChange(this)"><option value="high" ${defaults.priority==="high"?"selected":""}>High</option><option value="urgent" ${defaults.priority==="urgent"?"selected":""}>Urgent</option></select></label></div></div><div class="form-group" data-capture-section="location"><h3>Location</h3><div class="field-list"><label>Project<select name="project" onchange="onCaptureFieldChange(this)">${options(s.projects,defaults.project||s.activeProject)}</select></label><label>Building *<select name="building" required onchange="onCaptureFieldChange(this)"><option value="">Select building</option>${selectOptionsWithRecents("building",cfg.buildings||[],defaults.building)}</select></label><label>Level<select name="level" onchange="onCaptureFieldChange(this)"><option value="">Select level</option>${selectOptionsWithRecents("level",cfg.levels||[],defaults.level)}</select></label><label>Unit / Area<select name="unit" onchange="onCaptureFieldChange(this)"><option value="">Select unit / area</option>${selectOptionsWithRecents("unit",cfg.units||[],defaults.unit)}</select></label><label>Room / Location<select name="room" onchange="onCaptureFieldChange(this)"><option value="">Select room / location</option>${selectOptionsWithRecents("room",cfg.rooms||[],defaults.room)}</select></label></div></div><div class="form-group" data-capture-section="assign"><h3>Assign</h3><div class="field-list"><label>Trade<select name="trade" onchange="onCaptureFieldChange(this)"><option value="">Select trade</option>${selectOptionsWithRecents("trade",trades,defaults.trade)}</select></label><label>Subcontractor<select name="subcontractor" onchange="onCaptureFieldChange(this)"><option value="">Select subcontractor</option>${selectOptionsWithRecents("subcontractor",s.subcontractors,defaults.subcontractor)}</select></label><label>Due date<input type="date" name="dueDate" value="${due}" required onchange="onCaptureFieldChange(this)"></label></div></div></div><div class="form-group capture-description-group"><h3>Description</h3><textarea name="description" required placeholder="Short, specific. e.g. Cracked tile under vanity, replace and regrout."></textarea></div></section>`;
   }
   function wireCaptureDefaultsForm(){
     const form=$("#app form");
@@ -481,21 +534,23 @@
   };
   window.toggleWalkCapture=function(){
     walkMode=!walkMode;
-    if(walkMode)sessionStorage.removeItem("walkModeOff");
-    else sessionStorage.setItem("walkModeOff","1");
+    if(walkMode){
+      sessionStorage.removeItem("walkModeOff");
+      walkCaptureDefaultsPinned=false;
+    }else{
+      sessionStorage.setItem("walkModeOff","1");
+    }
     render();
   };
   window.quickCapture=function(){
     go("capture");
   };
   function applyCaptureDefaults(){
-    let keep={};try{keep=JSON.parse(localStorage.getItem(LAST_CAPTURE_KEY)||"{}")||{}}catch{}
-    const ctx=readWalkContext();
+    const defaults=captureDefaultValues();
     const form=$("#app form");if(!form)return;
     const cfg=state.settings.projectConfigs[state.settings.activeProject]||{};
-    const merged={...keep,...ctx};
     for(const key of ["project","building","level","unit","room","trade","subcontractor","priority","type"]){
-      const value=merged[key]||(key==="building"?cfg.buildings?.[0]:key==="unit"?cfg.units?.[0]:key==="level"?cfg.levels?.[0]:"");
+      const value=defaults[key]||(key==="building"?cfg.buildings?.[0]:key==="unit"?cfg.units?.[0]:key==="level"?cfg.levels?.[0]:"");
       if(value&&form.elements[key])form.elements[key].value=value;
     }
     if(form.elements.dueDate)form.elements.dueDate.value=defaultCaptureDueDate();
@@ -553,10 +608,25 @@
     });
   }
 
+  async function stageCapturedPhoto(dataUrl,index){
+    if(!dataUrl||!String(dataUrl).startsWith("data:image/"))return;
+    try{
+      const staged=await api("/api/photos/stage",{method:"POST",body:JSON.stringify({photo:dataUrl})});
+      const path=staged?.path;
+      if(path&&capturePhotos[index]===dataUrl){
+        capturePhotos[index]=path;
+        capturePhotoMeta[index]={...capturePhotoMeta[index]||{},staged:true};
+      }
+    }catch(err){
+      console.warn("[CleanRun] background photo stage failed; will upload on save",err);
+    }
+  }
+
   async function filesWithMeta(files,onRecord){
     const list=[...files];
     if(!list.length)return [];
-    const geo=await locatePhoto();
+    const base={capturedAt:new Date().toISOString()};
+    const geoPromise=locatePhoto().catch(()=>base);
     const records=[];
     for(let n=0;n<list.length;n++){
       const file=list[n];
@@ -565,11 +635,17 @@
       const record={
         src:packed.dataUrl,
         previewUrl:packed.previewUrl||packed.dataUrl,
-        meta:{...geo,fileName:file?.name||`photo-${n+1}.jpg`,mimeType:file?.type||"image/jpeg",compressed:!!file?.type?.startsWith("image/")}
+        meta:{...base,fileName:file?.name||`photo-${n+1}.jpg`,mimeType:file?.type||"image/jpeg",compressed:!!file?.type?.startsWith("image/")}
       };
       records.push(record);
       onRecord?.(record,n);
     }
+    geoPromise.then(geo=>{
+      records.forEach(record=>{record.meta={...record.meta,...geo}});
+      capturePhotoMeta.forEach((meta,idx)=>{
+        if(capturePhotos[idx]===records[idx]?.src)capturePhotoMeta[idx]={...meta,...geo};
+      });
+    }).catch(()=>{});
     return records;
   }
 
@@ -751,22 +827,20 @@
 
   function drawSource(src){
     const token=++drawSourceToken;
-    return new Promise((resolve,reject)=>{
-      const img=new Image();
-      img.onload=()=>{
-        if(token!==drawSourceToken)return resolve();
+    return markupImageSource(src).then(loadSrc=>{
+      const objectUrl=loadSrc!==src?loadSrc:null;
+      return loadImageElement(loadSrc,{crossOrigin:String(loadSrc).startsWith("http")?"anonymous":undefined}).then(img=>{
+        if(token!==drawSourceToken)return;
         const canvas=$("#markupCanvas");
-        if(!canvas)return reject(new Error("Markup canvas missing."));
+        if(!canvas)throw new Error("Markup canvas missing.");
         const scale=Math.min(1,1400/img.naturalWidth,900/img.naturalHeight);
         canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
         canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
         canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
         workbench.history=[];
         workbench.ready=true;
-        resolve();
-      };
-      img.onerror=()=>{if(token===drawSourceToken)reject(new Error("Could not load photo for markup."))};
-      img.src=src;
+        workbench.objectUrl=objectUrl;
+      });
     });
   }
   function restoreCanvas(base){
@@ -806,7 +880,7 @@
       if(panel)delete panel.dataset.loading;
     }
   }
-  window.closePhotoWorkbench=()=>{$("#photoWorkbench").hidden=true};
+  window.closePhotoWorkbench=()=>{if(workbench.objectUrl)revokePreviewUrl(workbench.objectUrl);workbench.objectUrl=null;$("#photoWorkbench").hidden=true};
   window.resetPhotoMarkup=()=>{workbench.ready=false;drawSource(workbench.source).catch(err=>toast(err?.message||"Could not reset markup.",true))};
   window.undoPhotoMarkup=()=>{const previous=workbench.history.pop();if(previous)restoreCanvas(previous)};
   window.savePhotoMarkup=async function(){
@@ -842,10 +916,12 @@
     const release=button?setBusyButton(button,"Processing…"):()=>{};
     try{
       await filesWithMeta(files,record=>{
+        const index=capturePhotos.length;
         capturePhotos.push(record.src);
         capturePhotoMeta.push(record.meta);
         capturePhotoPreviewUrls.push(record.previewUrl);
-        appendCapturePreview(capturePhotos.length-1);
+        appendCapturePreview(index);
+        stageCapturedPhoto(record.src,index);
       });
     }catch(err){
       toast(err.message||"Could not read photo.",true);
@@ -972,6 +1048,7 @@
       form.dataset.captureRequestId="";
       mergeSavedItem(item);
       if(walkMode){
+        walkCaptureDefaultsPinned=true;
         captureDefaultsExpanded=false;
         walkCount++;
         stateNeedsGlobalRefresh=true;
@@ -1436,4 +1513,29 @@
   reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   function rerenderLatestHome(){if(typeof state!=="undefined"&&state&&route==="home")render()}
   ensureWorkbench();supportsImageBitmapOrientation().catch(()=>{});updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
+  async function bootWorkspace(){
+    if(typeof loadAuthConfig==="function")await loadAuthConfig();
+    const routeParam=new URLSearchParams(location.search).get("route");
+    if(routeParam&&navs.includes(routeParam))route=routeParam;
+    if(routeParam&&history.replaceState)history.replaceState(null,"",location.pathname);
+    const cached=await dbGet(CACHE_KEY);
+    if(cached?.settings){
+      state=cached;
+      if(route==="capture")render();
+      else if(route!=="home")render();
+    }
+    try{
+      await reload({scope:"active",photos:"lazy"});
+      if(routeParam==="capture")route="capture";
+      render();
+      refreshStateBackground();
+    }catch(e){
+      if(e?.authRequired)return;
+      if(!state?.settings){
+        $("#nav").innerHTML="";
+        $("#app").innerHTML=`<div class="card"><h1>Could not load CleanRun IQ</h1><p>${esc(e.message)}</p></div>`;
+      }
+    }
+  }
+  if(typeof boot==="function")bootWorkspace();
 })();

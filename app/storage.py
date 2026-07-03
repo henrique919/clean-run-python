@@ -439,3 +439,15 @@ def normalize_photo(value: str | None, *, folder: str = "evidence") -> str | Non
     if is_data_url(value):
         return upload_data_url(value, folder=folder)
     return storage_path_from_value(value)
+
+
+def read_storage_bytes(path: str) -> tuple[bytes, str]:
+    """Download one private storage object for same-origin markup proxying."""
+    client = _client_for_storage_path(path)
+    data = client.storage.from_(BUCKET_NAME).download(path)
+    ext = os.path.splitext(path)[1].lower()
+    content_type = next(
+        (mime for mime, suffix in CONTENT_TYPE_EXT.items() if suffix == ext),
+        "application/octet-stream",
+    )
+    return data, content_type
