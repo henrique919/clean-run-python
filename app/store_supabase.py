@@ -490,7 +490,7 @@ class SupabaseCleanRunStore(CleanRunStore):
             "payload": item.model_dump(mode="json"),
         }
         self.client.table("items").upsert(row, on_conflict="id").execute()
-        self._upsert_item_photos(company_id, project_id, db_item_id, item)
+        self._sync_item_photos(company_id, project_id, db_item_id, item)
         self._upsert_comments(company_id, project_id, db_item_id, item)
         self._upsert_audit_events(company_id, project_id, db_item_id, item)
         return db_item_id
@@ -611,7 +611,7 @@ class SupabaseCleanRunStore(CleanRunStore):
         if missing_rows:
             self.client.table(table).insert(missing_rows).execute()
 
-    def _upsert_item_photos(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:
+    def _sync_item_photos(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:
         rows: list[dict[str, Any]] = []
         for index, photo in enumerate(item.original_photos):
             rows.append(
@@ -654,7 +654,24 @@ class SupabaseCleanRunStore(CleanRunStore):
                     evidence.at,
                 )
             )
-        self._insert_missing_child_rows("item_photos", rows, item_id=item_id)
+        original_ids = {str(row["id"]) for row in rows if row["photo_type"] == "original"}
+        existing_originals = (
+            self.client.table("item_photos")
+            .select("id")
+            .eq("item_id", item_id)
+            .eq("photo_type", "original")
+            .execute()
+            .data
+            or []
+        )
+        for row in existing_originals:
+            if str(row["id"]) not in original_ids:
+                self.client.table("item_photos").delete().eq("id", row["id"]).execute()
+        if rows:
+            self.client.table("item_photos").upsert(rows, on_conflict="id").execute()
+
+    def _upsert_item_photos(self, company_id: str, project_id: str, item_id: str, item: Item) -> None:
+        self._sync_item_photos(company_id, project_id, item_id, item)
 
     def _photo_row(
         self,

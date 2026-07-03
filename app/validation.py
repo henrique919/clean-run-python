@@ -52,8 +52,12 @@ def validate_update(payload: ItemUpdate) -> None:
 
 def validate_update_merged(item: Item, payload: ItemUpdate) -> None:
     validate_update(payload)
-    merged = item.model_copy(update=payload.model_dump(exclude_unset=True, exclude={"append_original_photos"}))
-    if payload.append_original_photos:
+    merged = item.model_copy(
+        update=payload.model_dump(exclude_unset=True, exclude={"append_original_photos", "original_photos"})
+    )
+    if payload.original_photos is not None:
+        merged = merged.model_copy(update={"original_photos": payload.original_photos})
+    elif payload.append_original_photos:
         merged = merged.model_copy(update={"original_photos": [*item.original_photos, *payload.append_original_photos]})
     if merged.type in {ItemType.DEFECT, ItemType.CLIENT} and len(merged.original_photos) == 0:
         label = "Client Defect" if merged.type == ItemType.CLIENT else "Defect"

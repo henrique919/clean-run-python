@@ -473,7 +473,10 @@ class CleanRunStore:
     def _update_mutation(self, item: Item, payload: ItemUpdate, *, by: str | None = None, actor: dict[str, Any] | None = None) -> Item:
         updates = payload.model_dump(exclude_unset=True)
         append_photos = updates.pop("append_original_photos", None)
-        if append_photos:
+        replace_photos = updates.pop("original_photos", None)
+        if replace_photos is not None:
+            updates["original_photos"] = replace_photos
+        elif append_photos:
             updates["original_photos"] = [*item.original_photos, *append_photos]
         item = item.model_copy(update=updates)
         return self._audit(item, "Item details edited", by=by, actor=actor)
