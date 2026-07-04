@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards47";
-  document.documentElement.dataset.cleanrunBuild="cards47";
+  window.CLEANRUN_FRONTEND_BUILD="cards48";
+  document.documentElement.dataset.cleanrunBuild="cards48";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -20,6 +20,7 @@
   let walkCaptureDefaultsPinned=false;
   let captureDraftHighlights=new Set();
   let captureDescriptionEdited=false;
+  let captureVoiceCaptured=false;
   let capturePhotoMeta=[];
   let capturePhotoPreviewUrls=[];
   let editPhotos=[];
@@ -567,7 +568,7 @@
   function resetCaptureForNext(){
     const form=$("#app form");
     if(form?.description)form.description.value="";
-    if($("#voiceText")){$("#voiceText").value="";captureVoiceCaptured=false;updateCaptureVoiceState()}
+    if($("#voiceText")){$("#voiceText").value="";captureVoiceCaptured=false;if(typeof updateCaptureVoiceState==="function")updateCaptureVoiceState()}
     clearCapturePhotoState();
     const host=$("#capturePreviews");if(host)host.innerHTML="";
     updatePhotoCount();
@@ -1079,12 +1080,14 @@
         render();
         resetCaptureForNext();
         toast(`${item.code} saved · capture next`);
+        if(mode==="issue")queueIssueNotification(item);
       }else{
         stateNeedsGlobalRefresh=true;
         route="items";
         render();
         setTimeout(()=>{filterItems?.();scrollTo(0,0)},0);
         toast(item.sync==="queued"?`${item.code} saved offline - queued to sync`:mode==="issue"?`${item.code} issued`:`${item.code} saved`);
+        if(mode==="issue"&&item.sync!=="queued")offerIssueNotification(item);
       }
     }catch(err){toast(err.message,true)}finally{captureSubmitting=false;release()}
   };
@@ -1113,7 +1116,7 @@
     if((act==="reject")&&!body.reason){release();return toast("Rejection reason is required.",true)}
     if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo&&!body.comment){release();return toast("Add a rectification photo or comment.",true)}body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
     if(act==="close"){body.role=prompt("Signed off by role:","Site Manager")||"Site Manager";body.note=prompt("Closeout note (optional):","");if(i.type!=="incomplete"){body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo){release();return toast("Closeout photo is required.",true)}}body.confirmed=confirm(`I confirm this item is rectified and accepted by ${state.settings.preparedBy}.`);if(!body.confirmed){release();return toast("Closeout confirmation cancelled.",true)}}
-    try{await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});await reload();showItem(id);document.querySelector(".dialog")?.scrollTo?.(0,0);toast("Item updated")}catch(err){toast(err.message,true)}finally{release()}
+    try{await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue")offerIssueNotification({...i,subcontractor:body.to||i.subcontractor});await reload();showItem(id);document.querySelector(".dialog")?.scrollTo?.(0,0);toast("Item updated")}catch(err){toast(err.message,true)}finally{release()}
   };
 
   window.reviewCloseout=function(id){
@@ -1281,7 +1284,7 @@
       const to=commandFindSubcontractor(issue[2]),body={to,by:state.settings.preparedBy,reissue:item.status==="rejected"};
       await api(`/api/items/${item.id}/actions/issue`,{method:"POST",body:JSON.stringify(body)});
       item.status="issued";item.subcontractor=to;item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to,by:body.by,reissue:!!body.reissue});
-      closeModal();toast(`${item.code} issued to ${to}`);await reload();openDashboardSearch(item.code,"Issued");return;
+      closeModal();toast(`${item.code} issued to ${to}`);await reload();openDashboardSearch(item.code,"Issued");offerIssueNotification(state.items.find(x=>x.id===item.id)||item);return;
     }
     const find=q.match(/^(?:find|show|search)\s+(?:all\s+)?(?:(open|captured|issued|ready|closed|overdue|rejected)\s+)?(?:items?|defects?|works?)?\s*(.*)$/i);
     if(find){closeModal();openDashboardSearch(cleanCommandText(find[2]),commandStatus(find[1]));return}
@@ -1325,6 +1328,8 @@
     toast(act==="issue"?"ISSUED · moved to Issued":"Item updated");
   }
 
+  let homeInsightsOpen=false;
+  window.toggleHomeInsights=function(){homeInsightsOpen=!homeInsightsOpen;render();if(homeInsightsOpen)setTimeout(()=>$("#homeInsightsToggle")?.scrollIntoView({behavior:"smooth",block:"start"}),0)};
   dashboardView=function(){
     // Stat chips and closeout KPIs use local state; walk Save+Next may lag until reload() or opening Home.
     const p=state.settings.activeProject,items=state.items.filter(i=>i.project===p),today=new Date().toISOString().slice(0,10);
@@ -1336,7 +1341,11 @@
     const perfRow=(r)=>{const pct=r.total?Math.round(r.closed/r.total*100):0;return `<button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(r.name)}'))"><span><strong>${esc(r.name)}</strong><small>${r.open} open · ${r.closed}/${r.total} closed${r.overdue?` · ${r.overdue} overdue`:""}</small></span><span class="dashboard-score">${pct}%</span><span class="dashboard-bar"><span style="width:${pct}%"></span></span></button>`};
     const schedule=todayDue.length?todayDue.slice(0,4).map(i=>`<button class="schedule-item" onclick="showItem('${i.id}')"><b>${esc(i.code)} · ${esc(i.trade||"No trade")}</b><small>${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")} · ${esc(i.subcontractor||"Unassigned")}</small></button>`).join(""):`<div class="schedule-item"><b>No items due today</b><small>Good breathing room — keep capture moving.</small></div>`;
     const next=active.sort((a,b)=>(overdue(a)?0:a.status==="ready_for_review"?1:a.status==="open"?2:3)-(overdue(b)?0:b.status==="ready_for_review"?1:b.status==="open"?2:3)||a.dueDate.localeCompare(b.dueDate)).slice(0,4);
-    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" type="button" onclick="go('items')" aria-label="Search items">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button><section class="native-card dashboard-hero"><div class="spread"><div><h2>Closeout control room</h2><p class="meta">Live subcontractor, trade and schedule performance for ${esc(p)}.</p></div><button class="btn alt small" onclick="openHomeBucket('all')">All items</button></div><div class="gamify-strip"><span><b>${closeoutPct}%</b> closeout rate</span><span><b>${activityPct}%</b> activity today</span><span><b>${topSub?esc(topSub.name):"—"}</b> most open defects</span></div></section><div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><section class="dashboard-board"><div class="dashboard-panel"><h3>Subcontractor performance</h3>${subPerf.length?subPerf.map(perfRow).join(""):`<p class="meta">No subcontractor assignments yet.</p>`}</div><div class="dashboard-panel"><h3>Trade pressure</h3>${tradePerf.length?tradePerf.map(perfRow).join(""):`<p class="meta">No trade data yet.</p>`}</div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Today's schedule</h3><div class="dashboard-schedule">${schedule}</div></div><div class="dashboard-panel"><h3>Quick focus</h3><button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(topTrade?.name||"")}'))"><span><strong>${topTrade?esc(topTrade.name):"No trade pressure"}</strong><small>Highest open trade workload</small></span><span class="dashboard-score">${topTrade?topTrade.open:0}</span></button><button class="dashboard-row" onclick="go('reports')"><span><strong>${closed.length}/${assigned.length||items.length} closed</strong><small>Closeout progress across assigned work</small></span><span class="dashboard-score">${closeoutPct}%</span></button></div></section><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list">${next.map(itemCard).join("")||`<div class="native-card empty">✓<br><b>All clear on ${esc(p)}</b><br>Nothing open right now.</div>`}</div></div>`;
+    const insightsBody=`<section class="native-card dashboard-hero"><div class="spread"><div><h2>Closeout control room</h2><p class="meta">Live subcontractor, trade and schedule performance for ${esc(p)}.</p></div><button class="btn alt small" onclick="openHomeBucket('all')">All items</button></div><div class="gamify-strip"><span><b>${closeoutPct}%</b> closeout rate</span><span><b>${activityPct}%</b> activity today</span><span><b>${topSub?esc(topSub.name):"—"}</b> most open defects</span></div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Subcontractor performance</h3>${subPerf.length?subPerf.map(perfRow).join(""):`<p class="meta">No subcontractor assignments yet.</p>`}</div><div class="dashboard-panel"><h3>Trade pressure</h3>${tradePerf.length?tradePerf.map(perfRow).join(""):`<p class="meta">No trade data yet.</p>`}</div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Today's schedule</h3><div class="dashboard-schedule">${schedule}</div></div><div class="dashboard-panel"><h3>Quick focus</h3><button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(topTrade?.name||"")}'))"><span><strong>${topTrade?esc(topTrade.name):"No trade pressure"}</strong><small>Highest open trade workload</small></span><span class="dashboard-score">${topTrade?topTrade.open:0}</span></button><button class="dashboard-row" onclick="go('reports')"><span><strong>${closed.length}/${assigned.length||items.length} closed</strong><small>Closeout progress across assigned work</small></span><span class="dashboard-score">${closeoutPct}%</span></button></div></section>`;
+    const insightsToggle=`<button type="button" id="homeInsightsToggle" class="native-card insights-toggle${homeInsightsOpen?" open":""}" onclick="toggleHomeInsights()" aria-expanded="${homeInsightsOpen?"true":"false"}" aria-controls="homeInsights"><span><b>Project insights</b><small>Closeout control room · subcontractor & trade performance · today's schedule</small></span><span class="chev">${homeInsightsOpen?"⌃":"›"}</span></button>`;
+    const insights=`${insightsToggle}<div id="homeInsights" class="home-insights" ${homeInsightsOpen?"":"hidden"}>${homeInsightsOpen?insightsBody:""}</div>`;
+    const commandBar=(typeof commandHomeBar==="function"&&matchMedia("(min-width:1024px)").matches)?commandHomeBar():"";
+    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" type="button" onclick="go('items')" aria-label="Search items">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button>${commandBar}<div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list">${next.map(itemCard).join("")||`<div class="native-card empty">✓<br><b>All clear on ${esc(p)}</b><br>Nothing open right now.</div>`}</div>${insights}</div>`;
   };
 
   const commandDashboardView=dashboardView;
@@ -1345,7 +1354,7 @@
     html=html.replace(`onclick="go('capture')"`,`onclick="quickCapture()"`);
     html=html.replace("<b>Capture Item</b><small>Photo, voice-to-note or walk capture</small>","<b>Walk Capture</b><small>Photo first · add a note · save</small>");
     if(matchMedia("(max-width:1023px)").matches)html=html.replace(/<form class="command-home[\s\S]*?<\/form>/,"");
-    return html.includes("command-home")?html:html.replace(`</div></section><div class="dashboard-kpis">`,`</div></section>${commandHomeBar()}<div class="dashboard-kpis">`);
+    return html;
   };
 
   function subProfile(name){const profile=state.settings.subProfiles?.[name]||{},contacts=Array.isArray(profile.contacts)&&profile.contacts.length?profile.contacts:[{name:profile.contact||"",role:"Primary",email:profile.email||"",mobile:profile.mobile||profile.phone||""}];return {...profile,name,companyName:profile.companyName||profile.name||name,tradeType:profile.tradeType||profile.trade||"",contacts}}
@@ -1517,7 +1526,7 @@
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};
   const setupWithFocus=setupView;
   setupView=function(){const html=setupWithFocus(),cfg=state.settings.projectConfigs[state.settings.activeProject]||{},scope=cfg.itemsProjectScope||"active",mode=cfg.itemsFocusMode||"level";const card=`${codePrefixCard(cfg)}${spreadsheetImportCard()}<section class="form-card"><h2>Items page focus</h2><p class="meta">Choose the default project scope and third filter group for this project.</p><label>Project scope<select onchange="saveItemsProjectScope(this.value)">${projectScopeOptions().map(([value,label])=>`<option value="${esc(value)}" ${value===scope?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label>Default focus group<select onchange="saveItemsFocusMode(this.value)">${FOCUS_MODES.map(([value,label])=>`<option value="${value}" ${value===mode?"selected":""}>${label}</option>`).join("")}</select></label></section>`;return html.replace("</section>",`</section>${card}`)};
-  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
+  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);if(act==="issue")offerIssueNotification(state.items.find(x=>x.id===id)||updated)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
   function planFit(plan){return {x:0,y:0,scale:1,...(plan?.fit||{})}}
   function pdfSrc(plan){const src=String(plan?.image||"");return src.includes("#")?src:`${src}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
   function activePlan(){return state.plans.filter(p=>p.project===state.settings.activeProject)[0]}
@@ -1534,6 +1543,95 @@
   window.openSubcontractorReportPicker=function(){const project=state.settings.activeProject,names=uniqueValues(state.items.filter(i=>i.project===project&&i.subcontractor).map(i=>i.subcontractor));if(!names.length)return toast("No subcontractors found for this project.",true);$("#modalTitle").textContent="Subcontractor Summary";$("#modalBody").innerHTML=`<div class="field-list"><label>Subcontractor<select id="reportSubcontractor">${names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("")}</select></label><button class="btn" type="button" onclick="openSelectedSubcontractorReport()">Open report</button></div>`;$("#modal").hidden=false};
   window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);closeModal();openReport("subcontractor",{subcontractor:value})};
   reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
+  // ===== Issue = notify: share-based offers, nothing ever auto-sends =====
+  let notifyQueue=[];
+  let notifyOfferCtx=null;
+  function subContactInfo(name){
+    if(!name||typeof subProfile!=="function")return{email:"",mobile:""};
+    const p=subProfile(name);
+    const email=String(p.email||p.contacts?.find(c=>c.email)?.email||"").trim();
+    const mobile=String(p.mobile||p.phone||p.contacts?.find(c=>c.mobile)?.mobile||"").trim();
+    return {email,mobile};
+  }
+  function notifyDueText(iso){try{return new Date(iso+"T00:00:00").toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})}catch(e){return iso}}
+  function notifyItemLine(i){
+    const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location";
+    return `• ${i.code} — ${location} — ${i.description||"No description"} — due ${notifyDueText(i.dueDate)}`;
+  }
+  function notifyMessageFor(sub,items){
+    const project=state.settings.activeProject;
+    const subject=`${project} — ${items.length} item(s) issued to ${sub}`;
+    const body=`Hi ${sub},\n\n${items.length===1?"This item has":"These items have"} been issued to you on ${project}:\n\n${items.map(notifyItemLine).join("\n")}\n\nOpen CleanRun IQ to view full details and photo evidence, then upload rectification photos when the work is done.`;
+    return {subject,body};
+  }
+  function notifyPromptEl(){
+    let el=document.getElementById("notifyPrompt");
+    if(!el){el=document.createElement("div");el.id="notifyPrompt";el.className="notify-prompt";el.hidden=true;document.body.appendChild(el)}
+    return el;
+  }
+  window.dismissNotifyPrompt=function(){notifyPromptEl().hidden=true;notifyOfferCtx=null};
+  function showNotifyOffer(sub,ids){
+    const items=ids.map(id=>state.items.find(x=>x.id===id)).filter(Boolean);
+    if(!sub||!items.length)return;
+    notifyOfferCtx={sub,ids:items.map(i=>i.id)};
+    const contact=subContactInfo(sub),hasContact=!!(contact.email||contact.mobile);
+    const el=notifyPromptEl();
+    const detail=items.length===1?esc(items[0].code):`${items.length} items`;
+    if(hasContact){
+      el.innerHTML=`<div class="notify-card"><div class="notify-copy"><b>Notify ${esc(sub)}?</b><small>${detail} issued · ${esc(contact.email||contact.mobile)} · nothing sends until you choose</small></div><div class="notify-actions"><button class="btn small" type="button" onclick="shareNotifyOffer()">Share</button><button class="btn alt small" type="button" onclick="dismissNotifyPrompt()">Not now</button></div></div>`;
+    }else{
+      el.innerHTML=`<div class="notify-card"><div class="notify-copy"><b>Notify ${esc(sub)}?</b><small>No contact details stored for ${esc(sub)} yet.</small></div><div class="notify-actions"><button class="btn small" type="button" onclick="addNotifyContact()">Add contact details</button><button class="btn alt small" type="button" onclick="dismissNotifyPrompt()">Skip</button></div></div>`;
+    }
+    el.hidden=false;
+  }
+  window.shareNotifyOffer=async function(){
+    const ctx=notifyOfferCtx;if(!ctx)return dismissNotifyPrompt();
+    const items=ctx.ids.map(id=>state.items.find(x=>x.id===id)).filter(Boolean);
+    const {subject,body}=notifyMessageFor(ctx.sub,items);
+    const contact=subContactInfo(ctx.sub);
+    dismissNotifyPrompt();
+    notifyQueue=notifyQueue.filter(q=>q.sub!==ctx.sub);updateNotifyChip();
+    if(navigator.share){
+      try{await navigator.share({title:subject,text:`${subject}\n\n${body}`});return}
+      catch(err){if(err&&err.name==="AbortError")return}
+    }
+    location.href=`mailto:${encodeURIComponent(contact.email||"")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+  window.addNotifyContact=function(){
+    const ctx=notifyOfferCtx;dismissNotifyPrompt();
+    if(ctx&&typeof editSubcontractorProfile==="function")editSubcontractorProfile(ctx.sub);
+  };
+  function offerIssueNotification(item){
+    if(!item||!item.subcontractor)return;
+    showNotifyOffer(item.subcontractor,[item.id]);
+  }
+  function queueIssueNotification(item){
+    if(!item||!item.subcontractor)return;
+    if(!notifyQueue.some(q=>q.id===item.id))notifyQueue.push({id:item.id,sub:item.subcontractor});
+    updateNotifyChip();
+  }
+  function notifyChipEl(){
+    let el=document.getElementById("notifyChip");
+    if(!el){el=document.createElement("button");el.id="notifyChip";el.type="button";el.className="notify-chip";el.hidden=true;el.onclick=()=>openNotifyQueue();document.body.appendChild(el)}
+    return el;
+  }
+  function updateNotifyChip(){
+    const el=notifyChipEl();
+    el.textContent=`Notify subs · ${notifyQueue.length}`;
+    el.hidden=!notifyQueue.length;
+  }
+  window.openNotifyQueue=function(){
+    if(!notifyQueue.length)return;
+    const sub=notifyQueue[0].sub;
+    showNotifyOffer(sub,notifyQueue.filter(q=>q.sub===sub).map(q=>q.id));
+  };
+  const notifyToggleWalkCapture=window.toggleWalkCapture;
+  window.toggleWalkCapture=function(){
+    const wasWalk=walkMode;
+    notifyToggleWalkCapture();
+    if(wasWalk&&!walkMode&&notifyQueue.length)openNotifyQueue();
+  };
+
   function rerenderLatestHome(){if(typeof state!=="undefined"&&state&&route==="home")render()}
   ensureWorkbench();supportsImageBitmapOrientation().catch(()=>{});updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
   async function bootWorkspace(){

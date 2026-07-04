@@ -163,10 +163,17 @@ def image_html(value: str | None, alt: str) -> str:
         return '<div class="none">Evidence photo unavailable</div>'
     if resolved.startswith("http") or resolved.startswith("data:image/"):
         share = resolve_share_photo_url(value)
-        share_attr = ""
+        src = resolved
+        extra_attrs = ""
         if share and share.startswith("http") and share != resolved:
-            share_attr = f' data-share-src="{escape(share)}"'
-        return f'<img src="{escape(resolved)}" alt="{escape(alt)}"{share_attr} />'
+            # Mid-size transform keeps report/print weight down; the original
+            # stays available as a runtime fallback if the transform 404s.
+            src = share
+            extra_attrs = (
+                f' data-share-src="{escape(share)}" data-full-src="{escape(resolved)}"'
+                ' onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=this.dataset.fullSrc}"'
+            )
+        return f'<img src="{escape(src)}" alt="{escape(alt)}"{extra_attrs} />'
     return ""
 
 
