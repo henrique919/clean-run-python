@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards51)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards52)."""
 
 from __future__ import annotations
 
@@ -55,12 +55,24 @@ class Phase3NotifyChecklist(unittest.TestCase):
         self.assertNotIn("await reload();showItem(id)", item_action_block)
 
     def test_notify_audit_uses_comment_endpoint(self) -> None:
-        self.assertIn("async function recordNotificationPrepared(sub,ids,via)", self.enh)
+        self.assertIn("function notificationAuditText(sub,via)", self.enh)
+        self.assertIn("async function writeNotificationAuditEntries(sub,ids,via)", self.enh)
         self.assertIn("Notification prepared for ${sub} via ${via}", self.enh)
         self.assertIn("/api/items/${id}/actions/comment", self.enh)
-        self.assertIn('await recordNotificationPrepared(sub,ids,"share")', self.enh)
-        self.assertIn('await recordNotificationPrepared(sub,ids,"email")', self.enh)
+        self.assertIn('await writeNotificationAuditEntries(sub,ids,"share")', self.enh)
+        self.assertIn('await writeNotificationAuditEntries(sub,ids,"email")', self.enh)
         self.assertIn('err.name==="AbortError"', self.enh)
+        share_at = self.enh.index("window.shareNotifyOffer=async function")
+        share_block = self.enh[share_at : share_at + 900]
+        self.assertEqual(share_block.count("writeNotificationAuditEntries"), 2)
+        self.assertNotIn("recordNotificationPrepared", self.enh)
+
+    def test_shared_notify_audit_helper_used_by_single_and_bulk(self) -> None:
+        share_at = self.enh.index("window.shareNotifyOffer=async function")
+        share_block = self.enh[share_at : share_at + 900]
+        self.assertIn("writeNotificationAuditEntries(sub,ids", share_block)
+        self.assertIn("notificationAuditText(sub,via)", self.enh)
+        self.assertIn("item?.comments||[]", self.enh[self.enh.index("function itemWasNotified"): self.enh.index("function itemWasNotified") + 260])
 
     def test_notify_message_includes_app_link(self) -> None:
         self.assertIn("View in CleanRun IQ: https://app.cleanruniq.com", self.enh)
@@ -102,10 +114,19 @@ class Phase3NotifyChecklist(unittest.TestCase):
             "openBulkNotifyList",
             "startBulkNotify",
             "issuedItemsForSub",
-            "bulk-notify-row",
+            "function bulkNotifyRowMarkup",
+            "bulk-notify-code",
+            "bulk-notify-desc",
+            "bulk-notify-meta",
+            "data-bulk-sub",
             "Notify subcontractor",
         ]:
             self.assertIn(marker, self.enh, marker)
+
+    def test_walk_notify_chip_visible_on_capture(self) -> None:
+        self.assertIn("if(mode===\"issue\")queueIssueNotification(item)", self.enh)
+        self.assertIn("updateNotifyChip()", self.enh)
+        self.assertIn('body[data-route="capture"] .notify-chip', self.css)
 
     def test_create_then_issue_requires_server_id(self) -> None:
         """Server ignores client capture ids; issue must target the returned id."""

@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards51";
-  document.documentElement.dataset.cleanrunBuild="cards51";
+  window.CLEANRUN_FRONTEND_BUILD="cards52";
+  document.documentElement.dataset.cleanrunBuild="cards52";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -719,8 +719,9 @@
   };
 
   function itemWasNotified(item){
-    const hay=(item?.auditEvents||[]).map(e=>`${e.action||""} ${e.note||""}`).join(" ");
-    return /Notification prepared for /.test(hay);
+    const needle="Notification prepared for ";
+    const hay=[...(item?.auditEvents||[]).map(e=>`${e.action||""} ${e.note||""}`),...(item?.comments||[]).map(c=>c.text||"")].join(" ");
+    return hay.includes(needle);
   }
   function cardNotifyBadge(i){
     if(!["issued","in_progress"].includes(i.status)||!i.subcontractor)return "";
@@ -1135,6 +1136,7 @@
         resetCaptureForNext();
         toast(`${item.code} saved · capture next`);
         if(mode==="issue")queueIssueNotification(item);
+        updateNotifyChip();
       }else{
         stateNeedsGlobalRefresh=true;
         route="items";
@@ -1221,7 +1223,14 @@
     }
     const itemMatch=path.match(/^\/api\/items\/([^/]+)$/);if(itemMatch&&method==="PATCH"){const item=state.items.find(x=>x.id===decodeURIComponent(itemMatch[1]));Object.assign(item||{},body,{sync:"queued",updatedAt:at});cacheState();return item}
     const actionMatch=path.match(/^\/api\/items\/([^/]+)\/actions\/([^/]+)$/);if(actionMatch&&method==="POST"){
-      const item=state.items.find(x=>x.id===decodeURIComponent(actionMatch[1])),act=actionMatch[2];if(item){const status={issue:"issued",start:"in_progress",ready:"ready_for_review",inspect:"under_inspection",reject:"rejected",close:item.type==="incomplete"?"complete":"closed",reopen:"open"}[act];if(status)item.status=status;if(act==="comment")item.comments.push({at,text:body.text,by:body.by});item.auditEvents.push({at,action:`${act} queued offline`,by:body.by});item.sync="queued";cacheState()}return item||{queued:true}
+      const item=state.items.find(x=>itemIdKey(x.id)===resolveItemIdKey(decodeURIComponent(actionMatch[1]))),act=actionMatch[2];
+      if(item&&act==="comment"){
+        const text=String(body.text||"").trim();
+        item.comments.push({at,text,by:body.by});
+        item.auditEvents.push({at,action:"Comment added",by:body.by,note:text});
+        item.sync="queued";cacheState();return item;
+      }
+      if(item){const status={issue:"issued",start:"in_progress",ready:"ready_for_review",inspect:"under_inspection",reject:"rejected",close:item.type==="incomplete"?"complete":"closed",reopen:"open"}[act];if(status)item.status=status;item.auditEvents.push({at,action:`${act} queued offline`,by:body.by});item.sync="queued";cacheState()}return item||{queued:true}
     }
     return {queued:true,id:body.id||offlineId(),...body};
   }
@@ -1458,6 +1467,13 @@
     const project=state.settings.activeProject;
     return state.items.filter(i=>i.project===project&&i.subcontractor===sub&&["issued","in_progress"].includes(i.status));
   }
+  function bulkNotifyRowMarkup(i,index){
+    const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location";
+    const due=notifyDueText(i.dueDate);
+    const fieldId=`bulkNotify-${index}`;
+    const flag=itemWasNotified(i)?`<span class="bulk-notify-flag">Notified</span>`:"";
+    return `<div class="bulk-notify-row"><input type="checkbox" id="${fieldId}" name="bulkNotifyIds" value="${esc(i.id)}" checked><label class="bulk-notify-copy" for="${fieldId}"><span class="bulk-notify-code">${esc(i.code)}</span><span class="bulk-notify-desc">${esc(cardHeadline(i))}</span><span class="bulk-notify-meta">${esc(location)} · Due ${esc(due)}</span>${flag}</label></div>`;
+  }
   window.openBulkNotifyPicker=function(){
     const project=state.settings.activeProject;
     const subs=uniqueValues(state.items.filter(i=>i.project===project&&["issued","in_progress"].includes(i.status)&&i.subcontractor).map(i=>i.subcontractor));
@@ -1472,18 +1488,16 @@
     const items=issuedItemsForSub(sub);
     if(!items.length){toast(`No issued items for ${sub}.`,true);return false;}
     $("#modalTitle").textContent=`${items.length} item${items.length===1?"":"s"} issued to ${sub}`;
-    const rows=items.map(i=>{
-      const flag=itemWasNotified(i)?" · notified":"";
-      return `<label class="bulk-notify-row"><input type="checkbox" name="bulkNotifyIds" value="${esc(i.id)}" checked><span><b>${esc(i.code)}</b><small>${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")}${flag}</small></span></label>`;
-    }).join("");
-    $("#modalBody").innerHTML=`<form class="field-list bulk-notify-list" onsubmit="return startBulkNotify(event,'${esc(sub)}')"><p class="meta">Choose items for one share or email message. Nothing sends until you choose Share.</p>${rows}<div class="actions"><button class="btn" type="submit">Prepare notify</button><button class="btn alt" type="button" onclick="closeModal()">Cancel</button></div></form>`;
+    const rows=items.map((i,n)=>bulkNotifyRowMarkup(i,n)).join("");
+    $("#modalBody").innerHTML=`<form class="bulk-notify-list" data-bulk-sub="${esc(sub)}" onsubmit="return startBulkNotify(event)"><p class="meta">Choose items for one share or email message. Nothing sends until you choose Share.</p>${rows}<div class="actions"><button class="btn" type="submit">Prepare notify</button><button class="btn alt" type="button" onclick="closeModal()">Cancel</button></div></form>`;
     $("#modal").hidden=false;
     return false;
   };
-  window.startBulkNotify=function(e,sub){
+  window.startBulkNotify=function(e){
     e.preventDefault();
+    const sub=e.currentTarget.dataset.bulkSub;
     const ids=[...new FormData(e.currentTarget).getAll("bulkNotifyIds")].map(id=>findItemById(id)?.id||id).filter(Boolean);
-    if(!ids.length)return toast("Select at least one item.",true);
+    if(!sub||!ids.length)return toast("Select at least one item.",true);
     closeModal();
     showNotifyOffer(sub,ids);
     return false;
@@ -1685,16 +1699,23 @@
     const body=`Hi ${sub},\n\n${items.length===1?"This item has":"These items have"} been issued to you on ${project}:\n\n${items.map(notifyItemLine).join("\n")}\n\nOpen CleanRun IQ to view full details and photo evidence, then upload rectification photos when the work is done.\n\nView in CleanRun IQ: https://app.cleanruniq.com`;
     return {subject,body};
   }
-  async function recordNotificationPrepared(sub,ids,via){
-    const text=`Notification prepared for ${sub} via ${via}`,by=state.settings.preparedBy;
-    for(const id of ids){
+  function notificationAuditText(sub,via){return `Notification prepared for ${sub} via ${via}`}
+  function refreshNotifyCardViews(){
+    if(route==="items")filterItems();
+    else if(route==="home"||route==="subcontractor")render();
+  }
+  async function writeNotificationAuditEntries(sub,ids,via){
+    const text=notificationAuditText(sub,via),by=state.settings.preparedBy;
+    for(const rawId of ids){
+      const item=findItemById(rawId);
+      const id=item?.id||rawId;
       try{
         const updated=await api(`/api/items/${id}/actions/comment`,{method:"POST",body:JSON.stringify({text,by})});
         mergeSavedItem(updated);
       }catch(err){console.warn("[CleanRun] notify audit failed",err)}
     }
     cacheState();
-    if(route==="items")filterItems();
+    refreshNotifyCardViews();
   }
   function notifyPromptEl(){
     let el=document.getElementById("notifyPrompt");
@@ -1726,11 +1747,11 @@
     dismissNotifyPrompt();
     notifyQueue=notifyQueue.filter(q=>q.sub!==sub);updateNotifyChip();
     if(navigator.share){
-      try{await navigator.share({title:subject,text:`${subject}\n\n${body}`});await recordNotificationPrepared(sub,ids,"share");return}
+      try{await navigator.share({title:subject,text:`${subject}\n\n${body}`});await writeNotificationAuditEntries(sub,ids,"share");return}
       catch(err){if(err&&err.name==="AbortError")return}
     }
     location.href=`mailto:${encodeURIComponent(contact.email||"")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    await recordNotificationPrepared(sub,ids,"email");
+    await writeNotificationAuditEntries(sub,ids,"email");
   };
   window.addNotifyContact=function(){
     const ctx=notifyOfferCtx;dismissNotifyPrompt();
@@ -1742,7 +1763,8 @@
   }
   function queueIssueNotification(item){
     if(!item||!item.subcontractor)return;
-    if(!notifyQueue.some(q=>q.id===item.id))notifyQueue.push({id:item.id,sub:item.subcontractor});
+    const id=findItemById(item.id)?.id||item.id;
+    if(!notifyQueue.some(q=>resolveItemIdKey(q.id)===resolveItemIdKey(id)))notifyQueue.push({id,sub:item.subcontractor});
     updateNotifyChip();
   }
   function notifyChipEl(){
@@ -1754,6 +1776,7 @@
     const el=notifyChipEl();
     el.textContent=`Notify subs · ${notifyQueue.length}`;
     el.hidden=!notifyQueue.length;
+    el.setAttribute("aria-hidden",el.hidden?"true":"false");
   }
   window.openNotifyQueue=function(){
     if(!notifyQueue.length)return;
