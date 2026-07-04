@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards49)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards50)."""
 
 from __future__ import annotations
 
@@ -34,8 +34,46 @@ class Phase3NotifyChecklist(unittest.TestCase):
         # capture walk queue, capture issue-now, detail, card, command
         self.assertIn('if(mode==="issue")queueIssueNotification(item)', self.enh)
         self.assertIn('if(mode==="issue"&&item.sync!=="queued")offerIssueNotification(item)', self.enh)
-        self.assertEqual(self.enh.count('if(act==="issue")offerIssueNotification('), 2)
+        self.assertIn("applyItemActionResult(updated,act,id,body)", self.enh)
+        self.assertIn('if(act==="issue")offerIssueNotification(findItemById(id)||updated)', self.enh)
         self.assertIn('openDashboardSearch(item.code,"Issued");offerIssueNotification(', self.enh)
+
+    def test_detail_issue_skips_full_reload(self) -> None:
+        self.assertIn("function applyItemActionResult(updated,act,id,body)", self.enh)
+        self.assertIn("mergeSavedItem(updated)", self.enh)
+        self.assertIn('const app=$("#app"),nav=$("#nav")', self.enh)
+        self.assertIn("if(!app||!nav)return", self.enh)
+        item_action_at = self.enh.index("itemAction=async function")
+        item_action_block = self.enh[item_action_at : item_action_at + 2200]
+        self.assertIn("applyItemActionResult(updated,act,id,body)", item_action_block)
+        self.assertNotIn("await reload();showItem(id)", item_action_block)
+
+    def test_notify_audit_uses_comment_endpoint(self) -> None:
+        self.assertIn("async function recordNotificationPrepared(sub,ids,via)", self.enh)
+        self.assertIn("Notification prepared for ${sub} via ${via}", self.enh)
+        self.assertIn("/api/items/${id}/actions/comment", self.enh)
+        self.assertIn('await recordNotificationPrepared(sub,ids,"share")', self.enh)
+        self.assertIn('await recordNotificationPrepared(sub,ids,"email")', self.enh)
+        self.assertIn('err.name==="AbortError"', self.enh)
+
+    def test_notify_message_includes_app_link(self) -> None:
+        self.assertIn("View in CleanRun IQ: https://app.cleanruniq.com", self.enh)
+
+    def test_card_notify_state_markers(self) -> None:
+        for marker in [
+            "function itemWasNotified(item)",
+            "Not notified",
+            "Notify again",
+            "window.cardNotify=function",
+            "cr-notify-badge",
+        ]:
+            self.assertIn(marker, self.enh, marker)
+
+    def test_notify_prompt_mobile_layout(self) -> None:
+        self.assertIn("body[data-route=\"capture\"] .notify-prompt", self.css)
+        self.assertIn("@media (max-width:480px)", self.css)
+        self.assertIn(".notify-actions .btn{flex:1", self.css)
+        self.assertIn("min-height:44px", self.css)
 
     def test_notify_never_auto_sends(self) -> None:
         # The notify flow must only prefill share/mailto; no POST to any send endpoint.

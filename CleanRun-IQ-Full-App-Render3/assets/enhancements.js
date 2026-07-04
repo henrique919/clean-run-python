@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards49";
-  document.documentElement.dataset.cleanrunBuild="cards49";
+  window.CLEANRUN_FRONTEND_BUILD="cards50";
+  document.documentElement.dataset.cleanrunBuild="cards50";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -703,12 +703,32 @@
     return {label:"CAPTURED",tone:"captured"};
   };
 
+  function itemWasNotified(item){
+    const hay=(item?.auditEvents||[]).map(e=>`${e.action||""} ${e.note||""}`).join(" ");
+    return /Notification prepared for /.test(hay);
+  }
+  function cardNotifyMarkup(i){
+    if(!["issued","in_progress"].includes(i.status)||!i.subcontractor)return "";
+    const notified=itemWasNotified(i);
+    const btn=`<button class="cr-card-action cr-notify-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardNotify(event,'${i.id}')">${notified?"Notify again":"Notify"}</button>`;
+    if(notified)return btn;
+    return `<span class="cr-notify-badge">Not notified</span>${btn}`;
+  }
+  window.cardNotify=function(event,id){
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();
+    const item=findItemById(id);
+    if(item?.subcontractor)showNotifyOffer(item.subcontractor,[item.id]);
+    return false;
+  };
   const baseItemCard=itemCard;
   itemCard=function(i){
     let html=baseItemCard(i);
     if(html.includes("cr-card-desc"))html=html.replace(/<div class="cr-card-desc">[^<]*<\/div>/,`<div class="cr-card-desc">${esc(cardHeadline(i))}</div>`);
     if(!html.includes("cr-card-date")&&!html.includes("cr-card-meta"))return html;
-    return html.replace(/DUE [^<]+/g,cardDueText(i)).replace(/Due \d{4}-\d{2}-\d{2}/g,`Due ${esc(formatFieldDate(i.dueDate))}`);
+    html=html.replace(/DUE [^<]+/g,cardDueText(i)).replace(/Due \d{4}-\d{2}-\d{2}/g,`Due ${esc(formatFieldDate(i.dueDate))}`);
+    const notify=cardNotifyMarkup(i);
+    if(notify&&html.includes("cr-card-actions"))html=html.replace(/(<div class="cr-card-actions"[^>]*>)([\s\S]*?)(<\/div><\/article>)/,`$1$2${notify}$3`);
+    return html;
   };
 
   function issueHistoryForItem(item){
@@ -1135,7 +1155,7 @@
     if((act==="reject")&&!body.reason){release();return toast("Rejection reason is required.",true)}
     if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo&&!body.comment){release();return toast("Add a rectification photo or comment.",true)}body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
     if(act==="close"){body.role=prompt("Signed off by role:","Site Manager")||"Site Manager";body.note=prompt("Closeout note (optional):","");if(i.type!=="incomplete"){body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo){release();return toast("Closeout photo is required.",true)}}body.confirmed=confirm(`I confirm this item is rectified and accepted by ${state.settings.preparedBy}.`);if(!body.confirmed){release();return toast("Closeout confirmation cancelled.",true)}}
-    try{await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});if(act==="issue")offerIssueNotification({...i,subcontractor:body.to||i.subcontractor});await reload();showItem(id);document.querySelector(".dialog")?.scrollTo?.(0,0);toast("Item updated")}catch(err){toast(err.message,true)}finally{release()}
+    try{const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyItemActionResult(updated,act,id,body)}catch(err){toast(err.message,true)}finally{release()}
   };
 
   window.reviewCloseout=function(id){
@@ -1358,6 +1378,18 @@
     if(route==="items")filterItems();else render();
     toast(act==="issue"?"ISSUED · moved to Issued":"Item updated");
   }
+  function applyItemActionResult(updated,act,id,body){
+    mergeSavedItem(updated);
+    stateNeedsGlobalRefresh=true;
+    const itemId=updated?.id||id;
+    if(act==="issue"){
+      const item=findItemById(itemId)||updated;
+      offerIssueNotification({...item,subcontractor:body?.to||item?.subcontractor});
+    }
+    showItem(itemId);
+    document.querySelector(".dialog")?.scrollTo?.(0,0);
+    toast(act==="issue"?"ISSUED · moved to Issued":"Item updated");
+  }
 
   let homeInsightsOpen=false;
   window.toggleHomeInsights=function(){homeInsightsOpen=!homeInsightsOpen;render();if(homeInsightsOpen)setTimeout(()=>$("#homeInsightsToggle")?.scrollIntoView({behavior:"smooth",block:"start"}),0)};
@@ -1474,7 +1506,9 @@
   const originalRender=render;
   render=function(){
     document.body.dataset.route=route;applyTheme();
-    if(route==="review"){$("#app").innerHTML=reviewView();$("#nav").innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();return}
+    const app=$("#app"),nav=$("#nav");
+    if(!app||!nav)return;
+    if(route==="review"){app.innerHTML=reviewView();nav.innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();return}
     originalRender();renderMobileNav();renderDesktopNav();
     if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
     mountQuickCaptureFab();
@@ -1592,8 +1626,19 @@
   function notifyMessageFor(sub,items){
     const project=state.settings.activeProject;
     const subject=`${project} — ${items.length} item(s) issued to ${sub}`;
-    const body=`Hi ${sub},\n\n${items.length===1?"This item has":"These items have"} been issued to you on ${project}:\n\n${items.map(notifyItemLine).join("\n")}\n\nOpen CleanRun IQ to view full details and photo evidence, then upload rectification photos when the work is done.`;
+    const body=`Hi ${sub},\n\n${items.length===1?"This item has":"These items have"} been issued to you on ${project}:\n\n${items.map(notifyItemLine).join("\n")}\n\nOpen CleanRun IQ to view full details and photo evidence, then upload rectification photos when the work is done.\n\nView in CleanRun IQ: https://app.cleanruniq.com`;
     return {subject,body};
+  }
+  async function recordNotificationPrepared(sub,ids,via){
+    const text=`Notification prepared for ${sub} via ${via}`,by=state.settings.preparedBy;
+    for(const id of ids){
+      try{
+        const updated=await api(`/api/items/${id}/actions/comment`,{method:"POST",body:JSON.stringify({text,by})});
+        mergeSavedItem(updated);
+      }catch(err){console.warn("[CleanRun] notify audit failed",err)}
+    }
+    cacheState();
+    if(route==="items")filterItems();
   }
   function notifyPromptEl(){
     let el=document.getElementById("notifyPrompt");
@@ -1620,13 +1665,16 @@
     const items=ctx.ids.map(id=>findItemById(id)).filter(Boolean);
     const {subject,body}=notifyMessageFor(ctx.sub,items);
     const contact=subContactInfo(ctx.sub);
+    const ids=ctx.ids.slice();
+    const sub=ctx.sub;
     dismissNotifyPrompt();
-    notifyQueue=notifyQueue.filter(q=>q.sub!==ctx.sub);updateNotifyChip();
+    notifyQueue=notifyQueue.filter(q=>q.sub!==sub);updateNotifyChip();
     if(navigator.share){
-      try{await navigator.share({title:subject,text:`${subject}\n\n${body}`});return}
+      try{await navigator.share({title:subject,text:`${subject}\n\n${body}`});await recordNotificationPrepared(sub,ids,"share");return}
       catch(err){if(err&&err.name==="AbortError")return}
     }
     location.href=`mailto:${encodeURIComponent(contact.email||"")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    await recordNotificationPrepared(sub,ids,"email");
   };
   window.addNotifyContact=function(){
     const ctx=notifyOfferCtx;dismissNotifyPrompt();
