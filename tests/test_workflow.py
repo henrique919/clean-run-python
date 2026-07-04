@@ -48,6 +48,16 @@ class WorkflowStoreTests(unittest.TestCase):
         )
         self.assertEqual(len(updated.original_photos), 2)
 
+    def test_replace_original_photos_on_update(self) -> None:
+        item = self.create_open_item()
+        marked_up = "data:image/jpeg;base64,ZmFrZS1tYXJrLXVw"
+        updated = self.store.update_item(
+            item.id,
+            ItemUpdate(original_photos=[marked_up]),
+            by="Site Manager",
+        )
+        self.assertEqual(updated.original_photos, [marked_up])
+
     def test_cannot_close_from_open_status(self) -> None:
         item = self.create_open_item()
         with self.assertRaises(WorkflowError):

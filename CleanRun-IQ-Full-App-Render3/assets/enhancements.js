@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards46";
-  document.documentElement.dataset.cleanrunBuild="cards46";
+  window.CLEANRUN_FRONTEND_BUILD="cards47";
+  document.documentElement.dataset.cleanrunBuild="cards47";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -136,7 +136,7 @@
     const photos=mode==="edit"?editPhotos:capturePhotos;
     const previews=mode==="edit"?editPhotoPreviewUrls:capturePhotoPreviewUrls;
     const stored=photos[index];
-    if(mode==="capture"&&stored&&String(stored).startsWith("data:image/"))return stored;
+    if(stored&&String(stored).startsWith("data:image/"))return stored;
     return previews[index]||stored;
   }
 
@@ -773,6 +773,7 @@
         revokePreviewUrl(editPhotoPreviewUrls[index]);
         editPhotoPreviewUrls[index]=null;
         renderEditPreviews();
+        workbench.markupSavedToast="Marked-up copy ready — tap Save changes and evidence to keep it on this item.";
       }else{
         revokePreviewUrl(capturePhotoPreviewUrls[index]);
         capturePhotoPreviewUrls[index]=null;
@@ -899,7 +900,8 @@
       const blob=await canvasToJpegBlob(canvas,.92);
       workbench.save(await blobToDataUrl(blob));
       closePhotoWorkbench();
-      toast("Marked-up evidence saved");
+      toast(workbench.markupSavedToast||"Marked-up evidence saved");
+      workbench.markupSavedToast=null;
     }catch(err){
       toast(err?.message||"Could not save marked-up photo.",true);
     }finally{
@@ -1006,8 +1008,24 @@
   };
 
   saveItemEdit=async function(e,id){
-    e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));data.by=state.settings.preparedBy;data.originalPhotos=editPhotos;data.originalPhotoMeta=editPhotoMeta;
-    try{await yieldToMain();await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});await reload();showItem(id);toast("Item details and evidence updated")}catch(err){toast(err.message,true)}
+    e.preventDefault();
+    const form=e.currentTarget;
+    const release=setBusyForm(form,"Saving…");
+    const data=Object.fromEntries(new FormData(form));
+    data.by=state.settings.preparedBy;
+    data.originalPhotos=editPhotos;
+    data.originalPhotoMeta=editPhotoMeta;
+    try{
+      await yieldToMain();
+      await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});
+      await reload();
+      showItem(id);
+      toast("Item details and evidence updated");
+    }catch(err){
+      toast(err.message,true);
+    }finally{
+      release();
+    }
   };
 
   chooseImage=function(){return new Promise(resolve=>{
