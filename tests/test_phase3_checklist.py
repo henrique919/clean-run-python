@@ -1,9 +1,15 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards50)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards51)."""
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from app import main as app_main
+from app.store import CleanRunStore
+from tests.test_auth_permissions import AsgiClient, bearer
 
 ROOT = Path(__file__).resolve().parents[1]
 ENHANCEMENTS = ROOT / "CleanRun-IQ-Full-App-Render3" / "assets" / "enhancements.js"
@@ -59,15 +65,92 @@ class Phase3NotifyChecklist(unittest.TestCase):
     def test_notify_message_includes_app_link(self) -> None:
         self.assertIn("View in CleanRun IQ: https://app.cleanruniq.com", self.enh)
 
-    def test_card_notify_state_markers(self) -> None:
+    def test_card_notify_badge_on_meta_line(self) -> None:
         for marker in [
             "function itemWasNotified(item)",
-            "Not notified",
-            "Notify again",
+            "function cardNotifyBadge(i)",
+            "NOT NOTIFIED",
+            "NOTIFIED",
             "window.cardNotify=function",
             "cr-notify-badge",
+            "cr-card-assignment",
         ]:
             self.assertIn(marker, self.enh, marker)
+        self.assertNotIn("Notify again", self.enh)
+        self.assertNotIn("cr-notify-action", self.enh)
+        self.assertNotIn("cr-card-actions", self.enh[self.enh.index("function cardNotifyBadge"): self.enh.index("function cardNotifyBadge") + 900])
+
+    def test_item_id_alias_reconciliation(self) -> None:
+        for marker in [
+            "const itemIdAliases=new Map()",
+            "function rememberItemIdAlias(fromId,toId)",
+            "function resolveItemIdKey(id)",
+            "rememberItemIdAlias(replacesId,serverId)",
+        ]:
+            self.assertIn(marker, self.enh, marker)
+
+    def test_show_item_resolves_server_id(self) -> None:
+        show_at = self.enh.index("showItem=function(id)")
+        block = self.enh[show_at : show_at + 700]
+        self.assertIn("const i=findItemById(id)", block)
+        self.assertIn("originalShowItem(i.id)", block)
+        self.assertNotIn("state.items.find(x=>x.id===id)", block)
+
+    def test_bulk_notify_subcontractor_mode(self) -> None:
+        for marker in [
+            "openBulkNotifyPicker",
+            "openBulkNotifyList",
+            "startBulkNotify",
+            "issuedItemsForSub",
+            "bulk-notify-row",
+            "Notify subcontractor",
+        ]:
+            self.assertIn(marker, self.enh, marker)
+
+    def test_create_then_issue_requires_server_id(self) -> None:
+        """Server ignores client capture ids; issue must target the returned id."""
+        client_id = "clientcaptureid123"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = CleanRunStore(Path(temp_dir) / "cleanrun.json")
+            with patch.object(app_main, "store", store):
+                client = AsgiClient(app_main.app)
+                created = client.post(
+                    "/api/items",
+                    headers=bearer("dev-site-manager"),
+                    json={
+                        "id": client_id,
+                        "type": "incomplete",
+                        "project": "Jura Noosa",
+                        "building": "Block A",
+                        "level": "L01",
+                        "unit": "101",
+                        "room": "Kitchen",
+                        "trade": "Painting",
+                        "subcontractor": "Coastline Painting",
+                        "priority": "high",
+                        "dueDate": "2026-07-15",
+                        "description": "Detail issue id regression",
+                        "createdBy": "Site Manager",
+                    },
+                )
+                self.assertEqual(created.status_code, 201)
+                server_id = created.json()["id"]
+                self.assertNotEqual(server_id, client_id)
+
+                stale = client.post(
+                    f"/api/items/{client_id}/actions/issue",
+                    headers=bearer("dev-site-manager"),
+                    json={"to": "Coastline Painting", "by": "Site Manager"},
+                )
+                self.assertEqual(stale.status_code, 404)
+
+                issued = client.post(
+                    f"/api/items/{server_id}/actions/issue",
+                    headers=bearer("dev-site-manager"),
+                    json={"to": "Coastline Painting", "by": "Site Manager"},
+                )
+                self.assertEqual(issued.status_code, 200)
+                self.assertEqual(issued.json()["status"], "issued")
 
     def test_notify_prompt_mobile_layout(self) -> None:
         self.assertIn("body[data-route=\"capture\"] .notify-prompt", self.css)
@@ -85,6 +168,7 @@ class Phase3NotifyChecklist(unittest.TestCase):
             "function findItemById",
             "function mergeSavedItem(item,replacesId)",
             "mergeSavedItem(item,clientRequestId)",
+            "rememberItemIdAlias(replacesId,serverId)",
             'data.dueDate=defaultCaptureDueDate()',
             'Item still syncing — wait a moment and try again.',
         ]:

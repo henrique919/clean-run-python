@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards50";
-  document.documentElement.dataset.cleanrunBuild="cards50";
+  window.CLEANRUN_FRONTEND_BUILD="cards51";
+  document.documentElement.dataset.cleanrunBuild="cards51";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -241,7 +241,21 @@
     return [i.code,i.description,i.building,i.level,i.unit,i.room,i.trade,i.subcontractor,i.status,i.type,labels?.[i.status],typeLabels?.[i.type]].filter(Boolean).join(" ").toLowerCase();
   }
   function itemIdKey(id){return String(id||"").replace(/-/g,"").toLowerCase()}
-  function findItemById(id){return state?.items?.find(x=>itemIdKey(x.id)===itemIdKey(id))}
+  const itemIdAliases=new Map();
+  function rememberItemIdAlias(fromId,toId){
+    const fromKey=itemIdKey(fromId),toKey=itemIdKey(toId);
+    if(fromKey&&toKey&&fromKey!==toKey)itemIdAliases.set(fromKey,toKey);
+  }
+  function resolveItemIdKey(id){
+    let key=itemIdKey(id),guard=0;
+    while(itemIdAliases.has(key)&&guard++<8){
+      const next=itemIdKey(itemIdAliases.get(key));
+      if(!next||next===key)break;
+      key=next;
+    }
+    return key;
+  }
+  function findItemById(id){const key=resolveItemIdKey(id);return state?.items?.find(x=>itemIdKey(x.id)===key)}
   function mergeSavedItem(item,replacesId){
     if(!item||!state?.items)return;
     const serverId=String(item.id||"");
@@ -249,6 +263,7 @@
     const serverKey=itemIdKey(serverId);
     const replaceKey=replacesId?itemIdKey(replacesId):null;
     if(replaceKey&&replaceKey!==serverKey){
+      rememberItemIdAlias(replacesId,serverId);
       state.items=state.items.filter(x=>{
         const key=itemIdKey(x.id);
         return key!==replaceKey||key===serverKey;
@@ -707,12 +722,12 @@
     const hay=(item?.auditEvents||[]).map(e=>`${e.action||""} ${e.note||""}`).join(" ");
     return /Notification prepared for /.test(hay);
   }
-  function cardNotifyMarkup(i){
+  function cardNotifyBadge(i){
     if(!["issued","in_progress"].includes(i.status)||!i.subcontractor)return "";
     const notified=itemWasNotified(i);
-    const btn=`<button class="cr-card-action cr-notify-action" type="button" onpointerdown="event.stopPropagation()" onclick="return cardNotify(event,'${i.id}')">${notified?"Notify again":"Notify"}</button>`;
-    if(notified)return btn;
-    return `<span class="cr-notify-badge">Not notified</span>${btn}`;
+    const label=notified?"NOTIFIED":"NOT NOTIFIED";
+    const tone=notified?"notified":"not-notified";
+    return `<button type="button" class="cr-notify-badge badge ${tone}" onpointerdown="event.stopPropagation()" onclick="return cardNotify(event,'${i.id}')">${label}</button>`;
   }
   window.cardNotify=function(event,id){
     event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();
@@ -726,8 +741,11 @@
     if(html.includes("cr-card-desc"))html=html.replace(/<div class="cr-card-desc">[^<]*<\/div>/,`<div class="cr-card-desc">${esc(cardHeadline(i))}</div>`);
     if(!html.includes("cr-card-date")&&!html.includes("cr-card-meta"))return html;
     html=html.replace(/DUE [^<]+/g,cardDueText(i)).replace(/Due \d{4}-\d{2}-\d{2}/g,`Due ${esc(formatFieldDate(i.dueDate))}`);
-    const notify=cardNotifyMarkup(i);
-    if(notify&&html.includes("cr-card-actions"))html=html.replace(/(<div class="cr-card-actions"[^>]*>)([\s\S]*?)(<\/div><\/article>)/,`$1$2${notify}$3`);
+    const badge=cardNotifyBadge(i);
+    if(badge){
+      if(html.includes("cr-card-assignment"))html=html.replace(/(<div class="cr-card-assignment">[\s\S]*?<div class="cr-card-date">[^<]*<\/div>)/,`$1${badge}`);
+      else if(html.includes("cr-card-meta"))html=html.replace(/(<div class="cr-card-meta">[\s\S]*?<\/div>)/,`$1${badge}`);
+    }
     return html;
   };
 
@@ -1172,7 +1190,10 @@
 
   const originalShowItem=showItem;
   showItem=function(id){
-    originalShowItem(id);const i=state.items.find(x=>x.id===id),cards=[...document.querySelectorAll("#modalBody .native-card")],original=cards.find(c=>c.querySelector("h2")?.textContent==="Original Issue");
+    const i=findItemById(id);
+    if(!i)return toast("Item not found. Refresh and try again.",true);
+    originalShowItem(i.id);
+    const cards=[...document.querySelectorAll("#modalBody .native-card")],original=cards.find(c=>c.querySelector("h2")?.textContent==="Original Issue");
     const summary=cards[0];
     if(summary&&i){
       const status=siteStatus(i);
@@ -1184,7 +1205,7 @@
       const rows=issueHistoryForItem(i);
       historyCard.innerHTML=`<h2>Assignment & Issue History</h2>${rows.length?rows.map(e=>`<div class="event"><b>${e.reissue?"Re-issued":"Issued"} to ${esc(e.to)}</b><div class="meta">${esc(e.by||"")} · ${esc(fmt(e.at))}</div>${e.note?`<p>${esc(e.note)}</p>`:""}</div>`).join(""):'<div class="meta">Not yet issued to a subcontractor.</div>'}`;
     }
-    if(original){const photos=[...original.querySelectorAll(".photo-preview img")];photos.forEach((img,n)=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,`${i.code} · Original issue ${n+1}`,null);const meta=i.originalPhotoMeta?.[n];const caption=geoLabel(meta);if(caption){const cap=document.createElement("div");cap.className="photo-caption";cap.textContent=caption;img.insertAdjacentElement("afterend",cap)}});const add=document.createElement("button");add.className="btn alt small";add.textContent="＋ Add / mark up photos";add.onclick=()=>editItemForm(id);original.querySelector("h2")?.insertAdjacentElement("afterend",add)}
+    if(original){const photos=[...original.querySelectorAll(".photo-preview img")];photos.forEach((img,n)=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,`${i.code} · Original issue ${n+1}`,null);const meta=i.originalPhotoMeta?.[n];const caption=geoLabel(meta);if(caption){const cap=document.createElement("div");cap.className="photo-caption";cap.textContent=caption;img.insertAdjacentElement("afterend",cap)}});const add=document.createElement("button");add.className="btn alt small";add.textContent="＋ Add / mark up photos";add.onclick=()=>editItemForm(i.id);original.querySelector("h2")?.insertAdjacentElement("afterend",add)}
     document.querySelectorAll("#modalBody .evidence img").forEach(img=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,img.alt||"Evidence photo",null)});
   };
 
@@ -1433,9 +1454,44 @@
   }
   settingsView=function(){const s=state.settings,theme=preferredTheme(),sessionCard=typeof loginRequired==="function"&&!loginRequired()?"":`<section class="form-card"><h2>Session</h2><p class="meta">Sign out on shared devices when you are finished.</p><button class="btn alt" type="button" onclick="logout()">Sign out</button></section>`;return `${subHeader("Settings & Admin")}<form class="settings-scroll" onsubmit="saveSettings(event)"><section class="form-card"><h2>Company & branding</h2><div class="field-list"><label>Company name<input name="company" value="${esc(s.company)}"></label><label>Prepared by<input name="preparedBy" value="${esc(s.preparedBy)}"></label></div><p class="meta">Used on report headers and audit events.</p><button class="btn" style="margin-top:10px">Save</button></section><section class="form-card"><h2>Desktop appearance</h2><p class="meta">Dark mode is active across desktop/admin screens and stays saved.</p><button class="btn alt" type="button" onclick="toggleDesktopTheme()">Dark / night mode: ${theme==="dark"?"On":"Off"}</button></section><section class="form-card"><h2>Projects</h2>${s.projects.map(p=>`<div class="spread" style="padding:10px 0;border-bottom:1px solid var(--line)"><b>${esc(p)}</b>${p===s.activeProject?'<span class="badge complete">Active</span>':""}</div>`).join("")}<div class="actions" style="margin-top:12px"><input id="newProject" placeholder="Add a project…"><button class="btn" type="button" onclick="addProject()">+</button></div></section>${subcontractorAdminPanel()}${sessionCard}${isProductionApp()?'<section class="form-card"><h2>Demo data</h2><p class="meta">Demo reset is disabled in production.</p></section>':'<section class="form-card"><h2>Demo data</h2><button class="btn danger" type="button" onclick="resetDemo()">↻ Reset to demo data</button></section>'}<div class="meta" style="text-align:center">CleanRun IQ Field App</div></form>`};
   const originalSubcontractorView=subcontractorView;
+  function issuedItemsForSub(sub){
+    const project=state.settings.activeProject;
+    return state.items.filter(i=>i.project===project&&i.subcontractor===sub&&["issued","in_progress"].includes(i.status));
+  }
+  window.openBulkNotifyPicker=function(){
+    const project=state.settings.activeProject;
+    const subs=uniqueValues(state.items.filter(i=>i.project===project&&["issued","in_progress"].includes(i.status)&&i.subcontractor).map(i=>i.subcontractor));
+    if(!subs.length)return toast("No issued items with subcontractors on this project.",true);
+    $("#modalTitle").textContent="Notify subcontractor";
+    $("#modalBody").innerHTML=`<form class="field-list bulk-notify-picker" onsubmit="return openBulkNotifyList(event)"><label>Subcontractor<select id="bulkNotifySub" required>${subs.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("")}</select></label><button class="btn" type="submit">Next</button></form>`;
+    $("#modal").hidden=false;
+  };
+  window.openBulkNotifyList=function(e){
+    e?.preventDefault?.();
+    const sub=$("#bulkNotifySub")?.value;if(!sub)return false;
+    const items=issuedItemsForSub(sub);
+    if(!items.length){toast(`No issued items for ${sub}.`,true);return false;}
+    $("#modalTitle").textContent=`${items.length} item${items.length===1?"":"s"} issued to ${sub}`;
+    const rows=items.map(i=>{
+      const flag=itemWasNotified(i)?" · notified":"";
+      return `<label class="bulk-notify-row"><input type="checkbox" name="bulkNotifyIds" value="${esc(i.id)}" checked><span><b>${esc(i.code)}</b><small>${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")}${flag}</small></span></label>`;
+    }).join("");
+    $("#modalBody").innerHTML=`<form class="field-list bulk-notify-list" onsubmit="return startBulkNotify(event,'${esc(sub)}')"><p class="meta">Choose items for one share or email message. Nothing sends until you choose Share.</p>${rows}<div class="actions"><button class="btn" type="submit">Prepare notify</button><button class="btn alt" type="button" onclick="closeModal()">Cancel</button></div></form>`;
+    $("#modal").hidden=false;
+    return false;
+  };
+  window.startBulkNotify=function(e,sub){
+    e.preventDefault();
+    const ids=[...new FormData(e.currentTarget).getAll("bulkNotifyIds")].map(id=>findItemById(id)?.id||id).filter(Boolean);
+    if(!ids.length)return toast("Select at least one item.",true);
+    closeModal();
+    showNotifyOffer(sub,ids);
+    return false;
+  };
   subcontractorView=function(){
     if(typeof isSubcontractorPortalUser==="function"&&isSubcontractorPortalUser())return originalSubcontractorView();
-    const admin=`${subHeader("Subcontractors")}<div class="settings-scroll">${subcontractorAdminPanel()}<section class="form-card"><div class="spread"><div><h2>Assigned work mode</h2><p class="meta">Use this when a trade is uploading rectification evidence.</p></div><button class="btn alt" type="button" onclick="document.getElementById('subWorkMode')?.scrollIntoView({behavior:'smooth'})">Go to work mode</button></div></section><div id="subWorkMode">${originalSubcontractorView()}</div></div>`;
+    const notifyCard=`<section class="form-card"><h2>Notify subcontractor</h2><p class="meta">Pick a subcontractor and batch-notify their issued work via share sheet or email.</p><button class="btn" type="button" onclick="openBulkNotifyPicker()">Notify subcontractor</button></section>`;
+    const admin=`${subHeader("Subcontractors")}<div class="settings-scroll">${subcontractorAdminPanel()}${notifyCard}<section class="form-card"><div class="spread"><div><h2>Assigned work mode</h2><p class="meta">Use this when a trade is uploading rectification evidence.</p></div><button class="btn alt" type="button" onclick="document.getElementById('subWorkMode')?.scrollIntoView({behavior:'smooth'})">Go to work mode</button></div></section><div id="subWorkMode">${originalSubcontractorView()}</div></div>`;
     return admin;
   };
 

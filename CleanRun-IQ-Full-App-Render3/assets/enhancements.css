@@ -527,7 +527,7 @@ label.capture-field-invalid select,label.capture-field-invalid input,label.captu
 .cr-fast-action.alt{background:#fff;border:1px solid #D0D5DD}
 .capture-voice-actions .btn:only-child{grid-column:1/-1}
 
-/* cards50: notify audit trail, card notify state, prompt layout fixes */
+/* cards51: notify badge on card meta line, bulk subcontractor notify, id alias reconciliation */
 .notify-prompt{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom));z-index:70;width:min(480px,calc(100vw - 24px));max-height:calc(100vh - 120px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:visible;pointer-events:none}
 .notify-prompt[hidden]{display:none}
 .notify-prompt .notify-card{pointer-events:auto}
@@ -538,8 +538,15 @@ body[data-route="capture"] .notify-prompt{bottom:calc(148px + env(safe-area-inse
 .notify-copy small{color:#5B6770;font-size:11px;line-height:1.35}
 .notify-actions{display:flex;flex-direction:row;gap:8px;flex-shrink:0}
 .notify-actions .btn{white-space:nowrap;min-height:44px;padding-left:14px;padding-right:14px}
-.cr-notify-badge{display:inline-flex;align-items:center;border-radius:999px;background:#FFF4D6;color:#B45309;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase}
-.cr-notify-action{white-space:nowrap}
+.cr-notify-badge{display:inline-flex;align-items:center;align-self:flex-start;border:0;border-radius:999px;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;cursor:pointer}
+.cr-notify-badge.not-notified{background:#FFF4D6;color:#B45309}
+.cr-notify-badge.notified{background:#E1F7E9;color:#0C7733}
+.cr-card-assignment .cr-notify-badge{margin-top:4px}
+.bulk-notify-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--line,#DDE3E8)}
+.bulk-notify-row:last-of-type{border-bottom:0}
+.bulk-notify-row input{margin-top:3px}
+.bulk-notify-row b{display:block}
+.bulk-notify-row small{color:#5B6770}
 @media (max-width:480px){
   .notify-prompt{bottom:calc(92px + env(safe-area-inset-bottom));width:calc(100vw - 20px)}
   body[data-route="capture"] .notify-prompt{bottom:calc(154px + env(safe-area-inset-bottom))}

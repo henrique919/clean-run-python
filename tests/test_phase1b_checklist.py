@@ -217,9 +217,9 @@ class Phase1BLocalChecklist(unittest.TestCase):
         self.patcher.stop()
         self.temp_dir.cleanup()
 
-    def test_source_cards50_markers(self) -> None:
+    def test_source_cards51_markers(self) -> None:
         enh = ENHANCEMENTS.read_text(encoding="utf-8")
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards50"', enh)
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards51"', enh)
         self.assertIn("toggleItemFilters", enh)
         self.assertIn("labelIconButtons", enh)
         self.assertIn("cardHeadline", enh)
