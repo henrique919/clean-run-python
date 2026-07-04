@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards48";
-  document.documentElement.dataset.cleanrunBuild="cards48";
+  window.CLEANRUN_FRONTEND_BUILD="cards49";
+  document.documentElement.dataset.cleanrunBuild="cards49";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -240,12 +240,26 @@
   function itemSearchHaystack(i){
     return [i.code,i.description,i.building,i.level,i.unit,i.room,i.trade,i.subcontractor,i.status,i.type,labels?.[i.status],typeLabels?.[i.type]].filter(Boolean).join(" ").toLowerCase();
   }
-  function mergeSavedItem(item){
+  function itemIdKey(id){return String(id||"").replace(/-/g,"").toLowerCase()}
+  function findItemById(id){return state?.items?.find(x=>itemIdKey(x.id)===itemIdKey(id))}
+  function mergeSavedItem(item,replacesId){
     if(!item||!state?.items)return;
-    const idx=state.items.findIndex(x=>x.id===item.id);
-    if(idx>=0)state.items[idx]={...state.items[idx],...item};
-    else state.items.unshift(item);
+    const serverId=String(item.id||"");
+    if(!serverId)return;
+    const serverKey=itemIdKey(serverId);
+    const replaceKey=replacesId?itemIdKey(replacesId):null;
+    if(replaceKey&&replaceKey!==serverKey){
+      state.items=state.items.filter(x=>{
+        const key=itemIdKey(x.id);
+        return key!==replaceKey||key===serverKey;
+      });
+    }
+    const idx=state.items.findIndex(x=>itemIdKey(x.id)===serverKey);
+    const merged={...(idx>=0?state.items[idx]:{}),...item,id:serverId};
+    if(idx>=0)state.items[idx]=merged;
+    else state.items.unshift(merged);
     cacheState();
+    return merged;
   }
   const baseReload=reload;
   function stateApiPath(scope="active",photos="lazy"){
@@ -1056,6 +1070,7 @@
       return fail(invalid?.validationMessage||"Please complete the required fields.");
     }
     rememberCaptureFields(data);
+    data.dueDate=defaultCaptureDueDate();
     if(data.type==="client"&&!data.raisedBy){expandCaptureSectionForNames(["raisedBy"]);return fail("A Client Defect requires a Raised By / source.")}
     if(requireOriginalPhoto(data)){focusPhotoEvidence();return fail("Attach original photo evidence, or change Item Type to Incomplete Work.")}
     if(mode==="issue"&&(!data.trade||!data.subcontractor)){
@@ -1067,10 +1082,11 @@
       if(mode==="issue"){data.issueOnCreate=true;data.issueTo=data.subcontractor}
       const path=mode==="issue"?"/api/items?issue_now=true":"/api/items";
       await yieldToMain();
+      const clientRequestId=form.dataset.captureRequestId;
       const item=await api(path,{method:"POST",body:JSON.stringify(data)});
       clearCapturePhotoState();
       form.dataset.captureRequestId="";
-      mergeSavedItem(item);
+      mergeSavedItem(item,clientRequestId);
       if(walkMode){
         walkCaptureDefaultsPinned=true;
         captureDefaultsExpanded=false;
@@ -1108,8 +1124,11 @@
 
   itemAction=async function(id,act){
     if(act==="reopen")return toast("Reopen is not available yet.",true);
-    const i=state.items.find(x=>x.id===id),body={by:state.settings.preparedBy};
+    const i=findItemById(id),body={by:state.settings.preparedBy};
     const release=setBusyButton(document.activeElement,"Working…");
+    if(!i){release();return toast("Item not found",true)}
+    if(i.sync==="queued"&&act==="issue"){release();return toast("Item still syncing — wait a moment and try again.",true)}
+    id=i.id;
     if(act==="issue"){body.to=i.subcontractor||prompt("Subcontractor name:","");body.reissue=i.status==="rejected"}
     if(act==="reject")body.reason=prompt("Why is this being rejected?","");
     if(act==="issue"&&!body.to){release();return toast("Choose a subcontractor before issuing.",true)}
@@ -1179,8 +1198,20 @@
 
   async function flushQueue(){
     if(!navigator.onLine)return updateOfflinePill();let queue=pendingQueue();if(!queue.length)return updateOfflinePill();updateOfflinePill("syncing");let sent=0;
-    while(queue.length){try{await networkApi(queue[0].path,queue[0].opt);queue.shift();setQueue(queue);sent++}catch{break}}
-    if(sent){try{state=await networkApi("/api/state");cacheState();render()}catch{}}
+    while(queue.length){
+      const entry=queue[0];
+      try{
+        const response=await networkApi(entry.path,entry.opt);
+        const method=(entry.opt?.method||"GET").toUpperCase();
+        if(method==="POST"&&entry.path.startsWith("/api/items")&&!entry.path.includes("/actions/")&&response?.id){
+          let clientId=null;
+          try{clientId=JSON.parse(entry.opt?.body||"{}").id}catch{}
+          mergeSavedItem(response,clientId);
+        }
+        queue.shift();setQueue(queue);sent++;
+      }catch{break}
+    }
+    if(sent){try{state=await networkApi(stateApiPath("all","full"));cacheState();render()}catch{}}
     updateOfflinePill();if(sent)toast(`${sent} offline change${sent===1?"":"s"} synced`);
   }
 
@@ -1526,7 +1557,7 @@
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};
   const setupWithFocus=setupView;
   setupView=function(){const html=setupWithFocus(),cfg=state.settings.projectConfigs[state.settings.activeProject]||{},scope=cfg.itemsProjectScope||"active",mode=cfg.itemsFocusMode||"level";const card=`${codePrefixCard(cfg)}${spreadsheetImportCard()}<section class="form-card"><h2>Items page focus</h2><p class="meta">Choose the default project scope and third filter group for this project.</p><label>Project scope<select onchange="saveItemsProjectScope(this.value)">${projectScopeOptions().map(([value,label])=>`<option value="${esc(value)}" ${value===scope?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label>Default focus group<select onchange="saveItemsFocusMode(this.value)">${FOCUS_MODES.map(([value,label])=>`<option value="${value}" ${value===mode?"selected":""}>${label}</option>`).join("")}</select></label></section>`;return html.replace("</section>",`</section>${card}`)};
-  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found. Refresh and try again.",true);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);if(act==="issue")offerIssueNotification(state.items.find(x=>x.id===id)||updated)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
+  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=findItemById(id);if(!item)return toast("Item not found. Refresh and try again.",true);if(item.sync==="queued"&&act==="issue")return toast("Item still syncing — wait a moment and try again.",true);id=item.id;const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);if(act==="issue")offerIssueNotification(findItemById(id)||updated)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
   function planFit(plan){return {x:0,y:0,scale:1,...(plan?.fit||{})}}
   function pdfSrc(plan){const src=String(plan?.image||"");return src.includes("#")?src:`${src}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
   function activePlan(){return state.plans.filter(p=>p.project===state.settings.activeProject)[0]}
@@ -1571,7 +1602,7 @@
   }
   window.dismissNotifyPrompt=function(){notifyPromptEl().hidden=true;notifyOfferCtx=null};
   function showNotifyOffer(sub,ids){
-    const items=ids.map(id=>state.items.find(x=>x.id===id)).filter(Boolean);
+    const items=ids.map(id=>findItemById(id)).filter(Boolean);
     if(!sub||!items.length)return;
     notifyOfferCtx={sub,ids:items.map(i=>i.id)};
     const contact=subContactInfo(sub),hasContact=!!(contact.email||contact.mobile);
@@ -1586,7 +1617,7 @@
   }
   window.shareNotifyOffer=async function(){
     const ctx=notifyOfferCtx;if(!ctx)return dismissNotifyPrompt();
-    const items=ctx.ids.map(id=>state.items.find(x=>x.id===id)).filter(Boolean);
+    const items=ctx.ids.map(id=>findItemById(id)).filter(Boolean);
     const {subject,body}=notifyMessageFor(ctx.sub,items);
     const contact=subContactInfo(ctx.sub);
     dismissNotifyPrompt();

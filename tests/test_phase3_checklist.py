@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards48)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards49)."""
 
 from __future__ import annotations
 
@@ -41,6 +41,16 @@ class Phase3NotifyChecklist(unittest.TestCase):
         # The notify flow must only prefill share/mailto; no POST to any send endpoint.
         self.assertNotIn("/api/notify", self.enh)
         self.assertIn("nothing sends until you choose", self.enh)
+
+    def test_create_issue_reconciles_client_request_id(self) -> None:
+        for marker in [
+            "function findItemById",
+            "function mergeSavedItem(item,replacesId)",
+            "mergeSavedItem(item,clientRequestId)",
+            'data.dueDate=defaultCaptureDueDate()',
+            'Item still syncing — wait a moment and try again.',
+        ]:
+            self.assertIn(marker, self.enh, marker)
 
     def test_walk_end_surfaces_queue_once(self) -> None:
         self.assertIn("if(wasWalk&&!walkMode&&notifyQueue.length)openNotifyQueue()", self.enh)
