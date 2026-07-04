@@ -247,12 +247,27 @@ class Phase1BLocalChecklist(unittest.TestCase):
         self.assertEqual(headline, "Electrical defect")
 
     def test_status_action_reflects_in_register(self) -> None:
-        items = self.client.get("/api/state", headers=self.headers).json()["items"]
-        item = next(
-            i
-            for i in items
-            if i["status"] == "open" and i.get("dueDate", "") >= _today_iso() and i.get("unit")
+        # Create a dedicated open item with a far-future due date so the test
+        # never depends on seed data still being due (seed dates rot over time).
+        created = self.client.post(
+            "/api/items",
+            headers=self.headers,
+            json={
+                "project": "Jura Noosa",
+                "building": "Block A",
+                "level": "L01",
+                "unit": "A-101",
+                "room": "Kitchen",
+                "trade": "Tiling",
+                "subcontractor": "ASTW Tiling",
+                "dueDate": "2099-12-31",
+                "description": "Status action register check",
+                "originalPhotos": ["seed://photo"],
+            },
         )
+        self.assertEqual(created.status_code, 201, created.text)
+        item = created.json()
+        self.assertEqual(item["status"], "open")
         issued = self.client.post(
             f"/api/items/{item['id']}/actions/issue",
             headers=self.headers,
