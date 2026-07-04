@@ -131,6 +131,53 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertIn("Original 1", html)
         self.assertIn(item.code, html)
 
+    def test_report_photo_css_uses_contain_not_cover(self) -> None:
+        item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
+        settings = self.snapshot.settings
+
+        with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/photo.jpg"):
+            html = build_report_html([item], settings, report_type="register")
+
+        self.assertIn("object-fit:contain", html)
+        self.assertNotIn("object-fit:cover", html)
+        self.assertIn("max-height:122px", html)
+        self.assertIn("background:#F4F6F8", html)
+
+    def test_report_compact_closeout_photos_stay_smaller_but_uncropped(self) -> None:
+        item = self._item(
+            status=ItemStatus.CLOSED,
+            closeout_evidence=[
+                CloseoutEvidence(
+                    photo="projects/jura/items/def-1/closeout/photo.jpg",
+                    by="Supervisor",
+                    role="Site Manager",
+                    confirmation="Confirmed",
+                )
+            ],
+        )
+        settings = self.snapshot.settings
+
+        with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/closeout.jpg"):
+            html = build_report_html([item], settings, report_type="handover")
+
+        self.assertIn('class="photo compact"', html)
+        self.assertIn("max-height:62px", html)
+        self.assertIn("object-fit:contain", html)
+        self.assertNotIn("object-fit:cover", html)
+
+    def test_report_print_css_keeps_photo_break_avoid_rules(self) -> None:
+        item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
+        settings = self.snapshot.settings
+
+        with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/photo.jpg"):
+            html = build_report_html([item], settings, report_type="handover")
+
+        self.assertIn("@media print", html)
+        self.assertRegex(
+            html,
+            r"\.photo,\.photo img,\.meta-line\{break-inside:avoid;page-break-inside:avoid\}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
