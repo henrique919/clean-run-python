@@ -96,8 +96,19 @@ class ReportingFilterTests(unittest.TestCase):
         ):
             html = image_html("projects/jura/items/def-1/original/photo.jpg", "DEF-1 original evidence")
 
-        self.assertIn('src="https://signed.example/object/photo.jpg?token=full"', html)
+        self.assertIn('src="https://signed.example/render/photo.jpg?w=1200"', html)
         self.assertIn('data-share-src="https://signed.example/render/photo.jpg?w=1200"', html)
+        self.assertIn('data-full-src="https://signed.example/object/photo.jpg?token=full"', html)
+        self.assertIn("onerror=", html)
+
+    def test_image_html_falls_back_to_original_src_when_share_signing_fails(self) -> None:
+        with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/object/photo.jpg?token=full"), patch(
+            "app.reporting.resolve_share_photo_url", return_value=None
+        ):
+            html = image_html("projects/jura/items/def-1/original/photo.jpg", "DEF-1 original evidence")
+
+        self.assertIn('src="https://signed.example/object/photo.jpg?token=full"', html)
+        self.assertNotIn("data-full-src", html)
 
     def test_image_html_omits_share_variant_when_share_signing_fails(self) -> None:
         with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/object/photo.jpg?token=full"), patch(
