@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards52";
-  document.documentElement.dataset.cleanrunBuild="cards52";
+  window.CLEANRUN_FRONTEND_BUILD="cards53";
+  document.documentElement.dataset.cleanrunBuild="cards53";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -256,6 +256,13 @@
     return key;
   }
   function findItemById(id){const key=resolveItemIdKey(id);return state?.items?.find(x=>itemIdKey(x.id)===key)}
+  function canonicalItemId(id){
+    const item=findItemById(id);
+    if(item?.id)return item.id;
+    const key=resolveItemIdKey(id);
+    const match=state?.items?.find(x=>itemIdKey(x.id)===key);
+    return match?.id||String(id||"");
+  }
   function mergeSavedItem(item,replacesId){
     if(!item||!state?.items)return;
     const serverId=String(item.id||"");
@@ -733,7 +740,7 @@
   window.cardNotify=function(event,id){
     event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();
     const item=findItemById(id);
-    if(item?.subcontractor)showNotifyOffer(item.subcontractor,[item.id]);
+    if(item?.subcontractor)showNotifyOffer(item.subcontractor,[canonicalItemId(item.id)]);
     return false;
   };
   const baseItemCard=itemCard;
@@ -1136,7 +1143,6 @@
         resetCaptureForNext();
         toast(`${item.code} saved · capture next`);
         if(mode==="issue")queueIssueNotification(item);
-        updateNotifyChip();
       }else{
         stateNeedsGlobalRefresh=true;
         route="items";
@@ -1463,20 +1469,29 @@
   }
   settingsView=function(){const s=state.settings,theme=preferredTheme(),sessionCard=typeof loginRequired==="function"&&!loginRequired()?"":`<section class="form-card"><h2>Session</h2><p class="meta">Sign out on shared devices when you are finished.</p><button class="btn alt" type="button" onclick="logout()">Sign out</button></section>`;return `${subHeader("Settings & Admin")}<form class="settings-scroll" onsubmit="saveSettings(event)"><section class="form-card"><h2>Company & branding</h2><div class="field-list"><label>Company name<input name="company" value="${esc(s.company)}"></label><label>Prepared by<input name="preparedBy" value="${esc(s.preparedBy)}"></label></div><p class="meta">Used on report headers and audit events.</p><button class="btn" style="margin-top:10px">Save</button></section><section class="form-card"><h2>Desktop appearance</h2><p class="meta">Dark mode is active across desktop/admin screens and stays saved.</p><button class="btn alt" type="button" onclick="toggleDesktopTheme()">Dark / night mode: ${theme==="dark"?"On":"Off"}</button></section><section class="form-card"><h2>Projects</h2>${s.projects.map(p=>`<div class="spread" style="padding:10px 0;border-bottom:1px solid var(--line)"><b>${esc(p)}</b>${p===s.activeProject?'<span class="badge complete">Active</span>':""}</div>`).join("")}<div class="actions" style="margin-top:12px"><input id="newProject" placeholder="Add a project…"><button class="btn" type="button" onclick="addProject()">+</button></div></section>${subcontractorAdminPanel()}${sessionCard}${isProductionApp()?'<section class="form-card"><h2>Demo data</h2><p class="meta">Demo reset is disabled in production.</p></section>':'<section class="form-card"><h2>Demo data</h2><button class="btn danger" type="button" onclick="resetDemo()">↻ Reset to demo data</button></section>'}<div class="meta" style="text-align:center">CleanRun IQ Field App</div></form>`};
   const originalSubcontractorView=subcontractorView;
+  function itemIssuedToSub(item,sub){
+    if(!item||item.project!==state.settings.activeProject)return false;
+    if(String(item.subcontractor||"").trim()!==String(sub||"").trim())return false;
+    if(!["issued","in_progress"].includes(item.status))return false;
+    if(item.issuedAt)return true;
+    if((item.issueHistory||[]).length)return true;
+    return (item.auditEvents||[]).some(e=>/^(Re-issued|Issued) to /.test(e.action||""));
+  }
   function issuedItemsForSub(sub){
-    const project=state.settings.activeProject;
-    return state.items.filter(i=>i.project===project&&i.subcontractor===sub&&["issued","in_progress"].includes(i.status));
+    return state.items.filter(i=>itemIssuedToSub(i,sub));
   }
   function bulkNotifyRowMarkup(i,index){
-    const location=[i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location";
-    const due=notifyDueText(i.dueDate);
+    const item=findItemById(i.id)||i;
+    const itemId=canonicalItemId(item.id);
+    const location=[item.building,item.level,item.unit,item.room].filter(Boolean).join(" · ")||"No location";
+    const due=notifyDueText(item.dueDate);
+    const headline=cardHeadline(item);
     const fieldId=`bulkNotify-${index}`;
-    const flag=itemWasNotified(i)?`<span class="bulk-notify-flag">Notified</span>`:"";
-    return `<div class="bulk-notify-row"><input type="checkbox" id="${fieldId}" name="bulkNotifyIds" value="${esc(i.id)}" checked><label class="bulk-notify-copy" for="${fieldId}"><span class="bulk-notify-code">${esc(i.code)}</span><span class="bulk-notify-desc">${esc(cardHeadline(i))}</span><span class="bulk-notify-meta">${esc(location)} · Due ${esc(due)}</span>${flag}</label></div>`;
+    const flag=itemWasNotified(item)?`<span class="bulk-notify-flag">Notified</span>`:"";
+    return `<div class="bulk-notify-row"><input type="checkbox" id="${fieldId}" name="bulkNotifyIds" value="${esc(itemId)}" checked><div class="bulk-notify-copy"><label class="bulk-notify-code" for="${fieldId}">${esc(item.code)}</label><div class="bulk-notify-desc">${esc(headline)}</div><div class="bulk-notify-meta">${esc(location)} · Due ${esc(due)}</div>${flag}</div></div>`;
   }
   window.openBulkNotifyPicker=function(){
-    const project=state.settings.activeProject;
-    const subs=uniqueValues(state.items.filter(i=>i.project===project&&["issued","in_progress"].includes(i.status)&&i.subcontractor).map(i=>i.subcontractor));
+    const subs=uniqueValues(state.items.filter(i=>itemIssuedToSub(i,i.subcontractor)).map(i=>i.subcontractor));
     if(!subs.length)return toast("No issued items with subcontractors on this project.",true);
     $("#modalTitle").textContent="Notify subcontractor";
     $("#modalBody").innerHTML=`<form class="field-list bulk-notify-picker" onsubmit="return openBulkNotifyList(event)"><label>Subcontractor<select id="bulkNotifySub" required>${subs.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("")}</select></label><button class="btn" type="submit">Next</button></form>`;
@@ -1496,7 +1511,7 @@
   window.startBulkNotify=function(e){
     e.preventDefault();
     const sub=e.currentTarget.dataset.bulkSub;
-    const ids=[...new FormData(e.currentTarget).getAll("bulkNotifyIds")].map(id=>findItemById(id)?.id||id).filter(Boolean);
+    const ids=[...new FormData(e.currentTarget).getAll("bulkNotifyIds")].map(id=>canonicalItemId(id)).filter(Boolean);
     if(!sub||!ids.length)return toast("Select at least one item.",true);
     closeModal();
     showNotifyOffer(sub,ids);
@@ -1575,15 +1590,16 @@
   subHeader=function(title){return baseSubHeader(title).replace('<button onclick="go(\'more\')">‹</button>','<button type="button" onclick="go(\'more\')" aria-label="Back">‹</button>')};
   const originalRender=render;
   render=function(){
-    document.body.dataset.route=route;applyTheme();
+    document.body.dataset.route=route;document.body.classList.toggle("walk-mode",!!walkMode);applyTheme();
     const app=$("#app"),nav=$("#nav");
     if(!app||!nav)return;
-    if(route==="review"){app.innerHTML=reviewView();nav.innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();return}
+    if(route==="review"){app.innerHTML=reviewView();nav.innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();updateNotifyChip();return}
     originalRender();renderMobileNav();renderDesktopNav();
     if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
     mountQuickCaptureFab();
     labelIconButtons();
     updateOfflinePill();
+    updateNotifyChip();
   };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
   async function initialiseOfflineStore(){offlineQueue=await dbGet(QUEUE_KEY)||[];updateOfflinePill();setTimeout(flushQueue,500)}
@@ -1707,8 +1723,8 @@
   async function writeNotificationAuditEntries(sub,ids,via){
     const text=notificationAuditText(sub,via),by=state.settings.preparedBy;
     for(const rawId of ids){
-      const item=findItemById(rawId);
-      const id=item?.id||rawId;
+      const id=canonicalItemId(rawId);
+      if(!findItemById(id)&&!state?.items?.some(x=>x.id===id))continue;
       try{
         const updated=await api(`/api/items/${id}/actions/comment`,{method:"POST",body:JSON.stringify({text,by})});
         mergeSavedItem(updated);
@@ -1726,7 +1742,7 @@
   function showNotifyOffer(sub,ids){
     const items=ids.map(id=>findItemById(id)).filter(Boolean);
     if(!sub||!items.length)return;
-    notifyOfferCtx={sub,ids:items.map(i=>i.id)};
+    notifyOfferCtx={sub,ids:items.map(i=>canonicalItemId(i.id))};
     const contact=subContactInfo(sub),hasContact=!!(contact.email||contact.mobile);
     const el=notifyPromptEl();
     const detail=items.length===1?esc(items[0].code):`${items.length} items`;
@@ -1747,7 +1763,7 @@
     dismissNotifyPrompt();
     notifyQueue=notifyQueue.filter(q=>q.sub!==sub);updateNotifyChip();
     if(navigator.share){
-      try{await navigator.share({title:subject,text:`${subject}\n\n${body}`});await writeNotificationAuditEntries(sub,ids,"share");return}
+      try{await navigator.share({title:subject,text:`${subject}\n\n${body}`});await writeNotificationAuditEntries(sub,ids,"share sheet");return}
       catch(err){if(err&&err.name==="AbortError")return}
     }
     location.href=`mailto:${encodeURIComponent(contact.email||"")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -1759,11 +1775,11 @@
   };
   function offerIssueNotification(item){
     if(!item||!item.subcontractor)return;
-    showNotifyOffer(item.subcontractor,[item.id]);
+    showNotifyOffer(item.subcontractor,[canonicalItemId(item.id)]);
   }
   function queueIssueNotification(item){
     if(!item||!item.subcontractor)return;
-    const id=findItemById(item.id)?.id||item.id;
+    const id=canonicalItemId(item.id);
     if(!notifyQueue.some(q=>resolveItemIdKey(q.id)===resolveItemIdKey(id)))notifyQueue.push({id,sub:item.subcontractor});
     updateNotifyChip();
   }
@@ -1775,7 +1791,8 @@
   function updateNotifyChip(){
     const el=notifyChipEl();
     el.textContent=`Notify subs · ${notifyQueue.length}`;
-    el.hidden=!notifyQueue.length;
+    const hideDuringWalk=walkMode&&route==="capture";
+    el.hidden=!notifyQueue.length||hideDuringWalk;
     el.setAttribute("aria-hidden",el.hidden?"true":"false");
   }
   window.openNotifyQueue=function(){

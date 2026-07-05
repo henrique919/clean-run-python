@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards52)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards53)."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ class Phase3NotifyChecklist(unittest.TestCase):
         self.assertIn("async function writeNotificationAuditEntries(sub,ids,via)", self.enh)
         self.assertIn("Notification prepared for ${sub} via ${via}", self.enh)
         self.assertIn("/api/items/${id}/actions/comment", self.enh)
-        self.assertIn('await writeNotificationAuditEntries(sub,ids,"share")', self.enh)
+        self.assertIn('await writeNotificationAuditEntries(sub,ids,"share sheet")', self.enh)
         self.assertIn('await writeNotificationAuditEntries(sub,ids,"email")', self.enh)
         self.assertIn('err.name==="AbortError"', self.enh)
         share_at = self.enh.index("window.shareNotifyOffer=async function")
@@ -113,6 +113,7 @@ class Phase3NotifyChecklist(unittest.TestCase):
             "openBulkNotifyPicker",
             "openBulkNotifyList",
             "startBulkNotify",
+            "function itemIssuedToSub",
             "issuedItemsForSub",
             "function bulkNotifyRowMarkup",
             "bulk-notify-code",
@@ -123,10 +124,29 @@ class Phase3NotifyChecklist(unittest.TestCase):
         ]:
             self.assertIn(marker, self.enh, marker)
 
-    def test_walk_notify_chip_visible_on_capture(self) -> None:
+    def test_bulk_notify_excludes_captured_items(self) -> None:
+        issued_at = self.enh.index("function itemIssuedToSub")
+        block = self.enh[issued_at : issued_at + 520]
+        self.assertIn('!["issued","in_progress"].includes(item.status)', block)
+        self.assertIn("item.issuedAt", block)
+        self.assertIn("issueHistory", block)
+        self.assertIn('Issued) to ', block)
+
+    def test_notify_audit_uses_canonical_state_ids(self) -> None:
+        self.assertIn("function canonicalItemId(id)", self.enh)
+        row_at = self.enh.index("function bulkNotifyRowMarkup")
+        row_block = self.enh[row_at : row_at + 700]
+        self.assertIn("canonicalItemId(item.id)", row_block)
+        audit_at = self.enh.index("async function writeNotificationAuditEntries")
+        audit_block = self.enh[audit_at : audit_at + 520]
+        self.assertIn("const id=canonicalItemId(rawId)", audit_block)
+        self.assertIn("/api/items/${id}/actions/comment", audit_block)
+
+    def test_walk_notify_chip_hidden_during_capture_walk(self) -> None:
         self.assertIn("if(mode===\"issue\")queueIssueNotification(item)", self.enh)
-        self.assertIn("updateNotifyChip()", self.enh)
-        self.assertIn('body[data-route="capture"] .notify-chip', self.css)
+        self.assertIn("const hideDuringWalk=walkMode&&route===\"capture\"", self.enh)
+        self.assertIn('body[data-route="capture"].walk-mode .notify-chip', self.css)
+        self.assertNotIn('body[data-route="capture"] .notify-chip{bottom:', self.css)
 
     def test_create_then_issue_requires_server_id(self) -> None:
         """Server ignores client capture ids; issue must target the returned id."""
