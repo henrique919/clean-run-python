@@ -18,7 +18,7 @@ from app.config import app_env, is_production, login_required
 from app.db import build_repository
 from app.parse_description import clean_parsed_description
 from app.parse_fields import match_config_value, match_level, match_room, match_trade, match_unit
-from app.models import AccessRequest, CloseoutEvidence, Comment, Item, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
+from app.models import AccessRequest, canonical_item_id, CloseoutEvidence, Comment, Item, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
 from app.permissions import (
     require_close_item,
     require_comment_access,
@@ -195,10 +195,20 @@ def actor_context(ctx: RequestContext) -> dict[str, str | None]:
 
 
 def get_authorized_item(item_id: str, ctx: RequestContext):
-    try:
-        item = item_service.get_item(store, item_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Item not found")
+    lookup_ids = [item_id]
+    normalized = canonical_item_id(item_id)
+    if normalized and normalized not in lookup_ids:
+        lookup_ids.append(normalized)
+    item = None
+    last_error: KeyError | None = None
+    for candidate in lookup_ids:
+        try:
+            item = item_service.get_item(store, candidate)
+            break
+        except KeyError as exc:
+            last_error = exc
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found") from last_error
     require_item_access(ctx.user, item)
     return item
 
@@ -292,6 +302,7 @@ def camel_item(item, *, sign_photos: bool = True) -> dict[str, object]:
         ]
     else:
         payload["originalPhotoThumbnails"] = []
+    payload["id"] = canonical_item_id(payload.get("id", ""))
     return payload
 
 

@@ -542,7 +542,7 @@ body[data-route="capture"] .notify-prompt{bottom:calc(148px + env(safe-area-inse
 .cr-notify-badge.not-notified{background:#FFF4D6;color:#B45309}
 .cr-notify-badge.notified{background:#E1F7E9;color:#0C7733}
 .cr-card-assignment .cr-notify-badge{margin-top:4px}
-/* cards54: thumbnail list paint — skip unchanged card DOM, coalesce boot renders */
+/* cards55: canonical item ids for detail actions + share audit markers */
 .bulk-notify-list{display:grid;gap:0;padding:4px 0}
 .bulk-notify-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--line,#DDE3E8);color:#121619}
 .bulk-notify-row:last-of-type{border-bottom:0}

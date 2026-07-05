@@ -11,6 +11,7 @@ from uuid import UUID
 from uuid import NAMESPACE_URL, uuid5
 
 from app.models import (
+    canonical_item_id,
     AccessRequest,
     AppData,
     AuditEvent,
@@ -180,7 +181,8 @@ class SupabaseCleanRunStore(CleanRunStore):
 
     def _read_item_by_id(self, item_id: str) -> Item | None:
         with self.lock:
-            response = self.client.table("items").select(ITEM_ROW_SELECT).eq("id", item_id).limit(1).execute()
+            lookup_id = canonical_item_id(item_id) or item_id
+            response = self.client.table("items").select(ITEM_ROW_SELECT).eq("id", lookup_id).limit(1).execute()
             if not response.data:
                 return None
             row = response.data[0]
@@ -437,8 +439,8 @@ class SupabaseCleanRunStore(CleanRunStore):
         if issue_now:
             item = self._issue_mutation(item, to=payload.subcontractor, by=payload.created_by, actor=actor)
         with self.lock:
-            self._upsert_item(item, data.settings)
-        return item
+            db_item_id = self._upsert_item(item, data.settings)
+        return item.model_copy(update={"id": canonical_item_id(db_item_id)})
 
     def _patch(self, item_id: str, mutator: Callable[[Item], Item]) -> Item:
         settings = self._read_settings()

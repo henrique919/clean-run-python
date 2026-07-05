@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards54)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards55)."""
 
 from __future__ import annotations
 
@@ -105,8 +105,28 @@ class Phase3NotifyChecklist(unittest.TestCase):
         show_at = self.enh.index("showItem=function(id)")
         block = self.enh[show_at : show_at + 700]
         self.assertIn("const i=findItemById(id)", block)
-        self.assertIn("originalShowItem(i.id)", block)
+        self.assertIn("originalShowItem(canonicalItemId(i.id))", block)
         self.assertNotIn("state.items.find(x=>x.id===id)", block)
+
+    def test_detail_and_card_actions_use_canonical_ids(self) -> None:
+        action_at = self.enh.index("itemAction=async function")
+        action_block = self.enh[action_at : action_at + 700]
+        self.assertIn("id=canonicalItemId(i.id)", action_block)
+        card_at = self.enh.index("window.cardAction=function")
+        card_block = self.enh[card_at : card_at + 900]
+        self.assertIn("id=canonicalItemId(item.id)", card_block)
+        self.assertIn("function normalizeUuidId(id)", self.enh)
+        merge_at = self.enh.index("function mergeSavedItem")
+        merge_block = self.enh[merge_at : merge_at + 260]
+        self.assertIn("normalizeUuidId(String(item.id||\"\"))", merge_block)
+
+    def test_share_audit_records_share_sheet_only_after_successful_share(self) -> None:
+        share_at = self.enh.index("window.shareNotifyOffer=async function")
+        share_block = self.enh[share_at : share_at + 950]
+        self.assertIn("await navigator.share", share_block)
+        self.assertLess(share_block.index("await navigator.share"), share_block.index('"share sheet"'))
+        self.assertIn('writeNotificationAuditEntries(sub,ids,"email")', share_block)
+        self.assertNotIn('"share sheet")', share_block.split("if(navigator.share)")[0])
 
     def test_bulk_notify_subcontractor_mode(self) -> None:
         for marker in [

@@ -9,6 +9,7 @@ from threading import RLock
 from typing import Any, Callable
 
 from app.models import (
+    canonical_item_id,
     AccessRequest,
     AppData,
     AuditEvent,
@@ -263,7 +264,8 @@ class CleanRunStore:
         return sorted(items, key=lambda i: i.updated_at, reverse=True)
 
     def get_item(self, item_id: str) -> Item:
-        item = next((i for i in self._read().items if i.id == item_id), None)
+        target = canonical_item_id(item_id)
+        item = next((i for i in self._read().items if canonical_item_id(i.id) == target), None)
         if not item:
             raise KeyError(item_id)
         return item
@@ -445,7 +447,7 @@ class CleanRunStore:
         next_items: list[Item] = []
         changed: Item | None = None
         for item in data.items:
-            if item.id == item_id:
+            if canonical_item_id(item.id) == canonical_item_id(item_id):
                 changed = mutator(item)
                 changed.updated_at = now_iso()
                 next_items.append(changed)
