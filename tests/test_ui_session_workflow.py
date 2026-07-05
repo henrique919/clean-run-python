@@ -99,7 +99,7 @@ def test_render3_phase1_field_speed_ux_markers():
     """Phase 1 speed UX: quick capture, sticky location, scan cards, capture-next."""
     enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
 
-    assert 'CLEANRUN_FRONTEND_BUILD="cards57"' in enhancements
+    assert 'CLEANRUN_FRONTEND_BUILD="cards58"' in enhancements
     assert "window.uploadSettingsSheet=async function" in enhancements
     assert "window.defaultCaptureDueDate=defaultCaptureDueDate" in enhancements
     assert "dueDate" not in enhancements.split("rememberCaptureFields")[1].split("}")[0]
@@ -109,6 +109,20 @@ def test_render3_phase1_field_speed_ux_markers():
     assert "Speak Item" in enhancements or "Speak Item" in (ROOT / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
     assert "Draft form from note" in (ROOT / "CleanRun-IQ-Full-App-Render3/index.html").read_text(encoding="utf-8")
     assert "cr-scan-card" not in enhancements
+
+
+def test_render3_save_switch_and_scope_ux_markers():
+    """Markup/edit save merges PATCH locally; project switch uses active lazy reload."""
+    enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
+    save_edit = enhancements.split("saveItemEdit=async function")[1].split("};")[0]
+
+    assert "mergeSavedItem(updated)" in save_edit
+    assert "stateNeedsGlobalRefresh=true" in save_edit
+    assert "await reload()" not in save_edit
+    assert 'reload({scope:"active",photos:"lazy"})' in enhancements
+    assert "window.switchProject=async function" in enhancements
+    assert "report-scope-option" in enhancements
+    assert 'setBusyButton(btn,"Saving…")' in enhancements
 
 
 def test_render3_demo_reset_hidden_in_production_markup():

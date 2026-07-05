@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import contextvars
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
@@ -13,6 +14,20 @@ from uuid import uuid4
 from app.supabase_client import get_public_supabase_client, get_supabase_client
 
 logger = logging.getLogger(__name__)
+
+_upload_timing_ms: contextvars.ContextVar[float] = contextvars.ContextVar("_upload_timing_ms", default=0.0)
+
+
+def reset_upload_timing_ms() -> None:
+    _upload_timing_ms.set(0.0)
+
+
+def read_upload_timing_ms() -> float:
+    return _upload_timing_ms.get()
+
+
+def _record_upload_timing_ms(elapsed_ms: float) -> None:
+    _upload_timing_ms.set(_upload_timing_ms.get() + elapsed_ms)
 
 BUCKET_NAME = os.getenv("CLEANRUN_STORAGE_BUCKET", "cleanrun-evidence")
 MAX_IMAGE_BYTES = int(os.getenv("CLEANRUN_MAX_IMAGE_BYTES", "8000000"))
@@ -418,21 +433,25 @@ def _object_path(folder: str, ext: str) -> str:
 
 def upload_data_url(value: str, *, folder: str = "evidence") -> str:
     """Upload a browser data URL to private Supabase Storage and return the stable object path."""
-    content_type, data = _split_data_url(value)
-    ext = CONTENT_TYPE_EXT[content_type]
-    path = _object_path(folder, ext)
-    client = _client_for_storage_path(path)
-    _ensure_bucket(client)
-    client.storage.from_(BUCKET_NAME).upload(
-        path=path,
-        file=data,
-        file_options={
-            "content-type": content_type,
-            "cache-control": "31536000",
-            "upsert": "false",
-        },
-    )
-    return path
+    started = time.perf_counter()
+    try:
+        content_type, data = _split_data_url(value)
+        ext = CONTENT_TYPE_EXT[content_type]
+        path = _object_path(folder, ext)
+        client = _client_for_storage_path(path)
+        _ensure_bucket(client)
+        client.storage.from_(BUCKET_NAME).upload(
+            path=path,
+            file=data,
+            file_options={
+                "content-type": content_type,
+                "cache-control": "31536000",
+                "upsert": "false",
+            },
+        )
+        return path
+    finally:
+        _record_upload_timing_ms((time.perf_counter() - started) * 1000)
 
 
 def is_staging_storage_path(path: str | None) -> bool:

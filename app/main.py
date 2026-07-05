@@ -5,6 +5,7 @@ import os
 import json
 import tempfile
 import csv
+import time
 from io import BytesIO, StringIO
 from pathlib import Path
 
@@ -885,12 +886,25 @@ def update_item(item_id: str, payload: dict[str, object], by: str | None = Query
     require_update_item(ctx.user, item)
     if payload.project is not None and payload.project != item.project:
         require_create_item(ctx.user, payload.project)
+    started = time.perf_counter()
     try:
-        return item_service.update_item(store, item_id, payload, by=actor_label(ctx), actor=actor_context(ctx))
+        updated = item_service.update_item(store, item_id, payload, by=actor_label(ctx), actor=actor_context(ctx))
     except KeyError:
         raise HTTPException(status_code=404, detail="Item not found")
     except (WorkflowError, ValidationError) as exc:
         raise workflow_http_error(exc)
+    service_ms = (time.perf_counter() - started) * 1000
+    prefetch_started = time.perf_counter()
+    response = action_item_response(updated)
+    prefetch_ms = (time.perf_counter() - prefetch_started) * 1000
+    logger.info(
+        "PATCH item timing item_id=%s service=%.1fms prefetch_sign=%.1fms total=%.1fms",
+        item_id,
+        service_ms,
+        prefetch_ms,
+        service_ms + prefetch_ms,
+    )
+    return response
 
 
 def action_item_response(item) -> dict[str, object]:

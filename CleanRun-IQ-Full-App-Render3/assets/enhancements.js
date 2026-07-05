@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards57";
-  document.documentElement.dataset.cleanrunBuild="cards57";
+  window.CLEANRUN_FRONTEND_BUILD="cards58";
+  document.documentElement.dataset.cleanrunBuild="cards58";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -304,6 +304,27 @@
     cacheState();
     render();
   };
+  window.switchProject=async function(projectName){
+    const next=String(projectName||"").trim();
+    if(!next)return;
+    if(next===state?.settings?.activeProject){closeModal();return}
+    const previous=state?.settings?.activeProject;
+    state.settings.activeProject=next;
+    closeModal();
+    if(route==="home")refreshHomeNextCards();
+    else if(route==="items")filterItems();
+    else render();
+    try{
+      await api("/api/settings",{method:"POST",body:JSON.stringify({activeProject:next})});
+      await reload({scope:"active",photos:"lazy"});
+      refreshStateBackground();
+      toast(`Switched to ${next}`);
+    }catch(err){
+      if(previous)state.settings.activeProject=previous;
+      render();
+      toast(err.message||"Could not switch project.",true);
+    }
+  };
   async function refreshStateBackground(){
     try{
       const fresh=await api(stateApiPath("all","full"));
@@ -343,6 +364,11 @@
     }
     const picker=$("#reportScopePicker");
     if(picker)picker.hidden=mode!=="choose";
+    document.querySelectorAll(".report-scope-option").forEach(label=>{
+      const input=label.querySelector('input[type="radio"]');
+      label.classList.toggle("is-active",!!input&&input.value===mode);
+      if(input)input.checked=input.value===mode;
+    });
   };
   window.toggleReportScopeProject=function(name,checked){
     window.reportScopeSelected=window.reportScopeSelected||[];
@@ -1056,7 +1082,7 @@
     const btn=$("#saveMarkup");
     if(!canvas||!workbench.save)return;
     if(!workbench.ready)return toast("Photo still loading. Wait a moment and try again.",true);
-    if(btn)btn.disabled=true;
+    const release=btn?setBusyButton(btn,"Saving…"):()=>{};
     try{
       await yieldToMain();
       const blob=await canvasToJpegBlob(canvas,.92);
@@ -1067,7 +1093,7 @@
     }catch(err){
       toast(err?.message||"Could not save marked-up photo.",true);
     }finally{
-      if(btn)btn.disabled=false;
+      release();
     }
   };
 
@@ -1179,9 +1205,11 @@
     data.originalPhotoMeta=editPhotoMeta;
     try{
       await yieldToMain();
-      await api(`/api/items/${id}`,{method:"PATCH",body:JSON.stringify(data)});
-      await reload();
-      showItem(id);
+      const itemId=canonicalItemId(id);
+      const updated=await api(`/api/items/${itemId}`,{method:"PATCH",body:JSON.stringify(data)});
+      const merged=mergeSavedItem(updated);
+      stateNeedsGlobalRefresh=true;
+      showItem(merged.id||itemId);
       toast("Item details and evidence updated");
     }catch(err){
       toast(err.message,true);
@@ -1679,6 +1707,7 @@
   };
   function labelIconButtons(){
     const infer=(btn)=>{
+      if(btn.classList.contains("menu-row"))return;
       if(btn.getAttribute("aria-label")||btn.getAttribute("title"))return;
       const text=(btn.textContent||"").replace(/\s+/g," ").trim();
       const onclick=btn.getAttribute("onclick")||"";
@@ -1806,7 +1835,17 @@
   wirePlan=function(){fitWirePlan();const plan=activePlan(),canvas=$("#planCanvas");if(canvas&&plan)applyPlanFit(plan,canvas)}
   window.openSubcontractorReportPicker=function(){const project=state.settings.activeProject,names=uniqueValues(state.items.filter(i=>i.project===project&&i.subcontractor).map(i=>i.subcontractor));if(!names.length)return toast("No subcontractors found for this project.",true);$("#modalTitle").textContent="Subcontractor Summary";$("#modalBody").innerHTML=`<div class="field-list"><label>Subcontractor<select id="reportSubcontractor">${names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("")}</select></label><button class="btn" type="button" onclick="openSelectedSubcontractorReport()">Open report</button></div>`;$("#modal").hidden=false};
   window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);closeModal();openReport("subcontractor",{subcontractor:value})};
-  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;window.reportScopeMode=window.reportScopeMode||"this";if(!(window.reportScopeSelected||[]).length)window.reportScopeSelected=[project];const projectList=state.settings.projects||[];const scopeCard=`<section class="native-card report-scope-card"><h2 style="font-size:15px;margin:0 0 8px">Report scope</h2><div class="report-scope-options" style="display:grid;gap:8px"><label class="report-scope-opt" style="display:flex;gap:8px;align-items:flex-start"><input type="radio" name="reportScopeMode" value="this" ${window.reportScopeMode==="this"?"checked":""} onchange="setReportScopeMode('this')"><span><strong>This project</strong><br><span class="subtle">${esc(project)}</span></span></label><label class="report-scope-opt" style="display:flex;gap:8px;align-items:flex-start"><input type="radio" name="reportScopeMode" value="choose" ${window.reportScopeMode==="choose"?"checked":""} onchange="setReportScopeMode('choose')"><span><strong>Choose projects</strong><br><span class="subtle">Select one or more projects</span></span></label><label class="report-scope-opt" style="display:flex;gap:8px;align-items:flex-start"><input type="radio" name="reportScopeMode" value="all" ${window.reportScopeMode==="all"?"checked":""} onchange="setReportScopeMode('all')"><span><strong>All my projects</strong><br><span class="subtle">${projectList.length} project${projectList.length===1?"":"s"}</span></span></label></div><div id="reportScopePicker" class="report-scope-picker" style="display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line,#DDE3E8)" ${window.reportScopeMode==="choose"?"":"hidden"}>${projectList.map(p=>`<label class="report-scope-opt" style="display:flex;gap:8px;align-items:center"><input type="checkbox" ${window.reportScopeSelected.includes(p)?"checked":""} onchange="toggleReportScopeProject(${JSON.stringify(p)},this.checked)"> ${esc(p)}</label>`).join("")}</div></section>`;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div>${scopeCard}<div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
+  function reportScopeCard(project,projectList){
+    const mode=window.reportScopeMode||"this";
+    if(!(window.reportScopeSelected||[]).length)window.reportScopeSelected=[project];
+    const option=(value,title,sub)=>{
+      const checked=mode===value?" checked":"";
+      return `<label class="report-scope-option${checked?` is-active`:``}"><input type="radio" name="reportScopeMode" value="${value}"${checked} onchange="setReportScopeMode('${value}')"><span class="report-scope-copy"><strong>${title}</strong><small>${sub}</small></span></label>`;
+    };
+    const picker=projectList.map(p=>`<label class="report-scope-check"><input type="checkbox" ${window.reportScopeSelected.includes(p)?"checked":""} onchange="toggleReportScopeProject(${JSON.stringify(p)},this.checked)"><span>${esc(p)}</span></label>`).join("");
+    return `<section class="native-card report-scope-card"><h2>Report scope</h2><div class="report-scope-options">${option("this","This project",esc(project))}${option("choose","Choose projects","Select one or more projects")}${option("all","All my projects",`${projectList.length} project${projectList.length===1?"":"s"}`)}</div><div id="reportScopePicker" class="report-scope-picker"${mode==="choose"?"":" hidden"}>${picker}</div></section>`;
+  }
+  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;const projectList=state.settings.projects||[];return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div>${reportScopeCard(project,projectList)}<div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   // ===== Issue = notify: share-based offers, nothing ever auto-sends =====
   let notifyQueue=[];
   let notifyOfferCtx=null;
