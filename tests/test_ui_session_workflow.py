@@ -99,7 +99,7 @@ def test_render3_phase1_field_speed_ux_markers():
     """Phase 1 speed UX: quick capture, sticky location, scan cards, capture-next."""
     enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
 
-    assert 'CLEANRUN_FRONTEND_BUILD="cards55"' in enhancements
+    assert 'CLEANRUN_FRONTEND_BUILD="cards56"' in enhancements
     assert "window.uploadSettingsSheet=async function" in enhancements
     assert "window.defaultCaptureDueDate=defaultCaptureDueDate" in enhancements
     assert "dueDate" not in enhancements.split("rememberCaptureFields")[1].split("}")[0]

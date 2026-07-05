@@ -33,6 +33,7 @@ from app.permissions import (
     visible_items,
     visible_projects,
 )
+from app.reporting import parse_report_projects
 from app.services import items as item_service
 from app.services import projects as project_service
 from app.services import reports as report_service
@@ -1046,37 +1047,55 @@ def add_comment(item_id: str, payload: Comment, ctx: RequestContext = Depends(ge
 @app.get("/api/reports/{report_type}", response_class=HTMLResponse)
 def report_html(
     report_type: str,
-    project: str | None = Query(default=None),
+    project: list[str] | None = Query(default=None),
     subcontractor: str | None = Query(default=None),
     ctx: RequestContext = Depends(get_request_context),
 ):
     data = store.snapshot()
-    project_name = project or data.settings.active_project
-    require_report_access(ctx.user, project_name)
-    items = visible_project_items(ctx, data.items, project_name)
-    settings = data.settings.model_copy(update={"active_project": project_name})
+    project_names = parse_report_projects(project, data.settings.active_project)
+    if not project_names:
+        raise HTTPException(status_code=400, detail="No project selected")
+    for project_name in project_names:
+        require_report_access(ctx.user, project_name)
+    items: list[Item] = []
+    for project_name in project_names:
+        items.extend(visible_project_items(ctx, data.items, project_name))
+    settings = data.settings.model_copy(update={"active_project": project_names[0]})
     prefetch_report_photo_urls(report_service.report_items(items, report_type, subcontractor=subcontractor))
-    html = report_service.build_report(items, settings, report_type=report_type, subcontractor=subcontractor)
+    html = report_service.build_report(
+        items,
+        settings,
+        report_type=report_type,
+        subcontractor=subcontractor,
+        projects=project_names,
+    )
     return HTMLResponse(html)
 
 
 @app.get("/api/reports/{report_type}/summary")
 def report_summary(
     report_type: str,
-    project: str | None = Query(default=None),
+    project: list[str] | None = Query(default=None),
     subcontractor: str | None = Query(default=None),
     ctx: RequestContext = Depends(get_request_context),
 ):
     data = store.snapshot()
-    project_name = project or data.settings.active_project
-    require_report_access(ctx.user, project_name)
-    items = report_service.report_items(visible_project_items(ctx, data.items, project_name), report_type, subcontractor=subcontractor)
+    project_names = parse_report_projects(project, data.settings.active_project)
+    if not project_names:
+        raise HTTPException(status_code=400, detail="No project selected")
+    for project_name in project_names:
+        require_report_access(ctx.user, project_name)
+    items: list[Item] = []
+    for project_name in project_names:
+        items.extend(visible_project_items(ctx, data.items, project_name))
+    filtered = report_service.report_items(items, report_type, subcontractor=subcontractor)
     return {
         "report_type": report_type,
-        "project": project_name,
-        "count": len(items),
-        "closed": len([i for i in items if i.status in {ItemStatus.CLOSED, ItemStatus.COMPLETE}]),
-        "outstanding": len([i for i in items if i.status not in {ItemStatus.CLOSED, ItemStatus.COMPLETE}]),
+        "projects": project_names,
+        "project": project_names[0] if len(project_names) == 1 else None,
+        "count": len(filtered),
+        "closed": len([i for i in filtered if i.status in {ItemStatus.CLOSED, ItemStatus.COMPLETE}]),
+        "outstanding": len([i for i in filtered if i.status not in {ItemStatus.CLOSED, ItemStatus.COMPLETE}]),
     }
 
 

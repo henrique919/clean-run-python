@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards55";
-  document.documentElement.dataset.cleanrunBuild="cards55";
+  window.CLEANRUN_FRONTEND_BUILD="cards56";
+  document.documentElement.dataset.cleanrunBuild="cards56";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -324,9 +324,34 @@
     }
     baseGo(next);
   };
+  window.reportScopeMode=window.reportScopeMode||"this";
+  window.reportScopeSelected=window.reportScopeSelected||[];
+  function reportScopeProjects(){
+    const active=state?.settings?.activeProject;
+    const all=(state?.settings?.projects||[]).slice();
+    if(window.reportScopeMode==="all")return all.length?all:[active].filter(Boolean);
+    if(window.reportScopeMode==="choose"){
+      const picked=(window.reportScopeSelected||[]).filter(Boolean);
+      return picked.length?picked:[active].filter(Boolean);
+    }
+    return [active].filter(Boolean);
+  }
+  window.setReportScopeMode=function(mode){
+    window.reportScopeMode=mode;
+    if(mode==="choose"&&!(window.reportScopeSelected||[]).length&&state?.settings?.activeProject){
+      window.reportScopeSelected=[state.settings.activeProject];
+    }
+    const picker=$("#reportScopePicker");
+    if(picker)picker.hidden=mode!=="choose";
+  };
+  window.toggleReportScopeProject=function(name,checked){
+    window.reportScopeSelected=window.reportScopeSelected||[];
+    if(checked&&!window.reportScopeSelected.includes(name))window.reportScopeSelected.push(name);
+    if(!checked)window.reportScopeSelected=window.reportScopeSelected.filter(p=>p!==name);
+  };
   window.openReport=async function(reportType,query={}){
     const params=new URLSearchParams();
-    if(state?.settings?.activeProject)params.set("project",state.settings.activeProject);
+    reportScopeProjects().forEach(project=>params.append("project",project));
     Object.entries(query||{}).forEach(([key,value])=>{if(value!=null&&String(value).trim())params.set(key,String(value))});
     const path=`/api/reports/${encodeURIComponent(reportType)}${params.toString()?`?${params}`:""}`;
     const headers={};
@@ -1781,7 +1806,7 @@
   wirePlan=function(){fitWirePlan();const plan=activePlan(),canvas=$("#planCanvas");if(canvas&&plan)applyPlanFit(plan,canvas)}
   window.openSubcontractorReportPicker=function(){const project=state.settings.activeProject,names=uniqueValues(state.items.filter(i=>i.project===project&&i.subcontractor).map(i=>i.subcontractor));if(!names.length)return toast("No subcontractors found for this project.",true);$("#modalTitle").textContent="Subcontractor Summary";$("#modalBody").innerHTML=`<div class="field-list"><label>Subcontractor<select id="reportSubcontractor">${names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("")}</select></label><button class="btn" type="button" onclick="openSelectedSubcontractorReport()">Open report</button></div>`;$("#modal").hidden=false};
   window.openSelectedSubcontractorReport=function(){const value=$("#reportSubcontractor")?.value;if(!value)return toast("Choose a subcontractor.",true);closeModal();openReport("subcontractor",{subcontractor:value})};
-  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div><div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
+  reportsView=function(){const project=state.settings.activeProject,items=state.items.filter(i=>i.project===project),closed=i=>["closed","complete"].includes(i.status),missingOriginal=i=>(i.type==="defect"||i.type==="client")&&!(i.originalPhotos||[]).length,missingRect=i=>!closed(i)&&!(i.rectificationEvidence||[]).length,missingClose=i=>closed(i)&&!(i.closeoutEvidence||[]).length,exception=i=>overdue(i)||i.status==="rejected"||missingOriginal(i)||missingRect(i)||missingClose(i);const reports=[["register","Project Defect Register","Working register for all defects, incomplete works, statuses, assignment and due dates"],["handover","Handover Evidence Pack","Closed and complete items with original, rectification and closeout evidence"],["exceptions","Exceptions Report","Unresolved risk items: overdue, rejected, missing evidence and past due work"],["subcontractor","Subcontractor Summary","Choose one subcontractor and generate a targeted follow-up report"],["client","Client Defects","Client-side defects and superintendent-raised issues"],["incomplete","Incomplete Works","Incomplete work items separated from defect closeout"]];const count=id=>id==="register"?items.length:id==="handover"?items.filter(closed).length:id==="exceptions"?items.filter(exception).length:id==="subcontractor"?uniqueValues(items.map(i=>i.subcontractor)).length:id==="client"?items.filter(i=>i.type==="client").length:id==="incomplete"?items.filter(i=>i.type==="incomplete").length:items.length;window.reportScopeMode=window.reportScopeMode||"this";if(!(window.reportScopeSelected||[]).length)window.reportScopeSelected=[project];const projectList=state.settings.projects||[];const scopeCard=`<section class="native-card report-scope-card"><h2 style="font-size:15px;margin:0 0 8px">Report scope</h2><div class="report-scope-options" style="display:grid;gap:8px"><label class="report-scope-opt" style="display:flex;gap:8px;align-items:flex-start"><input type="radio" name="reportScopeMode" value="this" ${window.reportScopeMode==="this"?"checked":""} onchange="setReportScopeMode('this')"><span><strong>This project</strong><br><span class="subtle">${esc(project)}</span></span></label><label class="report-scope-opt" style="display:flex;gap:8px;align-items:flex-start"><input type="radio" name="reportScopeMode" value="choose" ${window.reportScopeMode==="choose"?"checked":""} onchange="setReportScopeMode('choose')"><span><strong>Choose projects</strong><br><span class="subtle">Select one or more projects</span></span></label><label class="report-scope-opt" style="display:flex;gap:8px;align-items:flex-start"><input type="radio" name="reportScopeMode" value="all" ${window.reportScopeMode==="all"?"checked":""} onchange="setReportScopeMode('all')"><span><strong>All my projects</strong><br><span class="subtle">${projectList.length} project${projectList.length===1?"":"s"}</span></span></label></div><div id="reportScopePicker" class="report-scope-picker" style="display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line,#DDE3E8)" ${window.reportScopeMode==="choose"?"":"hidden"}>${projectList.map(p=>`<label class="report-scope-opt" style="display:flex;gap:8px;align-items:center"><input type="checkbox" ${window.reportScopeSelected.includes(p)?"checked":""} onchange="toggleReportScopeProject(${JSON.stringify(p)},this.checked)"> ${esc(p)}</label>`).join("")}</div></section>`;return `${subHeader('Reports & Handover')}<div class="screen-scroll"><div class="native-card" style="text-align:center"><div class="logo-box" style="display:inline-block">CLEANRUN <span style="color:#20C55E">IQ</span></div><div class="meta" style="margin-top:8px">${esc(project)} - prepared by ${esc(state.settings.preparedBy)}</div></div>${scopeCard}<div class="report-grid">${reports.map(([id,title,desc],n)=>{const action=id==="subcontractor"?"openSubcontractorReportPicker()":`openReport('${id}')`;return `<article class="native-card report ${n===0?'hero':''}" role="link" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"><div class="item-main"><span class="menu-icon">${n<3?'▥':'▤'}</span><span style="flex:1"><h2>${title}</h2><p class="subtle">${desc}</p><b style="font-size:11px;color:${n<3?'#20C55E':'#121619'}">${count(id)} ${id==="subcontractor"?"subcontractor":"item"}${count(id)===1?'':'s'}</b></span><span class="chev">›</span></div></article>`}).join('')}</div><p class="meta" style="text-align:center">Reports are structured as professional evidence documents with cover summary, item index, grouped detail cards and explicit missing-evidence states.</p></div>`}
   // ===== Issue = notify: share-based offers, nothing ever auto-sends =====
   let notifyQueue=[];
   let notifyOfferCtx=null;
