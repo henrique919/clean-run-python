@@ -81,8 +81,8 @@ class RecoveryTests(unittest.TestCase):
         report = build_report_html(snapshot.items, snapshot.settings, "handover")
         self.assertIn("Defect Rectification / Closeout Register", report)
         self.assertIn(item.code, report)
-        self.assertIn("Print Report", report)
-        self.assertIn("Share Report", report)
+        self.assertIn("Print", report)
+        self.assertIn("Share", report)
         self.assertIn("Closeout / Rectification Photo", report)
         self.assertIn("sig-block signed", report)
 
@@ -250,10 +250,10 @@ class RecoveryTests(unittest.TestCase):
 
         report = build_report_html(snapshot.items, snapshot.settings, "subcontractor", subcontractor="Sterling Tiling")
 
-        self.assertIn("Return to reports", report)
+        self.assertIn("← Reports", report)
         self.assertIn("returnToReports()", report)
-        self.assertIn("Print Report", report)
-        self.assertIn("Share Report", report)
+        self.assertIn("Print", report)
+        self.assertIn("Share", report)
         self.assertIn("Jura Noosa", report)
         self.assertIn("Noosa Heads", report)
         self.assertIn(item.code, report)

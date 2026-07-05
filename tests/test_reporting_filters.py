@@ -144,7 +144,7 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertNotIn("evidence-cols", html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
-        self.assertIn("max-height:160px", html)
+        self.assertIn("max-height:150px", html)
         self.assertNotIn("min(72vh,680px)", html)
         self.assertNotIn("max-height:124px", html)
         self.assertIn("title-block", html)
@@ -201,7 +201,7 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertIn("Closeout / Rectification Photo", html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
-        self.assertIn("photo img{max-height:40mm", html)
+        self.assertIn("photo img{max-height:42mm", html)
         self.assertIn("sig-block signed", html)
 
     def test_report_print_css_keeps_photo_break_avoid_rules(self) -> None:
@@ -213,7 +213,7 @@ class ReportingFilterTests(unittest.TestCase):
 
         self.assertIn("@media print", html)
         self.assertIn(".photo,.photo img,.sig-block{break-inside:avoid;page-break-inside:avoid}", html)
-        self.assertIn("photo img{max-height:40mm}", html)
+        self.assertIn("photo img{max-height:42mm}", html)
         self.assertIn("break-after:avoid;page-break-after:avoid", html)
         self.assertIn("classify(img)", html.replace("\n", ""))
         self.assertIn('content:"Page " counter(page)', html.replace("\n", ""))
