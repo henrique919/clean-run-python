@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards53)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards54)."""
 
 from __future__ import annotations
 
@@ -260,6 +260,52 @@ class Phase3HomeChecklist(unittest.TestCase):
             'return html.includes("command-home")?html:html.replace(`</div></section><div class="dashboard-kpis">`',
             self.enh,
         )
+
+
+class Phase3ThumbnailChurnChecklist(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.enh = ENHANCEMENTS.read_text(encoding="utf-8")
+
+    def test_card_list_paint_helpers(self) -> None:
+        for marker in [
+            "function cardPhotoSrc(item)",
+            "function itemCardRenderSig(item)",
+            "function itemCardsListSig(list)",
+            "function paintItemCards(host,list",
+            "host.dataset.cardRenderSig===sig",
+            'node.dataset.itemId=id',
+            'loading="lazy"',
+            "dataset.crPhotoRetry",
+        ]:
+            self.assertIn(marker, self.enh, marker)
+
+    def test_filter_items_uses_paint_not_innerhtml(self) -> None:
+        filter_at = self.enh.index("filterItems=function")
+        block = self.enh[filter_at : filter_at + 900]
+        self.assertIn("paintItemCards($(\"#itemList\")", block)
+        self.assertNotIn('$("#itemList").innerHTML=list.map(itemCard)', block)
+
+    def test_home_next_list_painted_after_render(self) -> None:
+        self.assertIn('id="homeNextList"', self.enh)
+        self.assertIn("function refreshHomeNextCards()", self.enh)
+        render_at = self.enh.index("render=function")
+        render_block = self.enh[render_at : render_at + 700]
+        self.assertIn('if(route==="home")refreshHomeNextCards()', render_block)
+
+    def test_background_refresh_skips_full_render_on_items_home(self) -> None:
+        refresh_at = self.enh.index("async function refreshStateBackground")
+        block = self.enh[refresh_at : refresh_at + 450]
+        self.assertIn('if(route==="items")filterItems()', block)
+        self.assertIn('else if(route==="home")refreshHomeNextCards()', block)
+        self.assertNotIn('if(route==="home"||route==="items"', block)
+
+    def test_boot_skips_cached_list_paint_and_rerender_timers(self) -> None:
+        boot_at = self.enh.index("async function bootWorkspace")
+        boot_block = self.enh[boot_at : boot_at + 700]
+        self.assertIn("Skip cached paint for list routes", boot_block)
+        self.assertNotIn("else if(route!==\"home\")render()", boot_block)
+        self.assertNotIn("rerenderLatestHome", self.enh)
 
 
 if __name__ == "__main__":
