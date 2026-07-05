@@ -300,7 +300,7 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn('html[data-theme="dark"]', styles)
         self.assertIn(".sub-profile-card", styles)
         self.assertIn('button[onclick="startDictation()"]', styles)
-        self.assertIn("cleanrun-iq-shell-v23", worker)
+        self.assertIn("cleanrun-iq-shell-v24", worker)
         self.assertIn("client.navigate", worker)
         self.assertIn("NETWORK_FIRST", worker)
         self.assertIn("indexedDB", enhancements)

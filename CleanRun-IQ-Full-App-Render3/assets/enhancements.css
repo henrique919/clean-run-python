@@ -201,7 +201,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .review-pane small{display:block;color:#667085;font-weight:700}
 .review-decision-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .review-decision-row .btn{min-height:52px;font-size:16px;font-weight:950}
-.review-closeout{background:#20C55E!important;color:#121619!important;border-color:#20C55E!important}
+.review-closeout{background:var(--action-green)!important;color:#121619!important;border-color:var(--action-green)!important}
 .signature-pad{width:100%;height:190px;border:2px dashed #9AA4B2;border-radius:12px;background:#fff;touch-action:none}
 .signature-tools{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
 .review-reject-options{display:grid;gap:10px}
@@ -262,7 +262,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .cr-card-date{color:#667085;font-size:12px;font-weight:850;letter-spacing:.02em;white-space:nowrap;text-align:right}
 .cr-card-date.under-photo{text-align:left;white-space:normal;background:#DDE1E5;border-radius:6px;padding:5px 7px;color:#52606D;font-size:11px;font-weight:950;letter-spacing:.06em;text-transform:uppercase}
 .cr-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 16px 13px;background:#DDE1E5}
-.cr-issue-cta{border:0;border-radius:10px;background:#64C96A;color:#121619;font-weight:950;font-size:16px;letter-spacing:0;padding:11px 24px;box-shadow:none}
+.cr-issue-cta{border:0;border-radius:10px;background:var(--action-green);color:#121619;font-weight:950;font-size:16px;letter-spacing:0;padding:11px 24px;box-shadow:none}
 .cr-issue-cta:active,.cr-card-action:active{filter:brightness(.86);transform:translateY(1px)}
 .cr-card-action{border:1px solid #D0D5DD;border-radius:9px;background:#ECEFF2;color:#344054;font-weight:900;padding:10px 14px}
 .home-dashboard{display:grid;gap:14px}
@@ -598,7 +598,7 @@ body[data-route="capture"].walk-mode .notify-chip{display:none}
 .home-insights{margin-top:10px}
 .home-insights[hidden]{display:none}
 
-/* cards58: More menu layout, report scope picker, save busy states */
+/* cards59: QA Round 1 — Issue CTA + closeout action green */
 .menu-row{
   display:grid;
   grid-template-columns:32px minmax(0,1fr) auto;
