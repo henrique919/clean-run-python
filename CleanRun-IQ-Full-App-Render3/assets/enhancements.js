@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards57";
-  document.documentElement.dataset.cleanrunBuild="cards57";
+  window.CLEANRUN_FRONTEND_BUILD="cards58";
+  document.documentElement.dataset.cleanrunBuild="cards58";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -653,7 +653,7 @@
       fab.type="button";
       fab.className="quick-capture-fab";
       fab.setAttribute("aria-label","Walk capture");
-      fab.innerHTML='<span class="quick-capture-fab__icon">+</span><span class="quick-capture-fab__label">Quick</span>';
+      fab.innerHTML=`<span class="quick-capture-fab__icon">${typeof captureFabIcon!=="undefined"?captureFabIcon:(navIcon?.capture||"")}</span><span class="quick-capture-fab__label">Quick</span>`;
       fab.onclick=()=>quickCapture();
       document.body.appendChild(fab);
     }
@@ -1556,7 +1556,7 @@
     const insightsToggle=`<button type="button" id="homeInsightsToggle" class="native-card insights-toggle${homeInsightsOpen?" open":""}" onclick="toggleHomeInsights()" aria-expanded="${homeInsightsOpen?"true":"false"}" aria-controls="homeInsights"><span><b>Project insights</b><small>Closeout control room · subcontractor & trade performance · today's schedule</small></span><span class="chev">${homeInsightsOpen?"⌃":"›"}</span></button>`;
     const insights=`${insightsToggle}<div id="homeInsights" class="home-insights" ${homeInsightsOpen?"":"hidden"}>${homeInsightsOpen?insightsBody:""}</div>`;
     const commandBar=(typeof commandHomeBar==="function"&&matchMedia("(min-width:1024px)").matches)?commandHomeBar():"";
-    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" type="button" onclick="go('items')" aria-label="Search items">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button>${commandBar}<div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list" id="homeNextList"></div>${insights}</div>`;
+    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CleanRun <span style="color:#20C55E">IQ</span></div><button class="circle-btn" type="button" onclick="go('items')" aria-label="Search items">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button>${commandBar}<div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list" id="homeNextList"></div>${insights}</div>`;
   };
 
   const commandDashboardView=dashboardView;
@@ -1648,14 +1648,14 @@
 
   moreView=function(){
     const s=state.settings;
-    return `<header class="screen-header more-header"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><div style="color:#ffffffb3;margin-top:10px;font-size:13px">Field capture, review & closeout companion</div></header><div class="screen-scroll"><div class="native-card spread"><span style="font-size:22px;color:#16a34a">Sync</span><span style="flex:1"><b>Online</b><small class="meta" style="display:block">All field data synced</small></span><span class="badge"><b>${state.items.length}</b><br>items</span></div>${menuGroup("Closeout workflow",[["Review","Review Queue","Inspect ready work and close/reject","review"]])}${menuGroup("Reporting",[["Report","Reports & Handover","Evidence-chain & closeout reports","reports"]])}${menuGroup("Field roles",[["Subs","Subcontractor Mode","Assigned items & rectification upload","subcontractor"]])}${menuGroup("Admin",[["Setup","Project Setup","Buildings, levels, units & rooms","setup"],["Admin","Settings & Admin","Company, subcontractors, demo data","settings"]])}<div class="meta" style="text-align:center">CleanRun IQ Field App - ${esc(s.company)}</div></div>`;
+    return `<header class="screen-header more-header"><div class="logo-box">CleanRun <span style="color:#20C55E">IQ</span></div><div style="color:#ffffffb3;margin-top:10px;font-size:13px">Field capture, review & closeout companion</div></header><div class="screen-scroll"><div class="native-card spread"><span style="font-size:22px;color:#20C55E">Sync</span><span style="flex:1"><b>Online</b><small class="meta" style="display:block">All field data synced</small></span><span class="badge"><b>${state.items.length}</b><br>items</span></div>${menuGroup("Closeout workflow",[[menuIcons.review,"Review Queue","Inspect ready work and close/reject","review"]])}${menuGroup("Reporting",[[menuIcons.reports,"Reports & Handover","Evidence-chain & closeout reports","reports"]])}${menuGroup("Field roles",[[menuIcons.subcontractor,"Subcontractor Mode","Assigned items & rectification upload","subcontractor"]])}${menuGroup("Admin",[[menuIcons.setup,"Project Setup","Buildings, levels, units & rooms","setup"],[menuIcons.settings,"Settings & Admin","Company, subcontractors, demo data","settings"]])}<div class="meta" style="text-align:center">CleanRun IQ Field App - ${esc(s.company)}</div></div>`;
   };
 
   function renderMobileNav(){
     if(matchMedia("(min-width:1024px)").matches)return;
     // Review badge uses local state; may be stale after walk Save+Next until reload/go('review').
     const ready=(state?.items||[]).filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).length;
-    const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review",ready?`Review ${ready}`:"Review","✓"],["more","More",navIcon?.more||"•••"]];
+    const items=[["home","Home",navIcon?.home],["items","Items",navIcon?.items],["capture","Capture",navIcon?.capture],["review",ready?`Review ${ready}`:"Review",navIcon?.review],["more","More",navIcon?.more]];
     const active=["reports","settings","setup","subcontractor"].includes(route)?"more":route;
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
@@ -1663,18 +1663,18 @@
   function renderDesktopNav(){
     if(!matchMedia("(min-width:1024px)").matches)return;
     const items=[
-      ["home","Home",navIcon?.home||"⌂"],
-      ["items","Items",navIcon?.items||"▤"],
-      ["capture","Capture","+"],
-      ["review","Review","✓"],
-      ["more","More",navIcon?.more||"•••"]
+      ["home","Home",navIcon?.home],
+      ["items","Items",navIcon?.items],
+      ["capture","Capture",navIcon?.capture],
+      ["review","Review",navIcon?.review],
+      ["more","More",navIcon?.more]
     ];
     const active=["reports","setup","settings","subcontractor"].includes(route)?"more":route;
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${active===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   }
   renderDesktopNav=function(){
     if(!matchMedia("(min-width:1024px)").matches)return;
-    const items=[["home","Home",navIcon?.home||"⌂"],["items","Items",navIcon?.items||"▤"],["capture","Capture","+"],["review","Review","✓"],["reports","Reports","▥"],["setup","Project Setup","⚙"],["settings","Settings","☷"],["subcontractor","Subcontractors","⛑"]];
+    const items=[["home","Home",navIcon?.home],["items","Items",navIcon?.items],["capture","Capture",navIcon?.capture],["review","Review",navIcon?.review],["reports","Reports",menuIcons?.reports||navIcon?.items],["setup","Project Setup",menuIcons?.setup||navIcon?.plans],["settings","Settings",menuIcons?.settings],["subcontractor","Subcontractors",menuIcons?.subcontractor]];
     $("#nav").innerHTML=items.map(([to,label,icon])=>`<button class="${route===to?'active':''} ${to==='capture'?'capture-tab':''}" onclick="${to==='capture'?'quickCapture()':`go('${to}')`}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join("");
   };
   function labelIconButtons(){
@@ -1690,7 +1690,7 @@
       if(text==="+"&&onclick.includes("addSetup"))return btn.setAttribute("aria-label",`Add ${btn.closest("section")?.querySelector("h2")?.textContent?.toLowerCase()||"item"}`);
       if(text==="✎"||onclick.includes("editItemForm"))return btn.setAttribute("aria-label","Edit item");
       if(btn.classList.contains("close")&&onclick.includes("closeModal"))return;
-      if(!text||/^(⌕|‹|⌫|✎|×|\+|⌄|›|•••|▥|▤|⌂|✓|⚙|▧|⌖)$/.test(text))btn.setAttribute("aria-label",text==="+"?"Add":text==="×"?"Remove":"Action");
+      if(!text||/^(⌕|‹|⌫|✎|×|\+|⌄|›)$/.test(text))btn.setAttribute("aria-label",text==="+"?"Add":text==="×"?"Remove":"Action");
     };
     document.querySelectorAll("button").forEach(infer);
     document.querySelectorAll("label.header-pill input[type=file]").forEach(input=>{
