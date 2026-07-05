@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards58";
-  document.documentElement.dataset.cleanrunBuild="cards58";
+  window.CLEANRUN_FRONTEND_BUILD="cards59";
+  document.documentElement.dataset.cleanrunBuild="cards59";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
