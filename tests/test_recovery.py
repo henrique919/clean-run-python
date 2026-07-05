@@ -79,11 +79,12 @@ class RecoveryTests(unittest.TestCase):
 
         snapshot = self.store.snapshot()
         report = build_report_html(snapshot.items, snapshot.settings, "handover")
-        self.assertIn("Site QA Control", report)
+        self.assertIn("Defect Rectification / Closeout Register", report)
         self.assertIn(item.code, report)
         self.assertIn("Print Report", report)
         self.assertIn("Share Report", report)
-        self.assertIn("Closeout / signed-off evidence", report)
+        self.assertIn("Closeout / Rectification Photo", report)
+        self.assertIn("sig-block signed", report)
 
     def test_settings_preferred_items_view_persists(self) -> None:
         settings = self.store.snapshot().settings
@@ -212,9 +213,9 @@ class RecoveryTests(unittest.TestCase):
         report = build_report_html(self.store.snapshot().items, self.store.snapshot().settings, "handover")
 
         self.assertIn('src="data:image/png;base64,iVBORw0KGgo="', report)
-        self.assertIn("Original photo / issue evidence", report)
-        self.assertIn("Rectification photo / trade evidence", report)
-        self.assertIn("Closeout / signed-off evidence", report)
+        self.assertIn("Initial / Original Photo", report)
+        self.assertIn("Closeout / Rectification Photo", report)
+        self.assertIn("evidence-matrix", report)
 
     def test_spreadsheet_import_helpers_parse_units_and_subcontractors(self) -> None:
         units = import_units_from_rows([["Unit", "Ignore"], ["U101", "x"], ["U102", "y"]])

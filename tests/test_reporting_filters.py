@@ -138,16 +138,22 @@ class ReportingFilterTests(unittest.TestCase):
         with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/photo.jpg"):
             html = build_report_html([item], settings, report_type="register")
 
-        self.assertIn("evidence-pack", html)
-        self.assertIn("evidence-block original", html)
+        self.assertIn("evidence-matrix", html)
+        self.assertIn("Initial / Original Photo", html)
+        self.assertIn("Closeout / Rectification Photo", html)
         self.assertNotIn("evidence-cols", html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
-        self.assertIn("photo.landscape{max-width:60%", html)
-        self.assertIn("photo.portrait img{max-height:360px", html)
+        self.assertIn("max-height:235px", html)
         self.assertNotIn("min(72vh,680px)", html)
         self.assertNotIn("max-height:124px", html)
-        self.assertNotIn("background:#F4F6F8;border-radius:6px;margin-bottom:5px", html)
+        self.assertIn("title-block", html)
+        self.assertIn("Defect Rectification / Closeout Register", html)
+        self.assertIn("summary-strip", html)
+        self.assertIn("Prepared by", html)
+        self.assertIn("priority-badge", html)
+        self.assertIn("sig-block", html)
+        self.assertIn("audit-line", html)
 
     def test_report_multi_photo_stack_uses_side_by_side_class(self) -> None:
         item = self._item(
@@ -161,8 +167,8 @@ class ReportingFilterTests(unittest.TestCase):
         with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/photo.jpg"):
             html = build_report_html([item], settings, report_type="register")
 
-        self.assertIn('class="photo-stack multi"', html)
-        self.assertIn("photo-stack.multi .photo{flex:1 1 calc(50% - 5px)", html)
+        self.assertIn("photo-thumb-row", html)
+        self.assertIn("photo compact", html)
 
     def test_report_empty_evidence_sections_collapse_to_compact_line(self) -> None:
         item = self._item(original_photos=[], rectification_evidence=[])
@@ -170,9 +176,9 @@ class ReportingFilterTests(unittest.TestCase):
 
         html = build_report_html([item], settings, report_type="register")
 
-        self.assertIn("evidence-block original is-empty", html)
         self.assertIn("No original evidence uploaded", html)
-        self.assertIn("evidence-block.is-empty .evidence-empty", html.replace("\n", ""))
+        self.assertIn("No closeout evidence uploaded", html)
+        self.assertIn("evidence-matrix", html)
 
     def test_report_closeout_photos_use_balanced_evidence_size(self) -> None:
         item = self._item(
@@ -191,11 +197,12 @@ class ReportingFilterTests(unittest.TestCase):
         with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/closeout.jpg"):
             html = build_report_html([item], settings, report_type="handover")
 
-        self.assertIn("evidence-block closeout", html)
-        self.assertNotIn('class="photo compact"', html)
+        self.assertIn("evidence-matrix", html)
+        self.assertIn("Closeout / Rectification Photo", html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
-        self.assertIn("photo.portrait img{max-height:100mm", html)
+        self.assertIn("photo img{max-height:62mm", html)
+        self.assertIn("sig-block signed", html)
 
     def test_report_print_css_keeps_photo_break_avoid_rules(self) -> None:
         item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
@@ -205,14 +212,11 @@ class ReportingFilterTests(unittest.TestCase):
             html = build_report_html([item], settings, report_type="handover")
 
         self.assertIn("@media print", html)
-        self.assertRegex(
-            html,
-            r"\.item-head,\.register-line,\.desc,\.evidence-block,\.photo-stack,\.photo,\.photo img\{break-inside:avoid;page-break-inside:avoid\}",
-        )
-        self.assertIn("photo.portrait img{max-height:100mm}", html)
-        self.assertIn("photo.landscape img{max-height:90mm}", html)
+        self.assertIn(".item,.evidence-matrix,.evidence-col,.evidence-block,.photo-stack,.photo,.photo img,.sig-block{break-inside:avoid;page-break-inside:avoid}", html)
+        self.assertIn("photo img{max-height:62mm}", html)
         self.assertIn("break-after:avoid;page-break-after:avoid", html)
         self.assertIn("classify(img)", html.replace("\n", ""))
+        self.assertIn('content:"Page " counter(page)', html.replace("\n", ""))
 
     def test_report_multiple_projects_grouped_with_headings(self) -> None:
         item_a = self._item(code="DEF-A1", project="Jura Noosa")
