@@ -11,6 +11,10 @@
   const LAST_CAPTURE_KEY="cleanrun-last-capture-fields";
   const WALK_CONTEXT_KEY="cleanrun-walk-context-v1";
   const RECENTS_KEY="cleanrun-capture-recents-v1";
+  const CAPTURE_DRAFT_KEY="cleanrun-capture-draft-v1";
+  const CAPTURE_DRAFT_FIELDS=["type","raisedBy","priority","project","building","level","unit","room","trade","subcontractor","dueDate","description"];
+  const MAX_CAPTURE_DRAFT_PHOTOS=12;
+  const CAPTURE_DRAFT_DEBOUNCE_MS=400;
   const RECENT_FIELDS=["building","level","unit","room","trade","subcontractor"];
   const RECENT_LIMIT=3;
   // Save/issue merges the returned item locally and skips full /api/state reload.
@@ -31,12 +35,16 @@
   let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[],ready:false};
   let offlineQueue=[];
   let captureSubmitting=false;
+  let captureDraftPending=null;
+  let captureDraftSaveTimer=null;
+  let captureDraftRestoring=false;
   let drawSourceToken=0;
 
   const readJson=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key)||"")||fallback}catch{return fallback}};
   const openOfflineDb=()=>new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,1);request.onupgradeneeded=()=>request.result.createObjectStore("kv");request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
   const dbGet=async(key)=>{try{const db=await openOfflineDb();return await new Promise((resolve,reject)=>{const request=db.transaction("kv","readonly").objectStore("kv").get(key);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}catch{return readJson(key,null)}};
   const dbSet=async(key,value)=>{try{const db=await openOfflineDb();await new Promise((resolve,reject)=>{const request=db.transaction("kv","readwrite").objectStore("kv").put(value,key);request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error)})}catch{try{localStorage.setItem(key,JSON.stringify(value))}catch{}}};
+  const dbDelete=async key=>{try{const db=await openOfflineDb();await new Promise((resolve,reject)=>{const request=db.transaction("kv","readwrite").objectStore("kv").delete(key);request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error)})}catch{try{localStorage.removeItem(key)}catch{}}};
   const cacheState=()=>{if(typeof state!=="undefined"&&state)dbSet(CACHE_KEY,state)};
   const pendingQueue=()=>offlineQueue;
   const setQueue=q=>{offlineQueue=q;dbSet(QUEUE_KEY,q);updateOfflinePill()};
@@ -70,6 +78,134 @@
     form.elements.dueDate.value=defaultCaptureDueDate(project);
   }
   window.ensureCaptureDueDate=ensureCaptureDueDate;
+
+  function captureFormSnapshot(){
+    const form=$("#app form");
+    const fields={};
+    if(form)CAPTURE_DRAFT_FIELDS.forEach(name=>{if(form.elements[name])fields[name]=form.elements[name].value});
+    return {
+      savedAt:new Date().toISOString(),
+      project:fields.project||state?.settings?.activeProject||"",
+      walkMode:!!walkMode,
+      walkCount:Number(walkCount)||0,
+      photos:capturePhotos.slice(0,MAX_CAPTURE_DRAFT_PHOTOS),
+      photoMeta:capturePhotoMeta.slice(0,MAX_CAPTURE_DRAFT_PHOTOS),
+      voiceText:$("#voiceText")?.value||"",
+      fields,
+      captureDescriptionEdited:!!captureDescriptionEdited,
+      captureVoiceCaptured:!!captureVoiceCaptured,
+    };
+  }
+  function captureDraftHasContent(draft){
+    if(!draft)return false;
+    if((draft.photos||[]).length)return true;
+    if(String(draft.voiceText||"").trim())return true;
+    return CAPTURE_DRAFT_FIELDS.some(name=>String(draft.fields?.[name]||"").trim());
+  }
+  function isCaptureFormEmpty(){
+    if(capturePhotos.length)return false;
+    if(String($("#voiceText")?.value||"").trim())return false;
+    const form=$("#app form");
+    if(!form)return true;
+    return !CAPTURE_DRAFT_FIELDS.some(name=>String(form.elements[name]?.value||"").trim());
+  }
+  function scheduleCaptureDraftSave(){
+    if(captureDraftRestoring||captureSubmitting||route!=="capture")return;
+    clearTimeout(captureDraftSaveTimer);
+    captureDraftSaveTimer=setTimeout(()=>{persistCaptureDraft().catch(()=>{})},CAPTURE_DRAFT_DEBOUNCE_MS);
+  }
+  async function persistCaptureDraft(){
+    if(captureDraftRestoring||captureSubmitting||route!=="capture")return;
+    const draft=captureFormSnapshot();
+    if(!captureDraftHasContent(draft))return clearCaptureDraft();
+    captureDraftPending=draft;
+    try{await dbSet(CAPTURE_DRAFT_KEY,draft)}catch{}
+  }
+  async function clearCaptureDraft(){
+    captureDraftPending=null;
+    clearTimeout(captureDraftSaveTimer);
+    try{await dbDelete(CAPTURE_DRAFT_KEY)}catch{}
+    hideCaptureDraftBar();
+  }
+  function formatCaptureDraftTime(savedAt){
+    try{
+      const d=new Date(savedAt);
+      return d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"});
+    }catch{return "earlier"}
+  }
+  function hideCaptureDraftBar(){
+    const bar=$("#captureDraftBar");
+    if(bar)bar.hidden=true;
+  }
+  function mountCaptureDraftBar(){
+    let bar=$("#captureDraftBar");
+    if(!bar){
+      bar=document.createElement("div");
+      bar.id="captureDraftBar";
+      bar.className="capture-draft-bar";
+      bar.hidden=true;
+      bar.innerHTML=`<span class="capture-draft-bar__text" id="captureDraftBarText"></span><div class="capture-draft-bar__actions"><button type="button" class="btn alt small" onclick="restoreCaptureDraft()">Restore</button><button type="button" class="btn alt small" onclick="discardCaptureDraft()">Discard</button></div>`;
+      const header=document.querySelector("#app .screen-header");
+      if(header)header.insertAdjacentElement("afterend",bar);
+      else $("#app")?.prepend(bar);
+    }
+    return bar;
+  }
+  async function loadPendingCaptureDraft(){
+    if(captureDraftPending)return captureDraftPending;
+    try{captureDraftPending=await dbGet(CAPTURE_DRAFT_KEY)}catch{captureDraftPending=null}
+    return captureDraftPending;
+  }
+  async function refreshCaptureDraftBar(){
+    if(route!=="capture"||captureSubmitting||!isCaptureFormEmpty()){hideCaptureDraftBar();return}
+    const draft=await loadPendingCaptureDraft();
+    if(!draft||!captureDraftHasContent(draft)){hideCaptureDraftBar();return}
+    const project=state?.settings?.activeProject;
+    if(draft.project&&project&&draft.project!==project){hideCaptureDraftBar();return}
+    const bar=mountCaptureDraftBar();
+    const label=$("#captureDraftBarText");
+    if(label)label.textContent=`Unsaved item from ${formatCaptureDraftTime(draft.savedAt)}`;
+    bar.hidden=false;
+  }
+  window.restoreCaptureDraft=async function(){
+    const draft=await loadPendingCaptureDraft();
+    if(!draft||!captureDraftHasContent(draft))return hideCaptureDraftBar();
+    captureDraftRestoring=true;
+    try{
+      walkMode=!!draft.walkMode;
+      walkCount=Number(draft.walkCount)||0;
+      clearCapturePhotoState();
+      (draft.photos||[]).slice(0,MAX_CAPTURE_DRAFT_PHOTOS).forEach((src,n)=>{
+        capturePhotos.push(src);
+        capturePhotoMeta.push(draft.photoMeta?.[n]||{capturedAt:draft.savedAt});
+        capturePhotoPreviewUrls.push(src);
+      });
+      renderCapturePreviews();
+      updatePhotoCount();
+      const form=$("#app form");
+      if(form){
+        CAPTURE_DRAFT_FIELDS.forEach(name=>{
+          if(form.elements[name]&&draft.fields?.[name]!==undefined)form.elements[name].value=draft.fields[name];
+        });
+      }
+      const voice=$("#voiceText");
+      if(voice)voice.value=draft.voiceText||"";
+      captureDescriptionEdited=!!draft.captureDescriptionEdited;
+      captureVoiceCaptured=!!draft.captureVoiceCaptured;
+      photoHint?.();
+      toggleRaised?.();
+      updateCaptureDefaultsStrip?.();
+      updateLocationChip?.();
+      hideCaptureDraftBar();
+      toast("Draft restored");
+    }finally{
+      captureDraftRestoring=false;
+    }
+  };
+  window.discardCaptureDraft=async function(){
+    await clearCaptureDraft();
+    toast("Draft discarded");
+  };
 
   const yieldToMain=()=>new Promise(resolve=>{
     if(typeof requestAnimationFrame==="function")requestAnimationFrame(()=>setTimeout(resolve,0));
@@ -559,6 +695,7 @@
     if(el?.name==="type"){photoHint?.();toggleRaised?.()}
     if(["building","level","unit","room"].includes(el?.name))updateLocationChip?.();
     if(el?.name==="project")ensureCaptureDueDate($("#app form"),el.value);
+    scheduleCaptureDraftSave();
   };
   function expandCaptureSectionForInvalid(form){
     const invalid=[...form.elements].find(el=>el.name&&!el.validity.valid);
@@ -601,7 +738,12 @@
     const desc=form.description;
     if(desc&&!desc.dataset.draftGuardWired){
       desc.dataset.draftGuardWired="1";
-      desc.addEventListener("input",()=>{captureDescriptionEdited=true});
+      desc.addEventListener("input",()=>{captureDescriptionEdited=true;scheduleCaptureDraftSave()});
+    }
+    const voice=$("#voiceText");
+    if(voice&&!voice.dataset.draftGuardWired){
+      voice.dataset.draftGuardWired="1";
+      voice.addEventListener("input",()=>{scheduleCaptureDraftSave()});
     }
     updateCaptureDefaultsStrip();
     photoHint?.();
@@ -663,6 +805,7 @@
       sessionStorage.setItem("walkModeOff","1");
     }
     render();
+    scheduleCaptureDraftSave();
   };
   window.quickCapture=function(){
     go("capture");
@@ -688,6 +831,7 @@
     updatePhotoCount();
     applyCaptureDefaults();
     captureDescriptionEdited=false;
+    clearCaptureDraft();
     form?.querySelector('input[type="file"][capture="environment"]')?.focus?.();
   }
   function mountQuickCaptureFab(){
@@ -985,6 +1129,7 @@
         revokePreviewUrl(capturePhotoPreviewUrls[index]);
         capturePhotoPreviewUrls[index]=null;
         renderCapturePreviews();
+        scheduleCaptureDraftSave();
       }
     });
   };
@@ -995,6 +1140,7 @@
     }else{
       revokePreviewUrl(capturePhotoPreviewUrls[index]);
       capturePhotos.splice(index,1);capturePhotoMeta.splice(index,1);capturePhotoPreviewUrls.splice(index,1);renderCapturePreviews();
+      scheduleCaptureDraftSave();
     }
   };
   window.addEditPhotos=async function(input){
@@ -1142,6 +1288,7 @@
     }finally{
       release();
       input.value="";
+      scheduleCaptureDraftSave();
     }
   };
 
@@ -1150,7 +1297,7 @@
     if(!SR)return toast("Speech recognition unavailable — type the note instead.",true);
     const r=new SR();
     r.lang="en-AU";
-    r.onresult=e=>{const voice=$("#voiceText");if(voice)voice.value=e.results[0][0].transcript};
+    r.onresult=e=>{const voice=$("#voiceText");if(voice){voice.value=e.results[0][0].transcript;scheduleCaptureDraftSave()}};
     r.onerror=()=>toast("Speech recognition failed — type the note instead.",true);
     r.start();
     toast("Listening…");
@@ -1175,6 +1322,7 @@
       });
       updateCaptureDefaultsStrip();
       toast("Draft applied — review before saving");
+      scheduleCaptureDraftSave();
     }catch(e){toast(e.message,true)}
   };
 
@@ -1278,6 +1426,7 @@
       const clientRequestId=form.dataset.captureRequestId;
       const item=await api(path,{method:"POST",body:JSON.stringify(data)});
       clearCapturePhotoState();
+      await clearCaptureDraft();
       form.dataset.captureRequestId="";
       mergeSavedItem(item,clientRequestId);
       if(walkMode){
@@ -1508,8 +1657,38 @@
       }catch{break}
     }
     if(sent){try{state=await networkApi(stateApiPath("all","full"));cacheState();render()}catch{}}
-    updateOfflinePill();if(sent)toast(`${sent} offline change${sent===1?"":"s"} synced`);
+    updateOfflinePill();if(sent)toast(`${sent} item${sent===1?"":"s"} synced`);
   }
+
+  function queueEntrySummary(entry){
+    try{
+      const body=JSON.parse(entry.opt?.body||"{}");
+      const method=(entry.opt?.method||"POST").toUpperCase();
+      if(method==="POST"&&entry.path.startsWith("/api/items")&&!entry.path.includes("/actions/")){
+        const desc=String(body.description||"").trim()||"New capture";
+        const existing=state?.items?.find(x=>x.id===body.id);
+        return {code:existing?.code||"Pending",description:desc,state:"Queued"};
+      }
+      const itemMatch=entry.path.match(/^\/api\/items\/([^/]+)/);
+      if(itemMatch){
+        const id=decodeURIComponent(itemMatch[1]);
+        const item=state?.items?.find(x=>itemIdKey(x.id)===resolveItemIdKey(id));
+        const act=entry.path.match(/\/actions\/([^/]+)$/)?.[1];
+        return {code:item?.code||"Item",description:item?.description||body.text||act||"Field update",state:"Queued"};
+      }
+    }catch{}
+    return {code:"Sync",description:entry.path||"Queued change",state:"Queued"};
+  }
+  window.openSyncQueueSheet=function(){
+    const queue=pendingQueue();
+    if(!queue.length)return;
+    $("#bottomSheetTitle").textContent="Queued to sync";
+    $("#bottomSheetBody").innerHTML=`<div class="sheet-list sync-queue-list">${queue.map(entry=>{
+      const row=queueEntrySummary(entry);
+      return `<div class="sheet-row sync-queue-row"><div><b>${esc(row.code)}</b><small class="meta">${esc(row.description)}</small></div><span class="sync-queue-state">${esc(row.state)}</span></div>`;
+    }).join("")}${navigator.onLine?`<button type="button" class="sheet-row sheet-row-add" onclick="closeBottomSheet();flushQueue()">Sync now</button>`:""}</div>`;
+    $("#bottomSheet").hidden=false;
+  };
 
   // Signed photo URLs can expire (or break) while a tab stays open. On an image
   // error, ask the server to re-sign that photo once; if that fails, swap in the
@@ -1776,13 +1955,36 @@
   };
 
   function updateOfflinePill(force){
-    let pill=$("#offlinePill");if(!pill){pill=document.createElement("div");pill.id="offlinePill";pill.className="offline-pill";document.body.appendChild(pill)}
-    pill.onclick=flushQueue;
-    const count=pendingQueue().length;if(force==="syncing"){pill.hidden=false;pill.className="offline-pill syncing";pill.textContent="↻ Syncing field changes…";return}
+    let pill=$("#offlinePill");
+    if(!pill){
+      pill=document.createElement("button");
+      pill.id="offlinePill";
+      pill.type="button";
+      pill.className="offline-pill synced";
+      pill.setAttribute("aria-live","polite");
+      document.body.appendChild(pill);
+    }
+    const count=pendingQueue().length;
     const offline=!navigator.onLine;
-    pill.hidden=!offline&&!count;
-    pill.className=`offline-pill${offline?" offline":count?" waiting":""}`;
-    pill.textContent=offline?`Offline · ${count} queued`:count?`Online · ${count} waiting to sync`:"Online · synced";
+    pill.hidden=false;
+    if(force==="syncing"){
+      pill.className="offline-pill syncing";
+      pill.textContent=count?`Syncing ${count}…`:"Syncing…";
+      pill.onclick=()=>openSyncQueueSheet();
+      return;
+    }
+    if(offline){
+      pill.className="offline-pill offline";
+      pill.textContent=`Offline · ${count} queued`;
+    }else if(count){
+      pill.className="offline-pill syncing";
+      pill.textContent=`Syncing ${count}…`;
+    }else{
+      pill.className="offline-pill synced";
+      pill.textContent="Synced ✓";
+    }
+    pill.onclick=count||offline?()=>openSyncQueueSheet():null;
+    pill.style.cursor=count||offline?"pointer":"default";
   }
 
   moreView=function(){
@@ -1848,7 +2050,7 @@
     if(route==="review"){app.innerHTML=reviewView();nav.innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();updateNotifyChip();return}
     originalRender();renderMobileNav();renderDesktopNav();
     if(route==="home")refreshHomeNextCards();
-    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews();setTimeout(()=>{applyCaptureDefaults();wireCaptureDefaultsForm()},0)}
+    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews();setTimeout(()=>{applyCaptureDefaults();wireCaptureDefaultsForm();refreshCaptureDraftBar()},0)}
     mountQuickCaptureFab();
     labelIconButtons();
     updateOfflinePill();
