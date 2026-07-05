@@ -131,21 +131,23 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertIn("Original 1", html)
         self.assertIn(item.code, html)
 
-    def test_report_photo_css_uses_contain_not_cover(self) -> None:
+    def test_report_photo_css_uses_large_evidence_pack_layout(self) -> None:
         item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
         settings = self.snapshot.settings
 
         with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/photo.jpg"):
             html = build_report_html([item], settings, report_type="register")
 
+        self.assertIn("evidence-pack", html)
+        self.assertIn("evidence-block original", html)
+        self.assertNotIn("evidence-cols", html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
-        self.assertIn("max-height:124px", html)
-        self.assertIn("photo.portrait img{max-height:210px", html)
-        self.assertIn("photo-stack", html)
+        self.assertIn("photo.portrait img{max-height:min(72vh,680px)", html)
+        self.assertIn("photo.landscape img{max-height:420px", html)
         self.assertIn("background:#F4F6F8", html)
 
-    def test_report_compact_closeout_photos_stay_smaller_but_uncropped(self) -> None:
+    def test_report_closeout_photos_use_full_evidence_size(self) -> None:
         item = self._item(
             status=ItemStatus.CLOSED,
             closeout_evidence=[
@@ -162,8 +164,8 @@ class ReportingFilterTests(unittest.TestCase):
         with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/closeout.jpg"):
             html = build_report_html([item], settings, report_type="handover")
 
-        self.assertIn('class="photo compact"', html)
-        self.assertIn("max-height:72px", html)
+        self.assertIn("evidence-block closeout", html)
+        self.assertNotIn('class="photo compact"', html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
 
@@ -177,8 +179,9 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertIn("@media print", html)
         self.assertRegex(
             html,
-            r"\.photo-stack,\.photo,\.photo img,\.meta-line\{break-inside:avoid;page-break-inside:avoid\}",
+            r"\.evidence-pack,\.evidence-block,\.photo-stack,\.photo,\.photo img,\.meta-line\{break-inside:avoid;page-break-inside:avoid\}",
         )
+        self.assertIn("photo.portrait img{max-height:240mm}", html)
         self.assertIn("classify(img)", html.replace("\n", ""))
 
     def test_report_multiple_projects_grouped_with_headings(self) -> None:
