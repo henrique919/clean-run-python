@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards59";
-  document.documentElement.dataset.cleanrunBuild="cards59";
+  window.CLEANRUN_FRONTEND_BUILD="cards60";
+  document.documentElement.dataset.cleanrunBuild="cards60";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -1208,7 +1208,7 @@
   editItemForm=function(id){
     const i=state.items.find(x=>x.id===id);selectedEditItem=id;editPhotos=[...(i.originalPhotos||[])];editPhotoMeta=[...(i.originalPhotoMeta||[])];editPhotoPreviewUrls=editPhotos.map(()=>null);while(editPhotoMeta.length<editPhotos.length)editPhotoMeta.push({capturedAt:i.createdAt});
     $("#modalTitle").textContent=`Edit ${i.code}`;
-    $("#modalBody").innerHTML=`<form class="field-list" onsubmit="saveItemEdit(event,'${id}')"><div class="fields admin-form-grid"><label>Item type<select name="type">${options(["defect","incomplete","client"],i.type)}</select></label><label>Project<select name="project">${options(state.settings.projects,i.project)}</select></label><label>Building<input name="building" value="${esc(i.building)}"></label><label>Level<input name="level" value="${esc(i.level)}"></label><label>Unit / Area<input name="unit" value="${esc(i.unit)}"></label><label>Room / Location<input name="room" value="${esc(i.room)}"></label><label>Trade<select name="trade"><option value=""></option>${options(trades,i.trade)}</select></label><label>Subcontractor<select name="subcontractor"><option value=""></option>${options(state.settings.subcontractors,i.subcontractor)}</select></label><label>Priority<select name="priority">${options(["high","urgent"],i.priority)}</select></label><label>Due date<input type="date" name="dueDate" value="${esc(i.dueDate)}"></label><label class="span">Description<textarea name="description">${esc(i.description)}</textarea></label></div><section class="edit-evidence"><div class="spread"><div><b>Original issue photos</b><div class="meta">Add evidence retrospectively, enlarge it or mark it up.</div></div><label class="btn alt">＋ Add photos<input hidden type="file" accept="image/*" multiple onchange="addEditPhotos(this)"></label></div><div class="edit-photo-grid" id="editPhotoGrid"></div></section><button class="btn">Save changes and evidence</button></form>`;
+    $("#modalBody").innerHTML=`<form class="field-list" onsubmit="saveItemEdit(event,'${id}')"><div class="fields admin-form-grid"><label>Item type<select name="type">${options(["defect","incomplete","client"],i.type)}</select></label><label>Project<select name="project">${options(state.settings.projects,i.project)}</select></label><label>Building<input name="building" value="${esc(i.building)}"></label><label>Level<input name="level" value="${esc(i.level)}"></label><label>Unit / Area<input name="unit" value="${esc(i.unit)}"></label><label>Room / Location<input name="room" value="${esc(i.room)}"></label><label>Trade<select name="trade"><option value=""></option>${options(trades,i.trade)}</select></label><label>Subcontractor<select name="subcontractor"><option value=""></option>${options(state.settings.subcontractors,i.subcontractor)}</select></label><label>Priority<select name="priority">${editPrioritySelectHtml(i.priority)}</select></label><label>Due date<input type="date" name="dueDate" value="${esc(i.dueDate)}"></label><label class="span">Description<textarea name="description">${esc(i.description)}</textarea></label></div><section class="edit-evidence"><div class="spread"><div><b>Original issue photos</b><div class="meta">Add evidence retrospectively, enlarge it or mark it up.</div></div><label class="btn alt">＋ Add photos<input hidden type="file" accept="image/*" multiple onchange="addEditPhotos(this)"></label></div><div class="edit-photo-grid" id="editPhotoGrid"></div></section><button class="btn">Save changes and evidence</button></form>`;
     renderEditPreviews();
   };
 
@@ -1218,6 +1218,7 @@
     const release=setBusyForm(form,"Saving…");
     const data=Object.fromEntries(new FormData(form));
     data.by=state.settings.preparedBy;
+    if(!data.priority)delete data.priority;
     data.originalPhotos=editPhotos;
     data.originalPhotoMeta=editPhotoMeta;
     try{
@@ -1311,36 +1312,129 @@
   }
   reviewView=function(){
     const items=state.items.filter(i=>i.project===state.settings.activeProject&&["ready_for_review","under_inspection"].includes(i.status)).sort((a,b)=>(b.priority==="urgent")-(a.priority==="urgent")||a.dueDate.localeCompare(b.dueDate)||(a.readyForReviewAt||a.updatedAt||"").localeCompare(b.readyForReviewAt||b.updatedAt||""));
-    return `${subHeader("Review Queue")}<div class="screen-scroll review-queue"><section class="native-card review-hero"><div class="spread"><div><h2>${items.length} ready for supervisor review</h2><p class="meta">Original issue beside subcontractor rectification evidence. Close out or reject from here.</p></div><button class="btn alt small" onclick="go('items')">All items</button></div></section>${items.length?items.map(i=>{const rect=(i.rectificationEvidence||[]).filter(e=>e.photo||e.comment).at(-1)||{},original=(i.originalPhotos||[])[0];return `<article class="native-card review-card"><div class="spread"><div><b>${esc(i.code)} · ${esc(typeLabels[i.type]||i.type)}</b><small class="meta">${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")} · Due ${esc(i.dueDate)}</small></div><span class="badge ready">READY</span></div><div class="review-compare"><section class="review-pane"><h3>Original defect</h3>${reviewPhoto(original,"original issue")}<p>${esc(i.description||"No description")}</p><small>${esc(i.trade||"No trade")}</small></section><section class="review-pane"><h3>${esc(i.subcontractor||"Subcontractor")}</h3>${reviewPhoto(rect.photo,"rectification")}<p>${esc(rect.comment||"No subcontractor comment")}</p><small>Submitted by ${esc(rect.by||i.subcontractor||"Subcontractor")}</small></section></div><div class="review-decision-row"><button class="btn danger" onclick="reviewReject('${i.id}')">REJECT</button><button class="btn review-closeout" onclick="reviewCloseout('${i.id}')">CLOSE OUT</button></div></article>`}).join(""):`<div class="native-card empty"><b>No items ready for review</b><br><span class="meta">Items appear here only after rectification evidence is uploaded and marked ready.</span></div>`}</div>`;
+    return `${subHeader("Review Queue")}<div class="screen-scroll review-queue"><section class="native-card review-hero"><div class="spread"><div><h2>${items.length} ready for supervisor review</h2><p class="meta">Original issue beside subcontractor rectification evidence. Close out or reject from here.</p></div><button class="btn alt small" onclick="go('items')">All items</button></div></section>${items.length?items.map(i=>{const rect=(i.rectificationEvidence||[]).filter(e=>e.photo||e.comment).at(-1)||{},original=(i.originalPhotos||[])[0];return `<article class="native-card review-card"><div class="spread"><div><b>${esc(i.code)} · ${esc(typeLabels[i.type]||i.type)}</b><small class="meta">${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")} · Due ${esc(i.dueDate)}</small></div><span class="badge ready">READY</span></div><div class="review-compare"><section class="review-pane"><h3>Original defect</h3>${reviewPhoto(original,"original issue")}<p>${esc(i.description||"No description")}</p><small>${esc(i.trade||"No trade")}</small></section><section class="review-pane"><h3>${esc(i.subcontractor||"Subcontractor")}</h3>${reviewPhoto(rect.photo,"rectification")}<p>${esc(rect.comment||"No subcontractor comment")}</p><small>Submitted by ${esc(rect.by||i.subcontractor||"Subcontractor")}</small></section></div><div class="review-decision-row"><button class="btn review-reject-outline" onclick="reviewReject('${i.id}')">REJECT</button><button class="btn review-closeout" onclick="reviewCloseout('${i.id}')">CLOSE OUT</button></div></article>`}).join(""):`<div class="native-card empty"><b>No items ready for review</b><br><span class="meta">Items appear here only after rectification evidence is uploaded and marked ready.</span></div>`}</div>`;
   };
+
+  const REJECT_REASON_PRESETS=["Not rectified","Wrong location","Incomplete work","Needs re-inspection"];
+  let signOffModalReturn="review";
+  let subPickerResolve=null;
+
+  function editPrioritySelectHtml(current){
+    let html=`<option value="" selected>— No change —</option>`;
+    if(current==="high")html+=`<option value="high">High</option>`;
+    html+=`<option value="urgent">Urgent</option>`;
+    return html;
+  }
+
+  window.closeBottomSheet=function(){
+    $("#bottomSheet").hidden=true;
+    if(subPickerResolve){subPickerResolve(null);subPickerResolve=null}
+  };
+  function pickSubcontractor(){
+    return new Promise(resolve=>{
+      const subs=[...(state.settings.subcontractors||[])].sort();
+      subPickerResolve=resolve;
+      $("#bottomSheetTitle").textContent="Issue to subcontractor";
+      $("#bottomSheetBody").innerHTML=`<div class="sheet-list">${subs.length?subs.map(s=>`<button type="button" class="sheet-row" onclick="pickSubcontractorForIssue(${JSON.stringify(s)})">${esc(s)}</button>`).join(""):`<p class="meta sheet-empty">No subcontractors in directory yet.</p>`}<button type="button" class="sheet-row sheet-row-add" onclick="pickSubcontractorAddNew()">+ Add new subcontractor</button></div>`;
+      $("#bottomSheet").hidden=false;
+    });
+  }
+  window.pickSubcontractorForIssue=function(name){
+    $("#bottomSheet").hidden=true;
+    const done=subPickerResolve;subPickerResolve=null;
+    if(done)done(name);
+  };
+  window.pickSubcontractorAddNew=function(){
+    $("#bottomSheet").hidden=true;
+    const done=subPickerResolve;subPickerResolve=null;
+    closeModal();
+    addSubcontractor();
+    if(done)done(null);
+  };
+  async function resolveIssueTarget(item){
+    if(item.subcontractor)return item.subcontractor;
+    return pickSubcontractor();
+  }
+  window.pickRejectReason=function(btn){
+    const ta=$("#rejectReason");
+    if(ta)ta.value=String(btn.textContent||"").trim();
+  };
+  function finishSignOffModal(id){
+    const ret=signOffModalReturn||"review";
+    signOffModalReturn="review";
+    closeModal();
+    return ret;
+  }
+  async function afterSignOffModal(id,ret){
+    await reload();
+    if(ret==="detail"){const item=findItemById(id);if(item)showItem(item.id);else{route="items";render()}}
+    else{route="review";render()}
+  }
 
   itemAction=async function(id,act){
     if(act==="reopen")return toast("Reopen is not available yet.",true);
-    const i=findItemById(id),body={by:state.settings.preparedBy};
-    const release=setBusyButton(document.activeElement,"Working…");
-    if(!i){release();return toast("Item not found",true)}
-    if(i.sync==="queued"&&act==="issue"){release();return toast("Item still syncing — wait a moment and try again.",true)}
+    const i=findItemById(id);
+    if(!i)return toast("Item not found",true);
+    if(i.sync==="queued"&&act==="issue")return toast("Item still syncing — wait a moment and try again.",true);
     id=canonicalItemId(i.id);
-    if(act==="issue"){body.to=i.subcontractor||prompt("Subcontractor name:","");body.reissue=i.status==="rejected"}
-    if(act==="reject")body.reason=prompt("Why is this being rejected?","");
-    if(act==="issue"&&!body.to){release();return toast("Choose a subcontractor before issuing.",true)}
-    if((act==="reject")&&!body.reason){release();return toast("Rejection reason is required.",true)}
-    if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo&&!body.comment){release();return toast("Add a rectification photo or comment.",true)}body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
-    if(act==="close"){body.role=prompt("Signed off by role:","Site Manager")||"Site Manager";body.note=prompt("Closeout note (optional):","");if(i.type!=="incomplete"){body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo){release();return toast("Closeout photo is required.",true)}}body.confirmed=confirm(`I confirm this item is rectified and accepted by ${state.settings.preparedBy}.`);if(!body.confirmed){release();return toast("Closeout confirmation cancelled.",true)}}
-    try{const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyItemActionResult(updated,act,id,body)}catch(err){toast(err.message,true)}finally{release()}
+    if(act==="close")return reviewCloseout(id,"detail");
+    if(act==="reject")return reviewReject(id,"detail");
+    const release=setBusyButton(document.activeElement,"Working…");
+    const body={by:state.settings.preparedBy};
+    try{
+      if(act==="issue"){
+        body.reissue=i.status==="rejected";
+        release();
+        const to=await resolveIssueTarget(i);
+        if(!to)return;
+        body.to=to;
+        const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});
+        applyItemActionResult(updated,act,id,body);
+        return;
+      }
+      if(act==="rectification"){body.comment=prompt("Rectification comment:","");body.photo=await chooseImage();body.photoMeta=lastChosenPhotoMeta;if(!body.photo&&!body.comment){release();return toast("Add a rectification photo or comment.",true)}body.advanceToReady=confirm("Mark ready for review after saving evidence?")}
+      const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});
+      applyItemActionResult(updated,act,id,body);
+    }catch(err){toast(err.message,true)}finally{release()}
   };
 
-  window.reviewCloseout=function(id){
-    const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found",true);
+  window.reviewCloseout=function(id,ret){
+    const item=findItemById(id);if(!item)return toast("Item not found",true);
+    id=canonicalItemId(item.id);
+    signOffModalReturn=ret||"review";
     $("#modalTitle").textContent=`Close out ${item.code}`;
     $("#modalBody").innerHTML=`<form class="field-list" onsubmit="submitReviewCloseout(event,'${id}')"><p class="meta">Site manager / foreman / project manager sign-off. This signature is stored as closeout evidence.</p><label>Signed by / role<input name="role" value="${esc(state.settings.preparedBy||"Site Manager")}"></label><label>Closeout note<textarea name="note" placeholder="Accepted after photo review / physical inspection"></textarea></label><canvas id="signaturePad" class="signature-pad"></canvas><div class="signature-tools"><button type="button" class="btn alt small" onclick="clearSignature()">Clear signature</button></div><button class="btn review-closeout">CLOSE OUT</button></form>`;
     $("#modal").hidden=false;wireSignaturePad();
   };
   window.clearSignature=function(){const c=$("#signaturePad");if(c)c.getContext("2d").clearRect(0,0,c.width,c.height)};
   window.wireSignaturePad=function(){const c=$("#signaturePad");if(!c)return;const ratio=window.devicePixelRatio||1,rect=c.getBoundingClientRect();c.width=Math.max(1,Math.round(rect.width*ratio));c.height=Math.max(1,Math.round(rect.height*ratio));const ctx=c.getContext("2d");ctx.scale(ratio,ratio);ctx.lineWidth=3;ctx.lineCap="round";ctx.strokeStyle="#121619";let drawing=false,moved=false;const pos=e=>{const r=c.getBoundingClientRect(),p=e.touches?e.touches[0]:e;return{x:p.clientX-r.left,y:p.clientY-r.top}};const start=e=>{drawing=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault()};const move=e=>{if(!drawing)return;const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke();moved=true;e.preventDefault()};const end=()=>{drawing=false};c.dataset.signed="";["mousedown","touchstart"].forEach(n=>c.addEventListener(n,start,{passive:false}));["mousemove","touchmove"].forEach(n=>c.addEventListener(n,move,{passive:false}));["mouseup","mouseleave","touchend"].forEach(n=>c.addEventListener(n,()=>{if(moved)c.dataset.signed="1";end()}))};
-  window.submitReviewCloseout=async function(e,id){e.preventDefault();const form=e.currentTarget,c=$("#signaturePad");if(!c?.dataset.signed)return toast("Signature is required before closeout.",true);const data=Object.fromEntries(new FormData(form)),release=setBusyButton(e.submitter,"CLOSING...");try{await api(`/api/items/${id}/actions/close`,{method:"POST",body:JSON.stringify({by:state.settings.preparedBy,role:data.role||"Site Manager",note:data.note||"Signed off from review queue",photo:c.toDataURL("image/png"),confirmed:true,accepted:true})});closeModal();await reload();route="review";render();toast("Closed out")}catch(err){toast(err.message,true)}finally{release()}};
-  window.reviewReject=async function(id){const item=state.items.find(x=>x.id===id);if(!item)return toast("Item not found",true);$("#modalTitle").textContent=`Reject ${item.code}`;$("#modalBody").innerHTML=`<div class="review-reject-options"><p class="meta">Reject flags the defect as REJECTED. You can optionally send a return photo/comment back to the subcontractor.</p><button class="btn danger" onclick="submitReviewReject('${id}','comment')">Reject with comment</button><button class="btn alt" onclick="submitReviewReject('${id}','photo')">Provide another photo</button><button class="btn alt" onclick="submitReviewReject('${id}','reissue')">Review & reissue</button></div>`;$("#modal").hidden=false};
-  window.submitReviewReject=async function(id,mode){const reason=prompt("Reason for rejection:","Rectification not accepted. Please review and re-submit.")||"";if(!reason.trim())return toast("Rejection reason is required.",true);let photo=null;if(mode==="photo"||mode==="reissue"){photo=await chooseImage()}try{await api(`/api/items/${id}/actions/reject`,{method:"POST",body:JSON.stringify({by:state.settings.preparedBy,reason:mode==="reissue"?`${reason} Review & reissue.`:reason,photo,photoMeta:lastChosenPhotoMeta})});closeModal();await reload();route="review";render();toast("Rejected and returned to subcontractor")}catch(err){toast(err.message,true)}};
+  window.submitReviewCloseout=async function(e,id){e.preventDefault();const form=e.currentTarget,c=$("#signaturePad");if(!c?.dataset.signed)return toast("Signature is required before closeout.",true);const data=Object.fromEntries(new FormData(form)),release=setBusyButton(e.submitter,"CLOSING...");try{await api(`/api/items/${id}/actions/close`,{method:"POST",body:JSON.stringify({by:state.settings.preparedBy,role:data.role||"Site Manager",note:data.note||"Signed off from review queue",photo:c.toDataURL("image/png"),confirmed:true,accepted:true})});const ret=finishSignOffModal(id);await afterSignOffModal(id,ret);toast("Closed out")}catch(err){toast(err.message,true)}finally{release()}};
+  window.reviewReject=function(id,ret){
+    const item=findItemById(id);if(!item)return toast("Item not found",true);
+    id=canonicalItemId(item.id);
+    signOffModalReturn=ret||"review";
+    const chips=REJECT_REASON_PRESETS.map(r=>`<button type="button" class="reason-chip" onclick="pickRejectReason(this)">${esc(r)}</button>`).join("");
+    $("#modalTitle").textContent=`Reject ${item.code}`;
+    $("#modalBody").innerHTML=`<form class="field-list review-reject-form" onsubmit="submitReviewRejectForm(event,'${id}')"><p class="meta">Rejection is recorded on the audit trail and returned to the subcontractor.</p><div class="reason-chips">${chips}</div><label>Reason<textarea name="reason" id="rejectReason" required placeholder="Why is this being rejected?"></textarea></label><label class="reject-option-row"><input type="checkbox" name="attachPhoto"> Attach a return photo</label><label class="reject-option-row"><input type="checkbox" name="reissue"> Flag for review &amp; re-issue</label><button type="submit" class="btn danger review-reject-confirm">REJECT</button></form>`;
+    $("#modal").hidden=false;
+  };
+  window.submitReviewRejectForm=async function(e,id){
+    e.preventDefault();
+    const form=e.currentTarget;
+    const data=Object.fromEntries(new FormData(form));
+    let reason=String(data.reason||"").trim();
+    if(!reason)return toast("Rejection reason is required.",true);
+    if(form.querySelector('[name="reissue"]')?.checked)reason=`${reason} Review & reissue.`;
+    let photo=null;
+    if(form.querySelector('[name="attachPhoto"]')?.checked)photo=await chooseImage();
+    const release=setBusyButton(e.submitter,"REJECTING...");
+    try{
+      await api(`/api/items/${id}/actions/reject`,{method:"POST",body:JSON.stringify({by:state.settings.preparedBy,reason,photo,photoMeta:lastChosenPhotoMeta})});
+      const ret=finishSignOffModal(id);
+      await afterSignOffModal(id,ret);
+      toast("Rejected and returned to subcontractor");
+    }catch(err){toast(err.message,true)}finally{release()}
+  };
 
   const originalShowItem=showItem;
   showItem=function(id){
@@ -1836,7 +1930,7 @@
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};
   const setupWithFocus=setupView;
   setupView=function(){const html=setupWithFocus(),cfg=state.settings.projectConfigs[state.settings.activeProject]||{},scope=cfg.itemsProjectScope||"active",mode=cfg.itemsFocusMode||"level";const card=`${codePrefixCard(cfg)}${spreadsheetImportCard()}<section class="form-card"><h2>Items page focus</h2><p class="meta">Choose the default project scope and third filter group for this project.</p><label>Project scope<select onchange="saveItemsProjectScope(this.value)">${projectScopeOptions().map(([value,label])=>`<option value="${esc(value)}" ${value===scope?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label>Default focus group<select onchange="saveItemsFocusMode(this.value)">${FOCUS_MODES.map(([value,label])=>`<option value="${value}" ${value===mode?"selected":""}>${label}</option>`).join("")}</select></label></section>`;return html.replace("</section>",`</section>${card}`)};
-  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=findItemById(id);if(!item)return toast("Item not found. Refresh and try again.",true);if(item.sync==="queued"&&act==="issue")return toast("Item still syncing — wait a moment and try again.",true);id=canonicalItemId(item.id);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);if(act==="issue")offerIssueNotification(findItemById(id)||updated)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
+  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=findItemById(id);if(!item)return toast("Item not found. Refresh and try again.",true);if(item.sync==="queued"&&act==="issue")return toast("Item still syncing — wait a moment and try again.",true);id=canonicalItemId(item.id);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.reissue=item.status==="rejected";if(item.subcontractor)body.to=item.subcontractor;else{release();cardActionLocks.delete(id);const to=await pickSubcontractor();if(!to)return toast("Choose a subcontractor before issuing.",true);body.to=to;const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);offerIssueNotification(findItemById(id)||updated);return}}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);if(act==="issue")offerIssueNotification(findItemById(id)||updated)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
   function planFit(plan){return {x:0,y:0,scale:1,...(plan?.fit||{})}}
   function pdfSrc(plan){const src=String(plan?.image||"");return src.includes("#")?src:`${src}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
   function activePlan(){return state.plans.filter(p=>p.project===state.settings.activeProject)[0]}

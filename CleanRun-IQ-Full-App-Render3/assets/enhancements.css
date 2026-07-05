@@ -202,6 +202,23 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .review-decision-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .review-decision-row .btn{min-height:52px;font-size:16px;font-weight:950}
 .review-closeout{background:var(--action-green)!important;color:#121619!important;border-color:var(--action-green)!important}
+.review-reject-outline{background:transparent!important;color:#B42318!important;border:2px solid #B42318!important}
+.review-reject-confirm{background:#B42318!important;color:#fff!important;border-color:#B42318!important}
+.reason-chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px}
+.reason-chip{border:1px solid #DDE3EA;background:#F8FAFC;color:#121619;border-radius:999px;padding:8px 12px;font-size:13px;font-weight:700}
+.reason-chip:active,.reason-chip:hover{border-color:#B42318;color:#B42318}
+.review-reject-form textarea{min-height:96px}
+.reject-option-row{display:flex!important;grid-template-columns:18px minmax(0,1fr)!important;align-items:center;gap:10px;font-weight:600}
+.reject-option-row input[type="checkbox"]{width:18px;height:18px;margin:0}
+.bottom-sheet{position:fixed;inset:0;z-index:40;display:grid;align-items:end}
+.bottom-sheet[hidden]{display:none!important}
+.bottom-sheet-backdrop{position:absolute;inset:0;background:#07101e88}
+.bottom-sheet-panel{position:relative;width:min(780px,100%);margin:0 auto;background:#fff;border-radius:20px 20px 0 0;max-height:min(72vh,520px);overflow:auto;box-shadow:0 -12px 40px #07101e33}
+.bottom-sheet-top{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line)}
+.sheet-list{display:grid}
+.sheet-row{border:0;background:#fff;width:100%;text-align:left;padding:16px 18px;font-size:16px;font-weight:700;border-bottom:1px solid var(--line)}
+.sheet-row-add{color:var(--action-green)}
+.sheet-empty{padding:16px 18px}
 .signature-pad{width:100%;height:190px;border:2px dashed #9AA4B2;border-radius:12px;background:#fff;touch-action:none}
 .signature-tools{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
 .review-reject-options{display:grid;gap:10px}
