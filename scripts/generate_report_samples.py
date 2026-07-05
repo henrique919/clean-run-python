@@ -13,6 +13,11 @@ from app.store import _normalize_app_data_payload
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "reports" / "samples"
 
+SAMPLE_REDIRECTS = (
+    ("Jura-Noosa-Defect-Register-sample.html", "reports/samples/Jura-Noosa-Defect-Register-sample.html"),
+    ("Jura-Noosa-Handover-Evidence-sample.html", "reports/samples/Jura-Noosa-Handover-Evidence-sample.html"),
+)
+
 SEED_COLORS = {
     "amber": "#C27803",
     "red": "#B42318",
@@ -40,6 +45,20 @@ def hydrate(value: str | None) -> str | None:
     if value and value.startswith("seed://"):
         return demo_photo(value)
     return value
+
+
+def redirect_html(target: str) -> str:
+    return (
+        "<!doctype html><html><head><meta charset=\"utf-8\" />"
+        f'<meta http-equiv="refresh" content="0;url={target}" />'
+        f"<title>Redirecting…</title></head><body>"
+        f'<p>Redirecting to <a href="{target}">{target}</a>…</p></body></html>'
+    )
+
+
+def write_preview_redirects() -> None:
+    for filename, target in SAMPLE_REDIRECTS:
+        (REPO / filename).write_text(redirect_html(target), encoding="utf-8")
 
 
 def hydrate_item(item: Item) -> Item:
@@ -74,10 +93,13 @@ def main() -> None:
         encoding="utf-8",
     )
 
+    write_preview_redirects()
+
     register = (OUT / "Jura-Noosa-Defect-Register-sample.html").read_text(encoding="utf-8")
     handover = (OUT / "Jura-Noosa-Handover-Evidence-sample.html").read_text(encoding="utf-8")
     print(f"register: {len(jura)} items, {register.count('<img')} images")
     print(f"handover: {handover.count('<img')} images")
+    print("preview: http://localhost:8765/Jura-Noosa-Defect-Register-sample.html")
 
 
 if __name__ == "__main__":

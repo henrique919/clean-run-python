@@ -3,43 +3,43 @@
 @page{size:A4 portrait;margin:11mm 11mm 14mm}
 @page{@bottom-left{content:"CleanRun IQ · Jura Noosa · Closed / Handover Evidence";font:800 8px/1.2 Inter,Arial,sans-serif;color:#69747D;letter-spacing:.2px}@bottom-right{content:"Page " counter(page);font:800 8px/1.2 Inter,Arial,sans-serif;color:#69747D}}
 @page:first{margin-bottom:11mm;@bottom-left{content:none}@bottom-right{content:none}}
-body{font-family:Inter,Arial,sans-serif;color:#161A1D;margin:0;background:#ECEFF2;font-size:11px;line-height:1.4}
-.report-actions{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;gap:8px;max-width:210mm;margin:0 auto;padding:10px 12px;background:#ECEFF2}
-.report-actions button{border:1px solid #B8C0C8;background:#fff;color:#161A1D;border-radius:999px;padding:8px 12px;font-weight:800;font-size:11px;cursor:pointer}
-.report-actions button.share{background:#1A2332;border-color:#1A2332;color:#fff}
-.report-actions button.print{background:#18A94F;border-color:#18A94F;color:#fff}
-.report-shell{max-width:210mm;margin:0 auto;background:#fff;border:1px solid #D5DCE3;padding:10mm 11mm 8mm}
-.title-block{border-bottom:2px solid #20C55E;padding-bottom:8px;margin-bottom:10px;max-height:42mm;overflow:hidden}
-.title-row{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:start}
+body{font-family:Inter,Arial,sans-serif;color:#161A1D;margin:0;background:#ECEFF2;font-size:11px;line-height:1.35}
+.report-actions{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;align-items:center;gap:10px;max-width:210mm;margin:0 auto;padding:2px 11mm;background:#ECEFF2;font-size:9px;line-height:24px}
+.report-actions button{border:0;background:transparent;color:#69747D;padding:0;font-weight:700;font-size:9px;cursor:pointer;text-decoration:underline;height:24px;line-height:24px}
+.report-actions button.share{color:#1A2332}
+.report-actions button.print{color:#0B6E36;text-decoration:none}
+.report-shell{max-width:210mm;margin:0 auto;background:#fff;border:1px solid #D5DCE3;padding:7mm 10mm 6mm}
+.title-block{border-bottom:2px solid #20C55E;padding-bottom:4px;margin-bottom:5px;max-height:28mm;overflow:hidden}
+.title-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start}
 .brand-col{min-width:0}
-.logo{display:flex;align-items:center;gap:8px}
-.mark{width:30px;height:30px;flex:0 0 auto}
-.mark svg{width:30px;height:30px;display:block}
+.logo{display:flex;align-items:center;gap:6px}
+.mark{width:22px;height:22px;flex:0 0 auto}
+.mark svg{width:22px;height:22px;display:block}
 .word,h1,h2,h3,.code,.num{font-family:Archivo,Arial,sans-serif}
-.word{font-size:18px;font-weight:800;line-height:1;white-space:nowrap}
+.word{font-size:14px;font-weight:800;line-height:1;white-space:nowrap}
 .word b{color:#20C55E}
-.tag{color:#69747D;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-top:4px;line-height:1.2}
-.title-col{min-width:0;padding-top:2px}
-h1{margin:0;font-size:22px;line-height:1.05;color:#1A2332;font-weight:800}
-.report-type{color:#52606D;font-size:10px;font-weight:700;margin-top:3px;line-height:1.25}
-.meta-col{text-align:right;font-size:9px;line-height:1.35;color:#52606D;min-width:120px}
-.meta-col strong{display:block;color:#161A1D;font-size:10px;margin-bottom:2px}
-.meta-kv{margin-top:1px}
-.meta-kv .k{color:#8B929C;font-weight:700;text-transform:uppercase;font-size:7px;letter-spacing:.35px}
+.tag{color:#69747D;font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;margin-top:2px;line-height:1.15}
+.title-col{min-width:0;padding-top:1px}
+h1{margin:0;font-size:17px;line-height:1.02;color:#1A2332;font-weight:800}
+.report-type{color:#52606D;font-size:9px;font-weight:700;margin-top:2px;line-height:1.2}
+.meta-col{text-align:right;font-size:8px;line-height:1.3;color:#52606D;min-width:96px}
+.meta-col strong{display:block;color:#161A1D;font-size:9px;margin-bottom:1px}
+.meta-kv{margin-top:0}
+.meta-kv .k{color:#8B929C;font-weight:700;text-transform:uppercase;font-size:6px;letter-spacing:.3px}
 .meta-kv .v{color:#161A1D;font-weight:700}
-.summary-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-top:8px}
-.stat{background:#F7F9FA;border:1px solid #DDE3E8;border-left:3px solid #52606D;padding:5px 6px;border-radius:4px;min-width:0}
+.summary-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin-top:5px}
+.stat{background:#F7F9FA;border:1px solid #DDE3E8;border-left:2px solid #52606D;padding:3px 4px;border-radius:3px;min-width:0}
 .stat-total{border-left-color:#1A2332}
 .stat-closed{border-left-color:#18A94F}
 .stat-issued{border-left-color:#C27803}
 .stat-ready{border-left-color:#1D4ED8}
 .stat-overdue{border-left-color:#B42318}
-.num{font-size:18px;font-weight:800;line-height:1;color:#161A1D}
-.lbl{font-size:7px;color:#69747D;text-transform:uppercase;letter-spacing:.35px;font-weight:800;margin-top:2px;line-height:1.15}
-.doc-note{color:#69747D;font-size:9px;margin:0 0 10px;line-height:1.35}
-.report-section{margin-top:12px}
-.group h3{color:#1A2332;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #C8D0D8;padding-bottom:2px;margin:8px 0 4px}
-.item{border:1px solid #D5DCE3;border-left:3px solid #B8C0C8;border-radius:3px;padding:5px 6px;margin-top:4px;background:#fff}
+.num{font-size:14px;font-weight:800;line-height:1;color:#161A1D}
+.lbl{font-size:6px;color:#69747D;text-transform:uppercase;letter-spacing:.3px;font-weight:800;margin-top:1px;line-height:1.1}
+.doc-note{color:#8B929C;font-size:8px;margin:0 0 5px;line-height:1.25}
+.report-section{margin-top:8px}
+.group h3{color:#1A2332;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.35px;border-bottom:1px solid #C8D0D8;padding-bottom:2px;margin:6px 0 3px}
+.item{border:1px solid #D5DCE3;border-left:3px solid #B8C0C8;border-radius:3px;padding:4px 5px;margin-top:3px;background:#fff}
 .item.status-closed,.item.status-complete{border-left-color:#18A94F}
 .item.status-rejected{border-left-color:#B42318}
 .item.status-ready-for-review,.item.status-under-inspection{border-left-color:#1D4ED8}
@@ -68,10 +68,10 @@ h1{margin:0;font-size:22px;line-height:1.05;color:#1A2332;font-weight:800}
 .meta-cell{background:#F7F9FA;border:1px solid #E4E9ED;border-radius:2px;padding:2px 4px;min-width:0}
 .meta-label{display:block;font-size:6px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#8B929C;line-height:1.05}
 .meta-value{display:block;font-size:9px;font-weight:700;color:#161A1D;line-height:1.2;margin-top:0}
-.desc{font-size:10px;margin:3px 0 4px;line-height:1.35;color:#161A1D}
-.evidence-matrix{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:4px}
-.evidence-col{min-width:0;border:1px solid #E4E9ED;border-radius:3px;padding:4px;background:#FAFBFC}
-.evidence-col-head{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.35px;color:#52606D;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #DDE3E8}
+.desc{font-size:10px;margin:2px 0 3px;line-height:1.32;color:#161A1D}
+.evidence-matrix{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:3px}
+.evidence-col{min-width:0;border:1px solid #E4E9ED;border-radius:3px;padding:3px;background:#FAFBFC}
+.evidence-col-head{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.3px;color:#52606D;margin:0 0 2px;padding-bottom:2px;border-bottom:1px solid #DDE3E8}
 .evidence-col.original-col .evidence-col-head{border-bottom-color:#1A2332;color:#1A2332}
 .evidence-col.closeout-col .evidence-col-head{border-bottom-color:#18A94F;color:#0B6E36}
 .rect-stage-note{font-size:8px;color:#69747D;margin-top:5px;padding-top:4px;border-top:1px dashed #DDE3E8;line-height:1.3}
@@ -91,9 +91,9 @@ h1{margin:0;font-size:22px;line-height:1.05;color:#1A2332;font-weight:800}
 .photo{background:#fff;border:1px solid #DDE3E8;padding:3px;font-size:7px;border-radius:3px;display:block;max-width:100%}
 .photo.landscape{max-width:52%}
 .photo.portrait{max-width:38%}
-.photo img{display:block;width:100%;height:auto;max-height:160px;object-fit:contain;object-position:center;background:transparent;border-radius:2px;margin-bottom:2px}
+.photo img{display:block;width:100%;height:auto;max-height:150px;object-fit:contain;object-position:center;background:transparent;border-radius:2px;margin-bottom:1px}
 .photo-stack.multi .photo.landscape,.photo-stack.multi .photo.portrait{max-width:calc(50% - 2px)}
-.photo-stack.multi .photo img{max-height:140px}
+.photo-stack.multi .photo img{max-height:130px}
 .photo.compact{flex:0 0 auto;max-width:56px;padding:2px}
 .photo.compact img{max-height:40px;margin-bottom:1px}
 .photo-thumb-row{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
@@ -103,21 +103,21 @@ h1{margin:0;font-size:22px;line-height:1.05;color:#1A2332;font-weight:800}
 .none{color:#69747D;font-size:9px;border:1px dashed #C8D0D8;background:#FAFBFC;padding:6px;border-radius:3px}
 .none.evidence-empty{padding:0;border:0;background:transparent;font-size:8px;color:#8B929C}
 .none.block{padding:8px;background:#F7F9FA;border-radius:4px;border:1px solid #E4E9ED}
-.sig-block{border:1px solid #DDE3E8;border-radius:3px;padding:4px 6px;margin-top:4px;min-height:14mm;max-height:22mm;display:flex;flex-direction:column;justify-content:center}
+.sig-block{border:1px solid #DDE3E8;border-radius:3px;padding:3px 5px;margin-top:3px;min-height:14mm;max-height:18mm;display:flex;flex-direction:column;justify-content:center}
 .sig-block.signed{border-color:#BFE8D0;background:#F8FDFA;border-left:3px solid #18A94F}
 .sig-block.unsigned{background:#FAFBFC}
 .sig-label{font-size:6px;font-weight:900;text-transform:uppercase;letter-spacing:.35px;color:#69747D;margin-bottom:2px}
 .sig-body{display:flex;align-items:center;gap:6px}
 .sig-image{flex:0 0 auto}
-.sig-image img{display:block;max-height:12mm;max-width:36mm;width:auto;height:auto;object-fit:contain}
+.sig-image img{display:block;max-height:12mm;max-width:32mm;width:auto;height:auto;object-fit:contain}
 .sig-detail{min-width:0}
 .sig-name{font-size:9px;font-weight:800;color:#0B6E36;line-height:1.15}
 .sig-role{font-size:7px;color:#52606D;margin-top:0}
 .sig-date{font-size:6px;color:#69747D;margin-top:1px}
 .sig-note{font-size:7px;color:#52606D;margin-top:2px;line-height:1.2}
 .sig-empty{font-size:8px;color:#8B929C;font-style:italic}
-.meta-line{display:flex;gap:3px;align-items:center;margin-top:4px;flex-wrap:wrap;border-top:1px solid #EEF1F4;padding-top:3px}
-.audit-line{font-size:6px;color:#8B929C;margin-top:2px;line-height:1.2}
+.meta-line{display:flex;gap:3px;align-items:center;margin-top:3px;flex-wrap:wrap;border-top:1px solid #EEF1F4;padding-top:2px}
+.audit-line{font-size:6px;color:#8B929C;margin-top:1px;line-height:1.15}
 .ev{font-size:7px;font-weight:900;padding:2px 5px;border:1px solid #DDE3E8;background:#fff;text-transform:uppercase;border-radius:999px}
 .ev.closeout{background:#EAFBF1;border-color:#BFE8D0}
 .ev.rectification{background:#FFF4DF;border-color:#F0D7A4}
@@ -136,24 +136,25 @@ h1{margin:0;font-size:22px;line-height:1.05;color:#1A2332;font-weight:800}
 body{background:#fff}
 .report-actions{display:none}
 .report-shell{border:0;padding:0;max-width:none}
-.title-block{max-height:none;overflow:visible}
+.title-block{max-height:none;overflow:visible;padding-bottom:3px;margin-bottom:4px}
+.doc-note{display:none}
 .photo,.photo img,.sig-block{break-inside:avoid;page-break-inside:avoid}
 .item-head{break-after:avoid;page-break-after:avoid}
-.photo img{max-height:40mm}
+.photo img{max-height:42mm}
 .photo-stack.multi .photo img{max-height:38mm}
-.photo.compact img{max-height:14mm}
+.photo.compact img{max-height:12mm}
 .photo.landscape{max-width:50%}
 .photo.portrait{max-width:40%}
 .photo-stack.multi .photo{max-width:calc(50% - 2mm)}
-.item{margin-top:3px;padding:4px 5px}
-.evidence-matrix{gap:4px}
-.sig-block{min-height:12mm;max-height:20mm;margin-top:3px}
+.item{margin-top:2px;padding:3px 4px}
+.evidence-matrix{gap:3px;margin-top:2px}
+.sig-block{min-height:12mm;max-height:16mm;margin-top:2px;padding:2px 4px}
 .footer{display:none}
 }
-</style></head><body data-share-file="Jura-Noosa-Handover-Evidence-5-Jul-2026.html" data-app-return="/?route=reports"><div class="report-actions"><button type="button" onclick="returnToReports()">Return to reports</button><button type="button" class="share" onclick="shareReport()">Share Report</button><button type="button" class="print" onclick="window.print()">Print Report</button></div><div class="report-shell">
+</style></head><body data-share-file="Jura-Noosa-Handover-Evidence-5-Jul-2026.html" data-app-return="/?route=reports"><div class="report-actions"><button type="button" onclick="returnToReports()">← Reports</button><button type="button" class="share" onclick="shareReport()">Share</button><button type="button" class="print" onclick="window.print()">Print</button></div><div class="report-shell">
     <section class="title-block">
       <div class="title-row">
-        <div class="brand-col"><div class="logo"><span class="mark" aria-hidden="true"><svg viewBox="0 0 100 100" width="30" height="30"><rect width="100" height="100" rx="22" fill="#121619"></rect><path d="M30 32 L54 56 L30 80" fill="none" stroke="#8B929C" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"></path><path d="M56 32 L80 56 L56 80" fill="none" stroke="#20C55E" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"></path></svg></span><span class="word">CleanRun <b>IQ</b></span></div><div class="tag">Construction closeout evidence register</div></div>
+        <div class="brand-col"><div class="logo"><span class="mark" aria-hidden="true"><svg viewBox="0 0 100 100" width="22" height="22"><rect width="100" height="100" rx="22" fill="#121619"></rect><path d="M30 32 L54 56 L30 80" fill="none" stroke="#8B929C" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"></path><path d="M56 32 L80 56 L56 80" fill="none" stroke="#20C55E" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"></path></svg></span><span class="word">CleanRun <b>IQ</b></span></div><div class="tag">Construction closeout evidence register</div></div>
         <div class="title-col">
           <h1>Jura Noosa - Jura · Noosa Heads QLD</h1>
           <div class="report-type">Defect Rectification / Closeout Register · Closed / Handover Evidence</div>
@@ -165,9 +166,9 @@ body{background:#fff}
           <div class="meta-kv"><span class="k">Prepared by</span> <span class="v">Site Manager</span></div>
         </div>
       </div>
-      <div class="summary-strip"><div class="stat stat-total"><div class="num">8</div><div class="lbl">Total</div></div><div class="stat stat-closed"><div class="num">2</div><div class="lbl">Closed</div></div><div class="stat stat-issued"><div class="num">4</div><div class="lbl">Issued / In Progress</div></div><div class="stat stat-ready"><div class="num">1</div><div class="lbl">Ready / Review</div></div><div class="stat stat-overdue"><div class="num">6</div><div class="lbl">Overdue / Rejected</div></div><div class="stat stat-client"><div class="num">0</div><div class="lbl">Client Defects</div></div></div>
+      <div class="summary-strip"><div class="stat stat-total"><div class="num">8</div><div class="lbl">Total</div></div><div class="stat stat-closed"><div class="num">2</div><div class="lbl">Closed</div></div><div class="stat stat-issued"><div class="num">4</div><div class="lbl">Issued</div></div><div class="stat stat-ready"><div class="num">1</div><div class="lbl">Ready</div></div><div class="stat stat-overdue"><div class="num">6</div><div class="lbl">Overdue</div></div></div>
     </section>
-    <p class="doc-note">Formal defect rectification evidence pack — original issue, trade rectification, and supervisor sign-off in sequence.</p><section class="report-section" aria-label="Closed / Complete Evidence"><section class="group"><h3>Block A - L03</h3>
+    <p class="doc-note">Original issue → rectification → supervisor sign-off.</p><section class="report-section" aria-label="Closed / Complete Evidence"><section class="group"><h3>Block A - L03</h3>
     <article class="item status-closed">
       <div class="item-head">
         <div class="item-head-main">
