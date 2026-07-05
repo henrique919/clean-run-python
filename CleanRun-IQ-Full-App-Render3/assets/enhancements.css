@@ -177,11 +177,19 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .photo-workbench input[type="color"]{width:44px;height:38px;padding:2px;background:#fff}
 .photo-workbench input[type="range"]{width:130px}
 
-.offline-pill{position:fixed;z-index:60;right:14px;top:14px;bottom:auto;border:1px solid #B9C0C8;border-radius:999px;background:#fff;color:#121619;padding:7px 11px;font-size:11px;font-weight:800;box-shadow:0 4px 16px #0002}
-.offline-pill.waiting{opacity:.15;transition:opacity .2s ease}
-.offline-pill.waiting:hover,.offline-pill.waiting:focus-within{opacity:.95}
+.offline-pill{position:fixed;z-index:60;left:14px;top:calc(8px + env(safe-area-inset-top));right:auto;bottom:auto;max-width:min(220px,calc(100vw - 28px));border:1px solid #B9C0C8;border-radius:999px;background:#fff;color:#121619;padding:7px 11px;font-size:11px;font-weight:800;box-shadow:0 4px 16px #0002;opacity:1}
+.offline-pill.synced{background:#F4F6F8;border-color:#DDE3E8;color:#52606D;font-weight:700}
 .offline-pill.offline{background:#FFF4D6;border-color:#D9A321;color:#6B4300}
 .offline-pill.syncing{background:#E1F7E9;border-color:var(--action-green);color:#0C7733}
+.capture-draft-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 14px 10px;padding:10px 12px;border:1px solid #DDE3E8;border-radius:12px;background:#F8FAFC;color:#52606D;font-size:12px;font-weight:700}
+.capture-draft-bar[hidden]{display:none!important}
+.capture-draft-bar__text{flex:1;min-width:0;line-height:1.35}
+.capture-draft-bar__actions{display:flex;gap:6px;flex-shrink:0}
+.capture-draft-bar__actions .btn{padding:6px 10px;font-size:11px;min-height:auto}
+.sync-queue-list .sync-queue-row{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left}
+.sync-queue-row small{display:block;margin-top:2px}
+.sync-queue-state{font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#667085}
+body[data-route="capture"] .offline-pill{top:calc(54px + env(safe-area-inset-top))}
 .review-hero{border-left:5px solid var(--action-green)}
 .review-card{border-left:5px solid #121619}
 .review-grid{display:grid;grid-template-columns:1fr;gap:14px}
@@ -364,7 +372,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
   .admin-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.admin-form-grid>.span{grid-column:1/-1}
   .settings-scroll{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.settings-scroll>.meta{grid-column:1/-1}
   .report-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.report{min-height:165px}
-  .plan{min-height:650px}.offline-pill{top:auto;bottom:18px;left:16px;right:auto;max-width:200px}
+  .plan{min-height:650px}.offline-pill{top:calc(10px + env(safe-area-inset-top));bottom:auto;left:16px;right:auto;max-width:220px}
   .admin-dashboard{display:block}.subcontractor-admin{grid-column:1/-1}.subcontractor-admin{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.subcontractor-admin>.spread{grid-column:1/-1}.contact-row{grid-template-columns:1fr 1fr 1fr 1fr auto}
   .review-grid{grid-template-columns:1fr 1fr}.review-grid img{height:260px}
   .report-scope-option,
@@ -452,7 +460,7 @@ html[data-theme="dark"] .project-code-lock .btn[disabled]{background:#DDE1E5!imp
 html[data-theme="dark"] .setup-import-actions .btn.alt{background:#F4F6F9!important;color:#121619!important;border-color:#D0D5DD!important}
 
 @media(max-width:760px){
-  .contact-row{grid-template-columns:1fr}.admin-kpis{grid-template-columns:1fr}.offline-pill{top:8px;right:8px}
+  .contact-row{grid-template-columns:1fr}.admin-kpis{grid-template-columns:1fr}.offline-pill{top:calc(8px + env(safe-area-inset-top));left:8px;right:auto}
   .cr-item-card{border-left-width:6px!important}
   .cr-card-band{padding:6px 12px}
   .cr-card-main{grid-template-columns:125px minmax(0,1fr);gap:10px;padding:12px}
@@ -615,7 +623,7 @@ body[data-route="capture"].walk-mode .notify-chip{display:none}
 .home-insights{margin-top:10px}
 .home-insights[hidden]{display:none}
 
-/* cards59: QA Round 1 — Issue CTA + closeout action green */
+/* cards60: Batch H — capture draft restore + visible sync pill */
 .menu-row{
   display:grid;
   grid-template-columns:32px minmax(0,1fr) auto;

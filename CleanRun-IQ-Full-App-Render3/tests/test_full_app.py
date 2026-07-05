@@ -216,7 +216,7 @@ class FullFieldAppTests(unittest.TestCase):
         worker = (ROOT / "service-worker.js").read_text(encoding="utf-8")
         for marker in ("addEditPhotos", "markupEvidencePhoto", "originalPhotoMeta", "navigator.geolocation", "cleanrun-offline-queue-v1", "format-dates.js", "issueHistoryForItem", "originalPhotoThumbnails", 'loading="lazy"', "shareReport", "supportsImageBitmapOrientation", "isImageFile", "returnToReports", "buildCaptureDefaultsPanel", "selectOptionsWithRecents", "cleanrun-capture-recents-v1", "photo-markup-btn", "expandCaptureDefaultsSections"):
             self.assertIn(marker, enhancements)
-        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "openDashboardSearch", "Closeout control room", "Subcontractor performance", "Trade pressure", "Today's schedule", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode", "siteStatus", "CAPTURED", "IN PROGRESS", "cr-issue-cta", "Captured\",\"Issued\",\"In Progress", "cardAction", "reviewCloseout", "reviewReject", "signature-pad", "cardActionLocks", "openCommandPalette", "runCommand", "Command Palette", "Issue DEF-022 to AquaSeal", "Find all open items Block A L02", "commandHomeBar", "lockProjectCodePrefix", "toggleItemFilters", "labelIconButtons", "cardHeadline"):
+        for marker in ("markupTool", "circle", "box", "arrow", "Text box", "fileToUploadData", "MAX_PHOTO_EDGE", "openHomeBucket", "openDashboardSearch", "Closeout control room", "Subcontractor performance", "Trade pressure", "Today's schedule", "toggleDesktopTheme", "Subcontractor database", "THEME_KEY", "photoCount", "Incomplete Work", "LAST_CAPTURE_KEY", "cleanrun-capture-draft-v1", "restoreCaptureDraft", "openSyncQueueSheet", "Synced ✓", "reviewView", "renderMobileNav", "Closeout workflow", "captureSubmitting", "captureRequestId", "issueOnCreate", "oncancel", "controllerchange", "SKIP_WAITING", "subcontractorAdminPanel", "Dark / night mode", "No email", "Assigned work mode", "siteStatus", "CAPTURED", "IN PROGRESS", "cr-issue-cta", "Captured\",\"Issued\",\"In Progress", "cardAction", "reviewCloseout", "reviewReject", "signature-pad", "cardActionLocks", "openCommandPalette", "runCommand", "Command Palette", "Issue DEF-022 to AquaSeal", "Find all open items Block A L02", "commandHomeBar", "lockProjectCodePrefix", "toggleItemFilters", "labelIconButtons", "cardHeadline"):
             self.assertIn(marker, enhancements)
         self.assertIn("renderDesktopNav", enhancements)
         self.assertIn('"reports","Reports"', enhancements)
@@ -225,8 +225,10 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn(".item-sub", styles)
         self.assertNotIn("graphiteDrift", styles)
         self.assertIn("border-left:6px solid #121619", styles)
-        self.assertIn(".offline-pill{position:fixed;z-index:60;right:14px;top:14px", styles)
-        self.assertIn(".offline-pill.waiting{opacity:.15", styles)
+        self.assertIn(".offline-pill{position:fixed;z-index:60;left:14px;top:calc(8px + env(safe-area-inset-top))", styles)
+        self.assertIn(".offline-pill.synced", styles)
+        self.assertNotIn(".offline-pill.waiting{opacity:.15", styles)
+        self.assertIn(".capture-draft-bar", styles)
         self.assertIn(".photo-required-pulse", styles)
         self.assertIn(".capture-defaults-strip", styles)
         self.assertIn(".photo-markup-btn", styles)
