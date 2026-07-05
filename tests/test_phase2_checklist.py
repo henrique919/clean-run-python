@@ -15,8 +15,8 @@ class Phase2LocalChecklist(unittest.TestCase):
         self.enh = ENHANCEMENTS.read_text(encoding="utf-8")
         self.css = STYLES.read_text(encoding="utf-8")
 
-    def test_build_tag_cards58(self) -> None:
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards58"', self.enh)
+    def test_build_tag_cards59(self) -> None:
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards59"', self.enh)
 
     def test_defaults_strip_containment(self) -> None:
         for marker in (

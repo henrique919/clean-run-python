@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards58)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards59)."""
 
 from __future__ import annotations
 
@@ -230,7 +230,7 @@ class Phase3NotifyChecklist(unittest.TestCase):
             "function mergeSavedItem(item,replacesId)",
             "mergeSavedItem(item,clientRequestId)",
             "rememberItemIdAlias(replacesId,serverId)",
-            'data.dueDate=defaultCaptureDueDate()',
+            'data.dueDate=defaultCaptureDueDate(data.project||state.settings.activeProject)',
             'Item still syncing — wait a moment and try again.',
         ]:
             self.assertIn(marker, self.enh, marker)

@@ -350,6 +350,28 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
   .plan{min-height:650px}.offline-pill{top:auto;bottom:18px;left:16px;right:auto;max-width:200px}
   .admin-dashboard{display:block}.subcontractor-admin{grid-column:1/-1}.subcontractor-admin{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.subcontractor-admin>.spread{grid-column:1/-1}.contact-row{grid-template-columns:1fr 1fr 1fr 1fr auto}
   .review-grid{grid-template-columns:1fr 1fr}.review-grid img{height:260px}
+  .report-scope-option,
+  .report-scope-check{
+    display:grid!important;
+    grid-template-columns:18px minmax(0,1fr)!important;
+    gap:10px;
+    align-items:start;
+    justify-items:start;
+    text-align:left;
+  }
+  .report-scope-option input[type="radio"],
+  .report-scope-check input[type="checkbox"]{
+    width:18px;
+    min-width:18px;
+    max-width:18px;
+    height:18px;
+    margin:3px 0 0;
+    justify-self:start;
+  }
+  .report-scope-copy{
+    justify-self:stretch;
+    text-align:left;
+  }
 }
 
 @media(max-width:720px){
@@ -630,8 +652,12 @@ body[data-route="capture"].walk-mode .notify-chip{display:none}
   border-color:#20C55E;
   background:#F3FBF6;
 }
-.report-scope-option input{
+.report-scope-option input[type="radio"]{
   margin-top:3px;
+  width:18px;
+  min-width:18px;
+  max-width:18px;
+  height:18px;
 }
 .report-scope-copy{
   display:grid;
@@ -664,8 +690,12 @@ body[data-route="capture"].walk-mode .notify-chip{display:none}
   align-items:center;
   font-size:13px;
 }
-.report-scope-check input{
+.report-scope-check input[type="checkbox"]{
   margin:0;
+  width:18px;
+  min-width:18px;
+  max-width:18px;
+  height:18px;
 }
 button.is-busy,.btn.is-busy{
   opacity:.82;

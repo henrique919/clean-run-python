@@ -166,9 +166,9 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("siteStatus", page)
         self.assertIn("cr-item-card", page)
         self.assertIn("In Progress','Ready", page)
-        self.assertIn("enhancements.css?v=cards58", page)
-        self.assertIn("enhancements.js?v=cards58", page)
-        self.assertIn("format-dates.js?v=cards58", page)
+        self.assertIn("enhancements.css?v=cards59", page)
+        self.assertIn("enhancements.js?v=cards59", page)
+        self.assertIn("format-dates.js?v=cards59", page)
         self.assertIn("review:reviewView", page)
         self.assertIn("ready for supervisor review", page)
         self.assertIn("location.href='/api/reports/${id}'", page)
@@ -456,6 +456,31 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("mobile", profile)
         self.assertIsInstance(profile["contacts"], list)
         self.assertEqual(settings["theme"], "light")
+
+
+class CaptureDueDateSourceTests(unittest.TestCase):
+    def test_capture_due_date_defaults_to_today_plus_seven(self) -> None:
+        enhancements = (ROOT / "assets" / "enhancements.js").read_text(encoding="utf-8")
+        self.assertIn("const CAPTURE_DUE_DAYS=7", enhancements)
+        self.assertIn("function ensureCaptureDueDate", enhancements)
+        self.assertIn("function localIsoDate", enhancements)
+        self.assertRegex(enhancements, r"due\.setDate\(due\.getDate\(\)\+days\)")
+        self.assertIn("ensureCaptureDueDate(form)", enhancements)
+        self.assertIn('el?.name==="project"', enhancements)
+        self.assertIn("ensureCaptureDueDate($(\"#app form\"),el.value)", enhancements)
+        self.assertIn('if(route==="capture")applyCaptureDefaults()', enhancements)
+        self.assertIn('name="dueDate" value="${due}"', enhancements)
+        self.assertIn("const due=defaultCaptureDueDate()", enhancements)
+        self.assertIn("data.dueDate=defaultCaptureDueDate(data.project||state.settings.activeProject)", enhancements)
+
+
+class ReportScopePickerSourceTests(unittest.TestCase):
+    def test_report_scope_picker_stays_compact_on_desktop(self) -> None:
+        styles = (ROOT / "assets" / "enhancements.css").read_text(encoding="utf-8")
+        self.assertIn(".report-scope-option,", styles)
+        self.assertIn("grid-template-columns:18px minmax(0,1fr)!important", styles)
+        self.assertIn('.report-scope-option input[type="radio"]', styles)
+        self.assertIn("width:18px", styles)
 
 
 if __name__ == "__main__":
