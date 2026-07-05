@@ -191,7 +191,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .review-grid .empty{display:grid;place-items:center;min-height:160px;border:1px dashed #B9C0C8;border-radius:8px;color:#667085;background:#fff}
 .review-actions{margin-top:12px}
 .review-queue{display:grid;gap:14px}
-.review-card{border-left:6px solid #1D4ED8!important}
+.review-card{border-left:6px solid var(--status-ready)!important}
 .review-compare{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
 .review-pane{border:1px solid #DDE3EA;border-radius:12px;background:#F8FAFC;padding:10px;min-width:0}
 .review-pane h3{margin:0 0 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#52606D}
@@ -217,17 +217,18 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
   text-transform:none;
 }
 .cr-item-card.status-captured{--rail:#fff}
-.cr-item-card.status-issued{--rail:#D99A21}
-.cr-item-card.status-in_progress{--rail:#C27803}
-.cr-item-card.status-overdue{--rail:#B42318}
-.cr-item-card.status-ready{--rail:#1D4ED8}
-.cr-item-card.status-closed{--rail:#16A34A}
-.cr-item-card.status-rejected{--rail:#C026D3}
-.cr-card-status.in_progress{background:#C27803!important;border-color:#C27803!important;color:#fff!important}
-.cr-card-status.ready{background:#1D4ED8!important;border-color:#1D4ED8!important}
-.cr-card-status.overdue{background:#B42318!important;border-color:#B42318!important}
-.cr-card-status.closed{background:#16A34A!important;border-color:#16A34A!important}
-.cr-card-status.issued{background:#D99A21!important;border-color:#D99A21!important;color:#121619!important}
+.cr-item-card.status-issued{--rail:var(--status-issued)}
+.cr-item-card.status-in_progress{--rail:var(--status-progress)}
+.cr-item-card.status-overdue{--rail:var(--status-risk)}
+.cr-item-card.status-ready{--rail:var(--status-ready)}
+.cr-item-card.status-closed{--rail:var(--status-closed)}
+.cr-item-card.status-rejected{--rail:var(--status-risk)}
+.cr-card-status.in_progress{background:var(--status-progress)!important;border-color:var(--status-progress)!important;color:#fff!important}
+.cr-card-status.ready{background:var(--status-ready)!important;border-color:var(--status-ready)!important}
+.cr-card-status.overdue{background:var(--status-risk)!important;border-color:var(--status-risk)!important}
+.cr-card-status.closed{background:var(--status-closed)!important;border-color:var(--status-closed)!important}
+.cr-card-status.issued{background:var(--status-issued)!important;border-color:var(--status-issued)!important;color:#121619!important}
+.cr-card-status.rejected{background:var(--status-risk)!important;border-color:var(--status-risk)!important;color:#fff!important}
 .badge.captured{background:#ECEFF2;color:#344054;border:1px solid #D0D5DD}
 .badge.issued{background:#FFF4DF;color:#8A5A00;border:1px solid #F0D7A4}
 .badge.in_progress{background:#FFF0E0;color:#9A4A00;border:1px solid #F0D0A8}
