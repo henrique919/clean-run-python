@@ -131,7 +131,7 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertIn("Original 1", html)
         self.assertIn(item.code, html)
 
-    def test_report_photo_css_uses_large_evidence_pack_layout(self) -> None:
+    def test_report_photo_css_uses_balanced_evidence_pack_layout(self) -> None:
         item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
         settings = self.snapshot.settings
 
@@ -143,11 +143,38 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertNotIn("evidence-cols", html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
-        self.assertIn("photo.portrait img{max-height:min(72vh,680px)", html)
-        self.assertIn("photo.landscape img{max-height:420px", html)
-        self.assertIn("background:#F4F6F8", html)
+        self.assertIn("photo.landscape{max-width:60%", html)
+        self.assertIn("photo.portrait img{max-height:360px", html)
+        self.assertNotIn("min(72vh,680px)", html)
+        self.assertNotIn("max-height:124px", html)
+        self.assertNotIn("background:#F4F6F8;border-radius:6px;margin-bottom:5px", html)
 
-    def test_report_closeout_photos_use_full_evidence_size(self) -> None:
+    def test_report_multi_photo_stack_uses_side_by_side_class(self) -> None:
+        item = self._item(
+            original_photos=[
+                "projects/jura/items/def-1/original/a.jpg",
+                "projects/jura/items/def-1/original/b.jpg",
+            ]
+        )
+        settings = self.snapshot.settings
+
+        with patch("app.reporting.resolve_photo_url", return_value="https://signed.example/photo.jpg"):
+            html = build_report_html([item], settings, report_type="register")
+
+        self.assertIn('class="photo-stack multi"', html)
+        self.assertIn("photo-stack.multi .photo{flex:1 1 calc(50% - 5px)", html)
+
+    def test_report_empty_evidence_sections_collapse_to_compact_line(self) -> None:
+        item = self._item(original_photos=[], rectification_evidence=[])
+        settings = self.snapshot.settings
+
+        html = build_report_html([item], settings, report_type="register")
+
+        self.assertIn("evidence-block original is-empty", html)
+        self.assertIn("No original evidence uploaded", html)
+        self.assertIn("evidence-block.is-empty .evidence-empty", html.replace("\n", ""))
+
+    def test_report_closeout_photos_use_balanced_evidence_size(self) -> None:
         item = self._item(
             status=ItemStatus.CLOSED,
             closeout_evidence=[
@@ -168,6 +195,7 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertNotIn('class="photo compact"', html)
         self.assertIn("object-fit:contain", html)
         self.assertNotIn("object-fit:cover", html)
+        self.assertIn("photo.portrait img{max-height:100mm", html)
 
     def test_report_print_css_keeps_photo_break_avoid_rules(self) -> None:
         item = self._item(original_photos=["projects/jura/items/def-1/original/photo.jpg"])
@@ -179,9 +207,11 @@ class ReportingFilterTests(unittest.TestCase):
         self.assertIn("@media print", html)
         self.assertRegex(
             html,
-            r"\.evidence-pack,\.evidence-block,\.photo-stack,\.photo,\.photo img,\.meta-line\{break-inside:avoid;page-break-inside:avoid\}",
+            r"\.item-head,\.register-line,\.desc,\.evidence-block,\.photo-stack,\.photo,\.photo img\{break-inside:avoid;page-break-inside:avoid\}",
         )
-        self.assertIn("photo.portrait img{max-height:240mm}", html)
+        self.assertIn("photo.portrait img{max-height:100mm}", html)
+        self.assertIn("photo.landscape img{max-height:90mm}", html)
+        self.assertIn("break-after:avoid;page-break-after:avoid", html)
         self.assertIn("classify(img)", html.replace("\n", ""))
 
     def test_report_multiple_projects_grouped_with_headings(self) -> None:
