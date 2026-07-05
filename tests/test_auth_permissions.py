@@ -147,8 +147,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards52", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards52", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards53", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards53", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_state_scope_active_returns_only_active_project(self) -> None:
