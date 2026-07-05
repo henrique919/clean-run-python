@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -98,7 +98,19 @@ def now_iso() -> str:
 
 
 def make_id() -> str:
-    return uuid4().hex
+    return str(uuid4())
+
+
+def canonical_item_id(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value).strip()
+    if text.startswith("offline-"):
+        return text
+    try:
+        return str(UUID(text))
+    except (TypeError, ValueError):
+        return text
 
 
 class RectificationEvidence(BaseModel):

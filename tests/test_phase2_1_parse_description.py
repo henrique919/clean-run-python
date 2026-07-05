@@ -108,7 +108,7 @@ class Phase21FrontendMarkers(unittest.TestCase):
         self.assertIn("captureDescriptionEdited", enh)
         self.assertIn('k==="description"&&preserveDescription', enh)
         self.assertIn("Draft applied — review before saving", enh)
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards54"', enh)
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards55"', enh)
 
 
 if __name__ == "__main__":

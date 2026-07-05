@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards54";
-  document.documentElement.dataset.cleanrunBuild="cards54";
+  window.CLEANRUN_FRONTEND_BUILD="cards55";
+  document.documentElement.dataset.cleanrunBuild="cards55";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -255,17 +255,23 @@
     }
     return key;
   }
+  function normalizeUuidId(id){
+    const text=String(id||"");
+    if(!text||text.startsWith("offline-"))return text;
+    if(text.includes("-"))return text;
+    const hex=text.replace(/-/g,"").toLowerCase();
+    if(/^[0-9a-f]{32}$/.test(hex))return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+    return text;
+  }
   function findItemById(id){const key=resolveItemIdKey(id);return state?.items?.find(x=>itemIdKey(x.id)===key)}
   function canonicalItemId(id){
     const item=findItemById(id);
-    if(item?.id)return item.id;
-    const key=resolveItemIdKey(id);
-    const match=state?.items?.find(x=>itemIdKey(x.id)===key);
-    return match?.id||String(id||"");
+    if(item?.id)return normalizeUuidId(item.id);
+    return normalizeUuidId(String(id||""));
   }
   function mergeSavedItem(item,replacesId){
     if(!item||!state?.items)return;
-    const serverId=String(item.id||"");
+    const serverId=normalizeUuidId(String(item.id||""));
     if(!serverId)return;
     const serverKey=itemIdKey(serverId);
     const replaceKey=replacesId?itemIdKey(replacesId):null;
@@ -1244,7 +1250,7 @@
     const release=setBusyButton(document.activeElement,"Working…");
     if(!i){release();return toast("Item not found",true)}
     if(i.sync==="queued"&&act==="issue"){release();return toast("Item still syncing — wait a moment and try again.",true)}
-    id=i.id;
+    id=canonicalItemId(i.id);
     if(act==="issue"){body.to=i.subcontractor||prompt("Subcontractor name:","");body.reissue=i.status==="rejected"}
     if(act==="reject")body.reason=prompt("Why is this being rejected?","");
     if(act==="issue"&&!body.to){release();return toast("Choose a subcontractor before issuing.",true)}
@@ -1270,7 +1276,7 @@
   showItem=function(id){
     const i=findItemById(id);
     if(!i)return toast("Item not found. Refresh and try again.",true);
-    originalShowItem(i.id);
+    originalShowItem(canonicalItemId(i.id));
     const cards=[...document.querySelectorAll("#modalBody .native-card")],original=cards.find(c=>c.querySelector("h2")?.textContent==="Original Issue");
     const summary=cards[0];
     if(summary&&i){
@@ -1759,7 +1765,7 @@
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};
   const setupWithFocus=setupView;
   setupView=function(){const html=setupWithFocus(),cfg=state.settings.projectConfigs[state.settings.activeProject]||{},scope=cfg.itemsProjectScope||"active",mode=cfg.itemsFocusMode||"level";const card=`${codePrefixCard(cfg)}${spreadsheetImportCard()}<section class="form-card"><h2>Items page focus</h2><p class="meta">Choose the default project scope and third filter group for this project.</p><label>Project scope<select onchange="saveItemsProjectScope(this.value)">${projectScopeOptions().map(([value,label])=>`<option value="${esc(value)}" ${value===scope?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label>Default focus group<select onchange="saveItemsFocusMode(this.value)">${FOCUS_MODES.map(([value,label])=>`<option value="${value}" ${value===mode?"selected":""}>${label}</option>`).join("")}</select></label></section>`;return html.replace("</section>",`</section>${card}`)};
-  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=findItemById(id);if(!item)return toast("Item not found. Refresh and try again.",true);if(item.sync==="queued"&&act==="issue")return toast("Item still syncing — wait a moment and try again.",true);id=item.id;const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);if(act==="issue")offerIssueNotification(findItemById(id)||updated)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
+  window.cardAction=function(event,id,act){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation?.();if(cardActionLocks.has(id))return false;const button=event.currentTarget;if(button?.disabled)return false;cardActionLocks.add(id);const release=setBusyButton(button,act==="issue"?"ISSUING...":"WORKING...");(async()=>{const item=findItemById(id);if(!item)return toast("Item not found. Refresh and try again.",true);if(item.sync==="queued"&&act==="issue")return toast("Item still syncing — wait a moment and try again.",true);id=canonicalItemId(item.id);const body={by:state.settings.preparedBy};if(act==="issue"){if(!["open","rejected"].includes(item.status))return toast(`${item.code} is already ${siteStatus(item).label}.`,true);body.to=item.subcontractor||prompt("Subcontractor name:","");body.reissue=item.status==="rejected";if(!body.to)return toast("Choose a subcontractor before issuing.",true)}const updated=await api(`/api/items/${id}/actions/${act}`,{method:"POST",body:JSON.stringify(body)});applyCardActionResult(updated,act);if(act==="issue")offerIssueNotification(findItemById(id)||updated)})().catch(err=>toast(err.message,true)).finally(()=>{cardActionLocks.delete(id);release()});return false};
   function planFit(plan){return {x:0,y:0,scale:1,...(plan?.fit||{})}}
   function pdfSrc(plan){const src=String(plan?.image||"");return src.includes("#")?src:`${src}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
   function activePlan(){return state.plans.filter(p=>p.project===state.settings.activeProject)[0]}
