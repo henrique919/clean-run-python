@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards59)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards60)."""
 
 from __future__ import annotations
 

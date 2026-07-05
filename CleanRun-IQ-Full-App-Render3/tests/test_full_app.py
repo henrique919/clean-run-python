@@ -166,9 +166,9 @@ class FullFieldAppTests(unittest.TestCase):
         self.assertIn("siteStatus", page)
         self.assertIn("cr-item-card", page)
         self.assertIn("In Progress','Ready", page)
-        self.assertIn("enhancements.css?v=cards59", page)
-        self.assertIn("enhancements.js?v=cards59", page)
-        self.assertIn("format-dates.js?v=cards59", page)
+        self.assertIn("enhancements.css?v=cards60", page)
+        self.assertIn("enhancements.js?v=cards60", page)
+        self.assertIn("format-dates.js?v=cards60", page)
         self.assertIn("review:reviewView", page)
         self.assertIn("ready for supervisor review", page)
         self.assertIn("location.href='/api/reports/${id}'", page)
@@ -481,6 +481,68 @@ class ReportScopePickerSourceTests(unittest.TestCase):
         self.assertIn("grid-template-columns:18px minmax(0,1fr)!important", styles)
         self.assertIn('.report-scope-option input[type="radio"]', styles)
         self.assertIn("width:18px", styles)
+
+
+class SignOffModalSourceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.enhancements = (ROOT / "assets" / "enhancements.js").read_text(encoding="utf-8")
+
+    def _fn_body(self, name: str) -> str:
+        import re
+
+        patterns = [
+            rf"{re.escape(name)}=(?:async )?function\([^)]*\)\{{",
+            rf"window\.{re.escape(name)}=(?:async )?function\([^)]*\)\{{",
+        ]
+        start = None
+        for pattern in patterns:
+            match = re.search(pattern, self.enhancements)
+            if match:
+                start = match.end() - 1
+                break
+        self.assertIsNotNone(start, f"missing function {name}")
+        depth = 0
+        for index in range(start, len(self.enhancements)):
+            char = self.enhancements[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return self.enhancements[start : index + 1]
+        self.fail(f"unclosed function body for {name}")
+
+    def test_issue_close_reject_avoid_native_dialogs(self) -> None:
+        for fn in ("cardAction", "reviewReject", "submitReviewRejectForm"):
+            body = self._fn_body(fn)
+            self.assertNotIn("prompt(", body, fn)
+            self.assertNotIn("confirm(", body, fn)
+        item_body = self._fn_body("itemAction")
+        self.assertNotIn('prompt("Subcontractor name:', item_body)
+        self.assertNotIn('prompt("Why is this being rejected?', item_body)
+        self.assertNotIn('prompt("Signed off by role:', item_body)
+        self.assertNotIn("confirm(`I confirm this item", item_body)
+        self.assertIn('act==="close")return reviewCloseout', item_body)
+        self.assertIn('act==="reject")return reviewReject', item_body)
+
+    def test_close_routes_through_signature_modal(self) -> None:
+        body = self._fn_body("itemAction")
+        self.assertIn('act==="close")return reviewCloseout', body)
+
+    def test_edit_priority_no_change_default(self) -> None:
+        self.assertIn("editPrioritySelectHtml", self.enhancements)
+        self.assertIn('value="" selected>— No change —', self.enhancements)
+        self.assertIn("if(!data.priority)delete data.priority", self.enhancements)
+        self.assertIn('if(current==="high")', self.enhancements)
+
+    def test_reject_outline_and_subcontractor_sheet(self) -> None:
+        self.assertIn("review-reject-outline", self.enhancements)
+        self.assertIn("pickSubcontractor", self.enhancements)
+        self.assertIn("bottomSheet", self.enhancements)
+        styles = (ROOT / "assets" / "enhancements.css").read_text(encoding="utf-8")
+        self.assertIn(".review-reject-outline", styles)
+        self.assertIn("border:2px solid #B42318", styles)
 
 
 if __name__ == "__main__":
