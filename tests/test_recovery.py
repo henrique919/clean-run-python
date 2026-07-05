@@ -302,7 +302,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("CLEANRUN_SERVE_LEGACY_EXPORT", main)
         self.assertIn("renderLogin", full_app)
         self.assertIn("bottom-nav", full_app)
-        self.assertIn("enhancements.js?v=cards53", full_app)
+        self.assertIn("enhancements.js?v=cards54", full_app)
 
     def test_plans_navigation_is_disabled_in_production_ui(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -329,7 +329,7 @@ class RecoveryTests(unittest.TestCase):
         enhancements = (root / "CleanRun-IQ-Full-App-Render3/assets/enhancements.js").read_text(encoding="utf-8")
         main = (root / "app/main.py").read_text(encoding="utf-8")
 
-        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards53"', enhancements)
+        self.assertIn('CLEANRUN_FRONTEND_BUILD="cards54"', enhancements)
         self.assertIn("stateApiPath", enhancements)
         self.assertIn("bootWorkspace", enhancements)
         self.assertIn("stageCapturedPhoto", enhancements)

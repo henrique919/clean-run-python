@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards53";
-  document.documentElement.dataset.cleanrunBuild="cards53";
+  window.CLEANRUN_FRONTEND_BUILD="cards54";
+  document.documentElement.dataset.cleanrunBuild="cards54";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -304,7 +304,9 @@
       state=fresh;
       cacheState();
       updateOfflinePill();
-      if(route==="home"||route==="items"||route==="review")render();
+      if(route==="items")filterItems();
+      else if(route==="home")refreshHomeNextCards();
+      else if(route==="review")render();
     }catch{}
   }
   const baseGo=go;
@@ -770,8 +772,76 @@
     return rows;
   }
 
+  function cardPhotoSrc(item){
+    return (item.originalPhotoThumbnails||item.originalPhotos||[])[0]||"";
+  }
+  function itemCardRenderSig(item){
+    const status=siteStatus(item);
+    return [
+      item.id,
+      item.updatedAt||"",
+      cardPhotoSrc(item),
+      status.tone,
+      status.label,
+      item.status||"",
+      item.type||"",
+      item.priority||"",
+      item.subcontractor||"",
+      item.trade||"",
+      item.dueDate||"",
+      cardHeadline(item),
+      itemWasNotified(item)?"1":"0",
+      item.building||"",
+      item.level||"",
+      item.unit||"",
+      item.room||"",
+    ].join("\u001f");
+  }
+  function itemCardsListSig(list){
+    return list.map(itemCardRenderSig).join("\u001e");
+  }
+  function paintItemCards(host,list,{emptyHtml=""}={}){
+    if(!host)return false;
+    const sig=itemCardsListSig(list);
+    if(host.dataset.cardRenderSig===sig)return false;
+    if(!list.length){
+      host.innerHTML=emptyHtml;
+      host.dataset.cardRenderSig=sig;
+      return true;
+    }
+    const existing=new Map();
+    host.querySelectorAll("article.cr-item-card[data-item-id]").forEach(node=>{
+      existing.set(node.dataset.itemId,node);
+    });
+    const frag=document.createDocumentFragment();
+    for(const item of list){
+      const id=String(item.id||"");
+      const itemSig=itemCardRenderSig(item);
+      let node=existing.get(id);
+      if(node&&node.dataset.cardRenderSig===itemSig){
+        existing.delete(id);
+        frag.appendChild(node);
+        continue;
+      }
+      const wrap=document.createElement("div");
+      wrap.innerHTML=itemCard(item);
+      node=wrap.querySelector("article.cr-item-card");
+      if(!node){
+        host.innerHTML=list.map(i=>itemCard(i)).join("")||emptyHtml;
+        host.dataset.cardRenderSig=sig;
+        return true;
+      }
+      node.dataset.itemId=id;
+      node.dataset.cardRenderSig=itemSig;
+      existing.delete(id);
+      frag.appendChild(node);
+    }
+    host.replaceChildren(frag);
+    host.dataset.cardRenderSig=sig;
+    return true;
+  }
   cardPhoto=function(i){
-    const src=(i.originalPhotoThumbnails||i.originalPhotos||[])[0];
+    const src=cardPhotoSrc(i);
     if(!src)return `<div class="cr-card-photo empty">NO PHOTO</div>`;
     return src.startsWith("seed://")?`<div class="cr-card-photo">${seedThumb(src)}</div>`:`<img class="cr-card-photo" src="${src}" alt="Issue evidence" loading="lazy" decoding="async" width="284" height="216">`;
   };
@@ -1429,6 +1499,18 @@
 
   let homeInsightsOpen=false;
   window.toggleHomeInsights=function(){homeInsightsOpen=!homeInsightsOpen;render();if(homeInsightsOpen)setTimeout(()=>$("#homeInsightsToggle")?.scrollIntoView({behavior:"smooth",block:"start"}),0)};
+  function homeNextItems(){
+    const p=state.settings.activeProject,items=state.items.filter(i=>i.project===p);
+    const active=items.filter(i=>!["closed","complete"].includes(i.status));
+    return active.sort((a,b)=>(overdue(a)?0:a.status==="ready_for_review"?1:a.status==="open"?2:3)-(overdue(b)?0:b.status==="ready_for_review"?1:b.status==="open"?2:3)||a.dueDate.localeCompare(b.dueDate)).slice(0,4);
+  }
+  function homeNextEmptyMarkup(){
+    const p=state.settings.activeProject;
+    return `<div class="native-card empty">✓<br><b>All clear on ${esc(p)}</b><br>Nothing open right now.</div>`;
+  }
+  function refreshHomeNextCards(){
+    paintItemCards($("#homeNextList"),homeNextItems(),{emptyHtml:homeNextEmptyMarkup()});
+  }
   dashboardView=function(){
     // Stat chips and closeout KPIs use local state; walk Save+Next may lag until reload() or opening Home.
     const p=state.settings.activeProject,items=state.items.filter(i=>i.project===p),today=new Date().toISOString().slice(0,10);
@@ -1439,12 +1521,11 @@
     const safeQuery=(value)=>encodeURIComponent(value||"");
     const perfRow=(r)=>{const pct=r.total?Math.round(r.closed/r.total*100):0;return `<button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(r.name)}'))"><span><strong>${esc(r.name)}</strong><small>${r.open} open · ${r.closed}/${r.total} closed${r.overdue?` · ${r.overdue} overdue`:""}</small></span><span class="dashboard-score">${pct}%</span><span class="dashboard-bar"><span style="width:${pct}%"></span></span></button>`};
     const schedule=todayDue.length?todayDue.slice(0,4).map(i=>`<button class="schedule-item" onclick="showItem('${i.id}')"><b>${esc(i.code)} · ${esc(i.trade||"No trade")}</b><small>${esc([i.building,i.level,i.unit,i.room].filter(Boolean).join(" · ")||"No location")} · ${esc(i.subcontractor||"Unassigned")}</small></button>`).join(""):`<div class="schedule-item"><b>No items due today</b><small>Good breathing room — keep capture moving.</small></div>`;
-    const next=active.sort((a,b)=>(overdue(a)?0:a.status==="ready_for_review"?1:a.status==="open"?2:3)-(overdue(b)?0:b.status==="ready_for_review"?1:b.status==="open"?2:3)||a.dueDate.localeCompare(b.dueDate)).slice(0,4);
     const insightsBody=`<section class="native-card dashboard-hero"><div class="spread"><div><h2>Closeout control room</h2><p class="meta">Live subcontractor, trade and schedule performance for ${esc(p)}.</p></div><button class="btn alt small" onclick="openHomeBucket('all')">All items</button></div><div class="gamify-strip"><span><b>${closeoutPct}%</b> closeout rate</span><span><b>${activityPct}%</b> activity today</span><span><b>${topSub?esc(topSub.name):"—"}</b> most open defects</span></div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Subcontractor performance</h3>${subPerf.length?subPerf.map(perfRow).join(""):`<p class="meta">No subcontractor assignments yet.</p>`}</div><div class="dashboard-panel"><h3>Trade pressure</h3>${tradePerf.length?tradePerf.map(perfRow).join(""):`<p class="meta">No trade data yet.</p>`}</div></section><section class="dashboard-board"><div class="dashboard-panel"><h3>Today's schedule</h3><div class="dashboard-schedule">${schedule}</div></div><div class="dashboard-panel"><h3>Quick focus</h3><button class="dashboard-row" onclick="openDashboardSearch(decodeURIComponent('${safeQuery(topTrade?.name||"")}'))"><span><strong>${topTrade?esc(topTrade.name):"No trade pressure"}</strong><small>Highest open trade workload</small></span><span class="dashboard-score">${topTrade?topTrade.open:0}</span></button><button class="dashboard-row" onclick="go('reports')"><span><strong>${closed.length}/${assigned.length||items.length} closed</strong><small>Closeout progress across assigned work</small></span><span class="dashboard-score">${closeoutPct}%</span></button></div></section>`;
     const insightsToggle=`<button type="button" id="homeInsightsToggle" class="native-card insights-toggle${homeInsightsOpen?" open":""}" onclick="toggleHomeInsights()" aria-expanded="${homeInsightsOpen?"true":"false"}" aria-controls="homeInsights"><span><b>Project insights</b><small>Closeout control room · subcontractor & trade performance · today's schedule</small></span><span class="chev">${homeInsightsOpen?"⌃":"›"}</span></button>`;
     const insights=`${insightsToggle}<div id="homeInsights" class="home-insights" ${homeInsightsOpen?"":"hidden"}>${homeInsightsOpen?insightsBody:""}</div>`;
     const commandBar=(typeof commandHomeBar==="function"&&matchMedia("(min-width:1024px)").matches)?commandHomeBar():"";
-    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" type="button" onclick="go('items')" aria-label="Search items">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button>${commandBar}<div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list">${next.map(itemCard).join("")||`<div class="native-card empty">✓<br><b>All clear on ${esc(p)}</b><br>Nothing open right now.</div>`}</div>${insights}</div>`;
+    return `<header class="screen-header rounded"><div class="header-row"><div class="logo-box">CLEANRUN <span style="color:#16a34a">IQ</span></div><button class="circle-btn" type="button" onclick="go('items')" aria-label="Search items">⌕</button></div><button class="project-selector" onclick="projectPicker()"><span><small>Active project</small><b>${esc(p)}</b></span><span>⌄</span></button><div class="sync">All changes synced</div></header><div class="screen-scroll home-dashboard"><button class="capture-cta" onclick="go('capture')"><span class="plus">+</span><span><b>Capture Item</b><small>Photo, voice-to-note or walk capture</small></span><span class="chev">›</span></button>${commandBar}<div class="dashboard-kpis"><button class="dashboard-kpi" onclick="openHomeBucket('open')"><b>${items.filter(i=>i.status==="open").length}</b><span>Captured</span><small>awaiting issue</small></button><button class="dashboard-kpi" onclick="openHomeBucket('issued')"><b>${issued.length}</b><span>Issued</span><small>with subcontractors</small></button><button class="dashboard-kpi" onclick="openHomeBucket('attention')"><b>${overdueItems.length}</b><span>Overdue</span><small>needs attention</small></button><button class="dashboard-kpi" onclick="openHomeBucket('ready')"><b>${ready.length}</b><span>Ready</span><small>to inspect</small></button></div><div class="section-head"><h2>Next to deal with</h2><button onclick="go('items')">View all</button></div><div class="list" id="homeNextList"></div>${insights}</div>`;
   };
 
   const commandDashboardView=dashboardView;
@@ -1595,6 +1676,7 @@
     if(!app||!nav)return;
     if(route==="review"){app.innerHTML=reviewView();nav.innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();updateNotifyChip();return}
     originalRender();renderMobileNav();renderDesktopNav();
+    if(route==="home")refreshHomeNextCards();
     if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
     mountQuickCaptureFab();
     labelIconButtons();
@@ -1672,7 +1754,7 @@
   window.setItemFocusValue=function(value){itemFocusValue=value;const [mode]=focusTokenParts();if(mode)itemFocusMode=mode;filterItems()};
   const focusedItemsView=itemsView;
   itemsView=function(){const cfg=state.settings.projectConfigs?.[state.settings.activeProject]||{};itemProjectScope=cfg.itemsProjectScope||itemProjectScope||"active";itemFocusMode=cfg.itemsFocusMode||itemFocusMode||"level";return focusedItemsView()};
-  filterItems=function(){const search=$("#search");if(!search)return;const q=search.value.toLowerCase();const [focusMode,focusValue]=focusTokenParts();const list=state.items.filter(i=>{const focusMatch=!focusValue||String(i[focusMode]||"")===focusValue;return scopeMatches(i)&&(!itemBuildingValue||i.building===itemBuildingValue)&&focusMatch&&(itemTypeFilter==="all"||i.type===itemTypeFilter)&&statusMatch(i,itemStatusFilter)&&(!q||itemSearchHaystack(i).includes(q))}).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$("#itemCount").textContent=`${list.length} item${list.length===1?"":"s"}`;$("#itemList").innerHTML=list.map(itemCard).join("")||'<div class="empty">No items match<br><span class="meta">Try a different project, building, focus area or capture a new item.</span></div>'};
+  filterItems=function(){const search=$("#search");if(!search)return;const q=search.value.toLowerCase();const [focusMode,focusValue]=focusTokenParts();const list=state.items.filter(i=>{const focusMatch=!focusValue||String(i[focusMode]||"")===focusValue;return scopeMatches(i)&&(!itemBuildingValue||i.building===itemBuildingValue)&&focusMatch&&(itemTypeFilter==="all"||i.type===itemTypeFilter)&&statusMatch(i,itemStatusFilter)&&(!q||itemSearchHaystack(i).includes(q))}).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$("#itemCount").textContent=`${list.length} item${list.length===1?"":"s"}`;paintItemCards($("#itemList"),list,{emptyHtml:'<div class="empty">No items match<br><span class="meta">Try a different project, building, focus area or capture a new item.</span></div>'})};
   window.saveItemsProjectScope=async function(scope){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsProjectScope=scope;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items project scope saved")};
   window.saveItemsFocusMode=async function(mode){const s=structuredClone(state.settings),project=s.activeProject,cfg=s.projectConfigs[project]||{};cfg.itemsFocusMode=mode;s.projectConfigs[project]=cfg;await api("/api/settings",{method:"POST",body:JSON.stringify({projectConfigs:s.projectConfigs})});await reload();route="setup";render();toast("Items focus saved")};
   const setupWithFocus=setupView;
@@ -1807,8 +1889,7 @@
     if(wasWalk&&!walkMode&&notifyQueue.length)openNotifyQueue();
   };
 
-  function rerenderLatestHome(){if(typeof state!=="undefined"&&state&&route==="home")render()}
-  ensureWorkbench();supportsImageBitmapOrientation().catch(()=>{});updateOfflinePill();setTimeout(rerenderLatestHome,0);setTimeout(rerenderLatestHome,250);window.addEventListener("load",rerenderLatestHome);initialiseOfflineStore();
+  ensureWorkbench();supportsImageBitmapOrientation().catch(()=>{});updateOfflinePill();initialiseOfflineStore();
   async function bootWorkspace(){
     if(typeof loadAuthConfig==="function")await loadAuthConfig();
     const routeParam=new URLSearchParams(location.search).get("route");
@@ -1817,8 +1898,8 @@
     const cached=await dbGet(CACHE_KEY);
     if(cached?.settings){
       state=cached;
+      // Skip cached paint for list routes — reload replaces it immediately and was wiping in-flight thumbnails.
       if(route==="capture")render();
-      else if(route!=="home")render();
     }
     try{
       await reload({scope:"active",photos:"lazy"});
