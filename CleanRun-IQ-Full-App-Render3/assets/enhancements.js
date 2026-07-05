@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards58";
-  document.documentElement.dataset.cleanrunBuild="cards58";
+  window.CLEANRUN_FRONTEND_BUILD="cards59";
+  document.documentElement.dataset.cleanrunBuild="cards59";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -46,14 +46,30 @@
   const PHOTO_SKIP_BYTES=900000;
   const CAPTURE_DUE_DAYS=7;
 
-  function defaultCaptureDueDate(){
-    const cfg=state?.settings?.projectConfigs?.[state?.settings?.activeProject]||{};
+  function localIsoDate(date=new Date()){
+    const y=date.getFullYear();
+    const m=String(date.getMonth()+1).padStart(2,"0");
+    const d=String(date.getDate()).padStart(2,"0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function defaultCaptureDueDate(projectName){
+    const project=projectName||state?.settings?.activeProject;
+    const cfg=state?.settings?.projectConfigs?.[project]||{};
     const days=Number(cfg.defaultDueDays??cfg.default_due_days??CAPTURE_DUE_DAYS)||CAPTURE_DUE_DAYS;
     const due=new Date();
     due.setDate(due.getDate()+days);
-    return due.toISOString().slice(0,10);
+    return localIsoDate(due);
   }
   window.defaultCaptureDueDate=defaultCaptureDueDate;
+
+  function ensureCaptureDueDate(form,projectName){
+    form=form||$("#app form");
+    if(!form?.elements?.dueDate)return;
+    const project=projectName||form.elements.project?.value||state?.settings?.activeProject;
+    form.elements.dueDate.value=defaultCaptureDueDate(project);
+  }
+  window.ensureCaptureDueDate=ensureCaptureDueDate;
 
   const yieldToMain=()=>new Promise(resolve=>{
     if(typeof requestAnimationFrame==="function")requestAnimationFrame(()=>setTimeout(resolve,0));
@@ -318,6 +334,7 @@
       await api("/api/settings",{method:"POST",body:JSON.stringify({activeProject:next})});
       await reload({scope:"active",photos:"lazy"});
       refreshStateBackground();
+      if(route==="capture")applyCaptureDefaults();
       toast(`Switched to ${next}`);
     }catch(err){
       if(previous)state.settings.activeProject=previous;
@@ -541,6 +558,7 @@
     updateCaptureDefaultsStrip();
     if(el?.name==="type"){photoHint?.();toggleRaised?.()}
     if(["building","level","unit","room"].includes(el?.name))updateLocationChip?.();
+    if(el?.name==="project")ensureCaptureDueDate($("#app form"),el.value);
   };
   function expandCaptureSectionForInvalid(form){
     const invalid=[...form.elements].find(el=>el.name&&!el.validity.valid);
@@ -565,11 +583,12 @@
     label?.classList?.add("capture-field-invalid");
     setTimeout(()=>label?.classList?.remove("capture-field-invalid"),2200);
   }
-  function buildCaptureDefaultsPanel(s,cfg,due){
+  function buildCaptureDefaultsPanel(s,cfg){
     const defaults=captureDefaultValues();
     const expanded=shouldExpandCaptureDefaults();
     const detailsClass=expanded?"":" hidden";
     const collapseHidden=expanded?"":" hidden";
+    const due=defaultCaptureDueDate();
     return `<section class="form-panel capture-form-panel"><div class="capture-defaults-strip-row"><button type="button" class="capture-defaults-strip" id="captureDefaultsStrip" onclick="expandCaptureDefaultsSections()" aria-expanded="${expanded}"><span id="captureDefaultsStripText" class="capture-defaults-strip__text">Set task, location and assignment</span></button><button type="button" class="capture-defaults-collapse btn alt small"${collapseHidden} id="captureDefaultsCollapse" onclick="collapseCaptureDefaultsSections()" aria-label="Collapse task, location and assignment">Collapse</button></div><div id="captureDefaultsDetails" class="capture-defaults-details${detailsClass}"><div class="form-group" data-capture-section="task"><h3>Task</h3><div class="field-list"><label>Item type<select name="type" id="capType" onchange="onCaptureFieldChange(this)"><option value="defect" ${defaults.type==="defect"?"selected":""}>Defect</option><option value="incomplete" ${defaults.type==="incomplete"?"selected":""}>Incomplete Work</option><option value="client" ${defaults.type==="client"?"selected":""}>Client Defect</option></select></label><label id="raisedField" hidden>Raised by *<select name="raisedBy" onchange="onCaptureFieldChange(this)"><option value="">Who raised this?</option>${options(["Client PM","Superintendent","Consultant","Architect","Buyer","Other"])}</select></label><label>Priority<select name="priority" onchange="onCaptureFieldChange(this)"><option value="high" ${defaults.priority==="high"?"selected":""}>High</option><option value="urgent" ${defaults.priority==="urgent"?"selected":""}>Urgent</option></select></label></div></div><div class="form-group" data-capture-section="location"><h3>Location</h3><div class="field-list"><label>Project<select name="project" onchange="onCaptureFieldChange(this)">${options(s.projects,defaults.project||s.activeProject)}</select></label><label>Building *<select name="building" required onchange="onCaptureFieldChange(this)"><option value="">Select building</option>${selectOptionsWithRecents("building",cfg.buildings||[],defaults.building)}</select></label><label>Level<select name="level" onchange="onCaptureFieldChange(this)"><option value="">Select level</option>${selectOptionsWithRecents("level",cfg.levels||[],defaults.level)}</select></label><label>Unit / Area<select name="unit" onchange="onCaptureFieldChange(this)"><option value="">Select unit / area</option>${selectOptionsWithRecents("unit",cfg.units||[],defaults.unit)}</select></label><label>Room / Location<select name="room" onchange="onCaptureFieldChange(this)"><option value="">Select room / location</option>${selectOptionsWithRecents("room",cfg.rooms||[],defaults.room)}</select></label></div></div><div class="form-group" data-capture-section="assign"><h3>Assign</h3><div class="field-list"><label>Trade<select name="trade" onchange="onCaptureFieldChange(this)"><option value="">Select trade</option>${selectOptionsWithRecents("trade",trades,defaults.trade)}</select></label><label>Subcontractor<select name="subcontractor" onchange="onCaptureFieldChange(this)"><option value="">Select subcontractor</option>${selectOptionsWithRecents("subcontractor",s.subcontractors,defaults.subcontractor)}</select></label><label>Due date<input type="date" name="dueDate" value="${due}" required onchange="onCaptureFieldChange(this)"></label></div></div></div><div class="form-group capture-description-group"><h3>Description</h3><textarea name="description" required placeholder="Short, specific. e.g. Cracked tile under vanity, replace and regrout."></textarea></div></section>`;
   }
   function wireCaptureDefaultsForm(){
@@ -656,7 +675,7 @@
       const value=defaults[key]||(key==="building"?cfg.buildings?.[0]:key==="unit"?cfg.units?.[0]:key==="level"?cfg.levels?.[0]:"");
       if(value&&form.elements[key])form.elements[key].value=value;
     }
-    if(form.elements.dueDate)form.elements.dueDate.value=defaultCaptureDueDate();
+    ensureCaptureDueDate(form);
     photoHint?.();toggleRaised?.();
     updateCaptureDefaultsStrip?.();
   }
@@ -1163,8 +1182,6 @@
   captureView=function(){
     const s=state.settings;
     const cfg=s.projectConfigs[s.activeProject]||{};
-    const days=Number(cfg.defaultDueDays??7)||7;
-    const due=(typeof defaultCaptureDueDate==="function"?defaultCaptureDueDate():new Date(Date.now()+days*86400000).toISOString().slice(0,10));
     const walkBanner=walkMode?`<div class="walk-session-banner">Walk mode · ${walkCount} captured this walk · next save loops back here</div>`:"";
     let html=originalCaptureView()
       .replace("<section class=\"form-card\"><div class=\"form-card-title\">Photo Evidence</div>", "<section class=\"form-card\" data-photo-card=\"true\"><div class=\"spread\"><div class=\"form-card-title\">Photo Evidence</div><span class=\"photo-count\" id=\"photoCount\">No photos attached yet</span></div>")
@@ -1173,7 +1190,7 @@
       .replace('onclick="walkMode=!walkMode;render()"','onclick="toggleWalkCapture()"')
       .replace(">Walk Capture</button>",'>Walk mode</button>')
       .replace("</header><form onsubmit=\"saveCapture(event)\">",`${walkBanner}</header><form onsubmit="saveCapture(event)">`)
-      .replace(/<section class="form-panel">[\s\S]*?<\/section>/,buildCaptureDefaultsPanel(s,cfg,due));
+      .replace(/<section class="form-panel">[\s\S]*?<\/section>/,buildCaptureDefaultsPanel(s,cfg));
     setTimeout(()=>{applyCaptureDefaults();renderCapturePreviews();wireCaptureDefaultsForm()},0);
     return html;
   };
@@ -1245,7 +1262,7 @@
       return fail(invalid?.validationMessage||"Please complete the required fields.");
     }
     rememberCaptureFields(data);
-    data.dueDate=defaultCaptureDueDate();
+    data.dueDate=defaultCaptureDueDate(data.project||state.settings.activeProject);
     if(data.type==="client"&&!data.raisedBy){expandCaptureSectionForNames(["raisedBy"]);return fail("A Client Defect requires a Raised By / source.")}
     if(requireOriginalPhoto(data)){focusPhotoEvidence();return fail("Attach original photo evidence, or change Item Type to Incomplete Work.")}
     if(mode==="issue"&&(!data.trade||!data.subcontractor)){
@@ -1737,7 +1754,7 @@
     if(route==="review"){app.innerHTML=reviewView();nav.innerHTML="";renderMobileNav();renderDesktopNav();labelIconButtons();updateOfflinePill();updateNotifyChip();return}
     originalRender();renderMobileNav();renderDesktopNav();
     if(route==="home")refreshHomeNextCards();
-    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews()}
+    if(route==="capture"){const photoCard=$("#capturePreviews")?.closest("section");photoCard?.setAttribute("data-photo-card","true");const host=$("#capturePreviews");if(host&&host.childElementCount!==capturePhotos.length)renderCapturePreviews();setTimeout(()=>{applyCaptureDefaults();wireCaptureDefaultsForm()},0)}
     mountQuickCaptureFab();
     labelIconButtons();
     updateOfflinePill();
