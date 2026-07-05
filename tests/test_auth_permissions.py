@@ -147,8 +147,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards55", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards55", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards57", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards57", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_state_scope_active_returns_only_active_project(self) -> None:
@@ -253,6 +253,32 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertEqual(payload["createdBy"], "site.manager@cleanrun.local")
         self.assertEqual(payload["auditEvents"][0]["user_id"], "dev-site-manager")
         self.assertEqual(payload["auditEvents"][0]["email"], "site.manager@cleanrun.local")
+
+    def test_multi_project_report_denies_unauthorized_project(self) -> None:
+        allowed = self.client.get(
+            "/api/reports/register?project=Jura%20Noosa&project=Meta%20Street",
+            headers=bearer("dev-site-manager"),
+        )
+        denied = self.client.get(
+            "/api/reports/register?project=Jura%20Noosa&project=Other%20Project",
+            headers=bearer("dev-other-company"),
+        )
+
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(denied.status_code, 403)
+
+    def test_multi_project_report_includes_project_headings(self) -> None:
+        self.create_direct_item(project="Meta Street", subcontractor="ASTW Tiling")
+        response = self.client.get(
+            "/api/reports/register?project=Jura%20Noosa&project=Meta%20Street",
+            headers=bearer("dev-site-manager"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("2 projects", response.text)
+        self.assertIn('class="project-heading"', response.text)
+        self.assertIn("Jura Noosa", response.text)
+        self.assertIn("Meta Street", response.text)
 
     def test_reports_require_project_access(self) -> None:
         with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
