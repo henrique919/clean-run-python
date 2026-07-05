@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from threading import RLock
@@ -29,7 +30,7 @@ from app.models import (
 )
 from app.config import is_production
 from app.store import CleanRunStore, seed_data, seed_settings
-from app.storage import normalize_photo
+from app.storage import normalize_photo, reset_upload_timing_ms, read_upload_timing_ms
 from app.supabase_client import get_supabase_client
 from app.validation import validate_capture
 
@@ -459,7 +460,12 @@ class SupabaseCleanRunStore(CleanRunStore):
         location_id = self._ensure_location(company_id, project_id, item)
         subcontractor_id = self._ensure_subcontractor(company_id, project_id, item)
         db_item_id = _item_db_id(item)
+        reset_upload_timing_ms()
+        normalize_started = time.perf_counter()
         item = self._with_storage_photos(item)
+        normalize_total_ms = (time.perf_counter() - normalize_started) * 1000
+        storage_upload_ms = read_upload_timing_ms()
+        normalize_photos_ms = max(normalize_total_ms - storage_upload_ms, 0.0)
         row = {
             "id": db_item_id,
             "company_id": company_id,
@@ -491,8 +497,20 @@ class SupabaseCleanRunStore(CleanRunStore):
             "updated_at": item.updated_at,
             "payload": item.model_dump(mode="json"),
         }
+        db_started = time.perf_counter()
         self.client.table("items").upsert(row, on_conflict="id").execute()
+        db_upsert_ms = (time.perf_counter() - db_started) * 1000
+        sync_started = time.perf_counter()
         self._sync_item_photos(company_id, project_id, db_item_id, item)
+        sync_photos_ms = (time.perf_counter() - sync_started) * 1000
+        logger.info(
+            "item_upsert_timing item_id=%s normalize_photos=%.1fms storage_upload=%.1fms db_upsert=%.1fms sync_photos=%.1fms",
+            db_item_id,
+            normalize_photos_ms,
+            storage_upload_ms,
+            db_upsert_ms,
+            sync_photos_ms,
+        )
         self._upsert_comments(company_id, project_id, db_item_id, item)
         self._upsert_audit_events(company_id, project_id, db_item_id, item)
         return db_item_id

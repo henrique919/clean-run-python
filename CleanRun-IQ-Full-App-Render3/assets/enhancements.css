@@ -574,3 +574,99 @@ body[data-route="capture"].walk-mode .notify-chip{display:none}
 .insights-toggle .chev{font-size:18px;color:#5B6770}
 .home-insights{margin-top:10px}
 .home-insights[hidden]{display:none}
+
+/* cards58: More menu layout, report scope picker, save busy states */
+.menu-row{
+  display:grid;
+  grid-template-columns:32px minmax(0,1fr) auto;
+  align-items:center;
+  gap:12px;
+  width:100%;
+  text-align:left;
+}
+.menu-row .menu-icon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:32px;
+  flex:0 0 32px;
+  font-size:18px;
+  line-height:1;
+}
+.menu-row > span:nth-child(2){
+  min-width:0;
+}
+.menu-row b,.menu-row small{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.menu-row .chev{
+  flex:0 0 auto;
+  margin-left:0;
+}
+.report-scope-card h2{
+  font-size:15px;
+  margin:0 0 10px;
+}
+.report-scope-options{
+  display:grid;
+  gap:8px;
+}
+.report-scope-option{
+  display:grid;
+  grid-template-columns:18px minmax(0,1fr);
+  gap:10px;
+  align-items:start;
+  padding:10px 12px;
+  border:1px solid var(--line,#DDE3E8);
+  border-radius:10px;
+  background:#fff;
+  cursor:pointer;
+}
+.report-scope-option.is-active{
+  border-color:#20C55E;
+  background:#F3FBF6;
+}
+.report-scope-option input{
+  margin-top:3px;
+}
+.report-scope-copy{
+  display:grid;
+  gap:2px;
+  min-width:0;
+}
+.report-scope-copy strong{
+  font-size:13px;
+  line-height:1.25;
+}
+.report-scope-copy small{
+  color:#5B6770;
+  font-size:11px;
+  line-height:1.35;
+}
+.report-scope-picker{
+  display:grid;
+  gap:6px;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid var(--line,#DDE3E8);
+}
+.report-scope-picker[hidden]{
+  display:none;
+}
+.report-scope-check{
+  display:grid;
+  grid-template-columns:18px minmax(0,1fr);
+  gap:10px;
+  align-items:center;
+  font-size:13px;
+}
+.report-scope-check input{
+  margin:0;
+}
+button.is-busy,.btn.is-busy{
+  opacity:.82;
+  cursor:wait;
+}
