@@ -216,7 +216,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
   background:#DDE1E5!important;
   text-transform:none;
 }
-.cr-item-card.status-captured{--rail:#fff}
+.cr-item-card.status-captured{--rail:#B8C0C8}
 .cr-item-card.status-issued{--rail:var(--status-issued)}
 .cr-item-card.status-in_progress{--rail:var(--status-progress)}
 .cr-item-card.status-overdue{--rail:var(--status-risk)}
@@ -229,7 +229,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .cr-card-status.closed{background:var(--status-closed)!important;border-color:var(--status-closed)!important}
 .cr-card-status.issued{background:var(--status-issued)!important;border-color:var(--status-issued)!important;color:#121619!important}
 .cr-card-status.rejected{background:var(--status-risk)!important;border-color:var(--status-risk)!important;color:#fff!important}
-.badge.captured{background:#ECEFF2;color:#344054;border:1px solid #D0D5DD}
+.badge.captured{background:#F4F6F8;color:#52606D;border:1px solid #DDE3E8}
 .badge.issued{background:#FFF4DF;color:#8A5A00;border:1px solid #F0D7A4}
 .badge.in_progress{background:#FFF0E0;color:#9A4A00;border:1px solid #F0D0A8}
 .badge.ready{background:#E8F0FF;color:#1D4ED8;border:1px solid #BFD4FF}
@@ -252,7 +252,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .cr-card-copy{display:grid;gap:5px;min-width:0;align-self:stretch}
 .cr-card-code{font-size:15px;font-weight:950;letter-spacing:.02em;color:#fff}
 .cr-card-status{border-radius:6px!important;font-size:10.5px!important;letter-spacing:.09em;white-space:nowrap;background:var(--rail)!important;color:#fff!important;border:1px solid var(--rail)}
-.cr-card-status.captured{color:#121619!important;border-color:#D0D5DD}
+.cr-card-status.captured{background:#F4F6F8!important;color:#52606D!important;border-color:#DDE3E8!important}
 .cr-card-type{background:#2A3037;color:#D8DEE6;border-radius:6px;padding:2px 7px;font-size:10.5px;font-weight:850;letter-spacing:.03em}
 .cr-card-location{font-size:12px;font-weight:950;letter-spacing:.08em;color:#344054;text-transform:uppercase}
 .cr-card-desc{text-transform:none!important;font-size:15px;font-weight:600;line-height:1.25;color:#121619;margin:1px 0 7px}
