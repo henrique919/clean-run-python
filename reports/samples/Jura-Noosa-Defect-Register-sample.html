@@ -1,0 +1,360 @@
+<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Project Defect Register</title><style>
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@page{size:A4 portrait;margin:11mm 11mm 14mm}
+@page{@bottom-left{content:"CleanRun IQ · Jura Noosa · Project Defect Register";font:800 8px/1.2 Inter,Arial,sans-serif;color:#69747D;letter-spacing:.2px}@bottom-right{content:"Page " counter(page);font:800 8px/1.2 Inter,Arial,sans-serif;color:#69747D}}
+@page:first{margin-bottom:11mm;@bottom-left{content:none}@bottom-right{content:none}}
+body{font-family:Inter,Arial,sans-serif;color:#161A1D;margin:0;background:#ECEFF2;font-size:11px;line-height:1.35}
+.report-actions{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;align-items:center;gap:10px;max-width:210mm;margin:0 auto;padding:2px 11mm;background:#ECEFF2;font-size:9px;line-height:24px}
+.report-actions button{border:0;background:transparent;color:#69747D;padding:0;font-weight:700;font-size:9px;cursor:pointer;text-decoration:underline;height:24px;line-height:24px}
+.report-actions button.share{color:#1A2332}
+.report-actions button.print{color:#0B6E36;text-decoration:none}
+.report-shell{max-width:210mm;margin:0 auto;background:#fff;border:1px solid #D5DCE3;padding:7mm 10mm 6mm}
+.title-block{border-bottom:2px solid #20C55E;padding-bottom:4px;margin-bottom:5px;max-height:28mm;overflow:hidden}
+.title-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start}
+.brand-col{min-width:0}
+.logo{display:flex;align-items:center;gap:6px}
+.mark{width:22px;height:22px;flex:0 0 auto}
+.mark svg{width:22px;height:22px;display:block}
+.word,h1,h2,h3,.code,.num{font-family:Archivo,Arial,sans-serif}
+.word{font-size:14px;font-weight:800;line-height:1;white-space:nowrap}
+.word b{color:#20C55E}
+.tag{color:#69747D;font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;margin-top:2px;line-height:1.15}
+.title-col{min-width:0;padding-top:1px}
+h1{margin:0;font-size:17px;line-height:1.02;color:#1A2332;font-weight:800}
+.report-type{color:#52606D;font-size:9px;font-weight:700;margin-top:2px;line-height:1.2}
+.meta-col{text-align:right;font-size:8px;line-height:1.3;color:#52606D;min-width:96px}
+.meta-col strong{display:block;color:#161A1D;font-size:9px;margin-bottom:1px}
+.meta-kv{margin-top:0}
+.meta-kv .k{color:#8B929C;font-weight:700;text-transform:uppercase;font-size:6px;letter-spacing:.3px}
+.meta-kv .v{color:#161A1D;font-weight:700}
+.summary-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin-top:5px}
+.stat{background:#F7F9FA;border:1px solid #DDE3E8;border-left:2px solid #52606D;padding:3px 4px;border-radius:3px;min-width:0}
+.stat-total{border-left-color:#1A2332}
+.stat-closed{border-left-color:#18A94F}
+.stat-issued{border-left-color:#C27803}
+.stat-ready{border-left-color:#1D4ED8}
+.stat-overdue{border-left-color:#B42318}
+.num{font-size:14px;font-weight:800;line-height:1;color:#161A1D}
+.lbl{font-size:6px;color:#69747D;text-transform:uppercase;letter-spacing:.3px;font-weight:800;margin-top:1px;line-height:1.1}
+.doc-note{color:#8B929C;font-size:8px;margin:0 0 5px;line-height:1.25}
+.report-section{margin-top:8px}
+.group h3{color:#1A2332;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.35px;border-bottom:1px solid #C8D0D8;padding-bottom:2px;margin:6px 0 3px}
+.item{border:1px solid #D5DCE3;border-left:3px solid #B8C0C8;border-radius:3px;padding:4px 5px;margin-top:3px;background:#fff}
+.item.status-closed,.item.status-complete{border-left-color:#18A94F}
+.item.status-rejected{border-left-color:#B42318}
+.item.status-ready-for-review,.item.status-under-inspection{border-left-color:#1D4ED8}
+.item.status-overdue{border-left-color:#B42318}
+.item.status-issued{border-left-color:#D99A21}
+.item.status-in-progress{border-left-color:#C27803}
+.item.status-open{border-left-color:#8B929C}
+.item-head{display:flex;justify-content:space-between;gap:6px;align-items:flex-start}
+.item-head-main{display:flex;align-items:flex-start;gap:6px;min-width:0;flex:1}
+.code{font-size:12px;font-weight:800;line-height:1;color:#1A2332}
+.type{color:#69747D;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+.status-badge{font-size:7px;font-weight:900;padding:2px 5px;border:1px solid #DDE3E8;background:#F4F6F8;text-transform:uppercase;border-radius:999px;white-space:nowrap;flex:0 0 auto}
+.status-badge.status-open{background:#F4F6F8;color:#52606D;border-color:#DDE3E8}
+.status-badge.status-ready-for-review,.status-badge.status-under-inspection{background:#E8F0FF;color:#1D4ED8;border-color:#BFD4FF}
+.status-badge.status-in-progress{background:#FFF0E0;color:#9A4A00;border-color:#F0D0A8}
+.status-badge.status-overdue{background:#FDECEC;color:#8B1E1E;border-color:#F5C2C2}
+.status-badge.status-closed,.status-badge.status-complete{background:#EAFBF1;color:#0B6E36;border-color:#BFE8D0}
+.status-badge.status-issued{background:#FFF4DF;color:#8A5A00;border-color:#F0D7A4}
+.status-badge.status-rejected{background:#FDECEC;color:#8B1E1E;border-color:#F5C2C2}
+.priority-badge{font-size:7px;font-weight:900;padding:2px 5px;border:1px solid #DDE3E8;text-transform:uppercase;border-radius:999px;white-space:nowrap;flex:0 0 auto;align-self:flex-start}
+.priority-badge.priority-high{background:#F4F6F8;color:#52606D;border-color:#DDE3E8}
+.priority-badge.priority-urgent{background:#FDECEC;color:#8B1E1E;border-color:#F5C2C2}
+.register-line{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;color:#52606D;font-size:8px;margin-top:4px}
+.register-line span{background:#F7F9FA;border:1px solid #E4E9ED;padding:2px 4px;border-radius:2px;line-height:1.2}
+.meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:3px}
+.meta-cell{background:#F7F9FA;border:1px solid #E4E9ED;border-radius:2px;padding:2px 4px;min-width:0}
+.meta-label{display:block;font-size:6px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#8B929C;line-height:1.05}
+.meta-value{display:block;font-size:9px;font-weight:700;color:#161A1D;line-height:1.2;margin-top:0}
+.desc{font-size:10px;margin:2px 0 3px;line-height:1.32;color:#161A1D}
+.evidence-matrix{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:3px}
+.evidence-col{min-width:0;border:1px solid #E4E9ED;border-radius:3px;padding:3px;background:#FAFBFC}
+.evidence-col-head{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.3px;color:#52606D;margin:0 0 2px;padding-bottom:2px;border-bottom:1px solid #DDE3E8}
+.evidence-col.original-col .evidence-col-head{border-bottom-color:#1A2332;color:#1A2332}
+.evidence-col.closeout-col .evidence-col-head{border-bottom-color:#18A94F;color:#0B6E36}
+.rect-stage-note{font-size:8px;color:#69747D;margin-top:5px;padding-top:4px;border-top:1px dashed #DDE3E8;line-height:1.3}
+.evidence-pack{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+.evidence-block{break-inside:avoid;page-break-inside:avoid}
+.evidence-block.is-empty{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px;padding:1px 0}
+.evidence-block.is-empty .evidence-title{margin:0;padding:0;border:0;display:inline;flex:0 0 auto}
+.evidence-block.is-empty .evidence-empty{padding:0;border:0;background:transparent;font-size:8px;display:inline;color:#8B929C}
+.evidence-title{color:#69747D;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.4px;margin:0 0 4px;padding-bottom:3px;border-bottom:1px solid #DDE3E8}
+.evidence-block.original .evidence-title{border-bottom-color:#1A2332}
+.evidence-block.rectification .evidence-title{border-bottom-color:#C27803}
+.evidence-block.closeout .evidence-title{border-bottom-color:#18A94F}
+.project-block{margin-top:14px;break-inside:avoid;page-break-inside:avoid}
+.project-heading{font-size:15px;color:#1A2332;border-bottom:2px solid #20C55E;padding-bottom:4px;margin:0 0 8px;font-weight:800}
+.photo-stack{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start}
+.photo-stack.multi .photo{flex:1 1 calc(50% - 2px);max-width:calc(50% - 2px);min-width:min(100%,120px)}
+.photo{background:#fff;border:1px solid #DDE3E8;padding:3px;font-size:7px;border-radius:3px;display:block;max-width:100%}
+.photo.landscape{max-width:52%}
+.photo.portrait{max-width:38%}
+.photo img{display:block;width:100%;height:auto;max-height:150px;object-fit:contain;object-position:center;background:transparent;border-radius:2px;margin-bottom:1px}
+.photo-stack.multi .photo.landscape,.photo-stack.multi .photo.portrait{max-width:calc(50% - 2px)}
+.photo-stack.multi .photo img{max-height:130px}
+.photo.compact{flex:0 0 auto;max-width:56px;padding:2px}
+.photo.compact img{max-height:40px;margin-bottom:1px}
+.photo-thumb-row{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.photo.seed{background:#fff}
+.by,.time{color:#69747D;font-size:7px;margin-top:1px;line-height:1.2}
+.cap{font-weight:700;color:#52606D;line-height:1.2}
+.none{color:#69747D;font-size:9px;border:1px dashed #C8D0D8;background:#FAFBFC;padding:6px;border-radius:3px}
+.none.evidence-empty{padding:0;border:0;background:transparent;font-size:8px;color:#8B929C}
+.none.block{padding:8px;background:#F7F9FA;border-radius:4px;border:1px solid #E4E9ED}
+.sig-block{border:1px solid #DDE3E8;border-radius:3px;padding:3px 5px;margin-top:3px;min-height:14mm;max-height:18mm;display:flex;flex-direction:column;justify-content:center}
+.sig-block.signed{border-color:#BFE8D0;background:#F8FDFA;border-left:3px solid #18A94F}
+.sig-block.unsigned{background:#FAFBFC}
+.sig-label{font-size:6px;font-weight:900;text-transform:uppercase;letter-spacing:.35px;color:#69747D;margin-bottom:2px}
+.sig-body{display:flex;align-items:center;gap:6px}
+.sig-image{flex:0 0 auto}
+.sig-image img{display:block;max-height:12mm;max-width:32mm;width:auto;height:auto;object-fit:contain}
+.sig-detail{min-width:0}
+.sig-name{font-size:9px;font-weight:800;color:#0B6E36;line-height:1.15}
+.sig-role{font-size:7px;color:#52606D;margin-top:0}
+.sig-date{font-size:6px;color:#69747D;margin-top:1px}
+.sig-note{font-size:7px;color:#52606D;margin-top:2px;line-height:1.2}
+.sig-empty{font-size:8px;color:#8B929C;font-style:italic}
+.meta-line{display:flex;gap:3px;align-items:center;margin-top:3px;flex-wrap:wrap;border-top:1px solid #EEF1F4;padding-top:2px}
+.audit-line{font-size:6px;color:#8B929C;margin-top:1px;line-height:1.15}
+.ev{font-size:7px;font-weight:900;padding:2px 5px;border:1px solid #DDE3E8;background:#fff;text-transform:uppercase;border-radius:999px}
+.ev.closeout{background:#EAFBF1;border-color:#BFE8D0}
+.ev.rectification{background:#FFF4DF;border-color:#F0D7A4}
+.ev.original{background:#F4F6F8}
+.due{margin-left:auto;font-size:8px;color:#69747D;font-weight:800}
+.due.overdue{color:#B42318}
+.footer{margin-top:14px;padding-top:8px;border-top:1px solid #DDE3E8;text-align:center;color:#69747D;font-size:8px;letter-spacing:.35px;font-weight:800}
+@media (max-width:520px){
+.title-row{grid-template-columns:1fr;gap:8px}
+.meta-col{text-align:left}
+.summary-strip{grid-template-columns:repeat(3,1fr)}
+.evidence-matrix{grid-template-columns:1fr}
+.photo.landscape,.photo.portrait,.photo-stack.multi .photo{max-width:100%;flex-basis:100%}
+}
+@media print{
+body{background:#fff}
+.report-actions{display:none}
+.report-shell{border:0;padding:0;max-width:none}
+.title-block{max-height:none;overflow:visible;padding-bottom:3px;margin-bottom:4px}
+.doc-note{display:none}
+.photo,.photo img,.sig-block{break-inside:avoid;page-break-inside:avoid}
+.item-head{break-after:avoid;page-break-after:avoid}
+.photo img{max-height:42mm}
+.photo-stack.multi .photo img{max-height:38mm}
+.photo.compact img{max-height:12mm}
+.photo.landscape{max-width:50%}
+.photo.portrait{max-width:40%}
+.photo-stack.multi .photo{max-width:calc(50% - 2mm)}
+.item{margin-top:2px;padding:3px 4px}
+.evidence-matrix{gap:3px;margin-top:2px}
+.sig-block{min-height:12mm;max-height:16mm;margin-top:2px;padding:2px 4px}
+.footer{display:none}
+}
+</style></head><body data-share-file="Jura-Noosa-Defect-Register-5-Jul-2026.html" data-app-return="/?route=reports"><div class="report-actions"><button type="button" onclick="returnToReports()">← Reports</button><button type="button" class="share" onclick="shareReport()">Share</button><button type="button" class="print" onclick="window.print()">Print</button></div><div class="report-shell">
+    <section class="title-block">
+      <div class="title-row">
+        <div class="brand-col"><div class="logo"><span class="mark" aria-hidden="true"><svg viewBox="0 0 100 100" width="22" height="22"><rect width="100" height="100" rx="22" fill="#121619"></rect><path d="M30 32 L54 56 L30 80" fill="none" stroke="#8B929C" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"></path><path d="M56 32 L80 56 L56 80" fill="none" stroke="#20C55E" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"></path></svg></span><span class="word">CleanRun <b>IQ</b></span></div><div class="tag">Construction closeout evidence register</div></div>
+        <div class="title-col">
+          <h1>Jura Noosa - Jura · Noosa Heads QLD</h1>
+          <div class="report-type">Defect Rectification / Closeout Register · Project Defect Register</div>
+        </div>
+        <div class="meta-col">
+          <strong>CleanRun Construction</strong>
+          <div class="meta-kv"><span class="k">Project</span> <span class="v">Jura Noosa</span></div>
+          <div class="meta-kv"><span class="k">Generated</span> <span class="v">5 Jul 2026</span></div>
+          <div class="meta-kv"><span class="k">Prepared by</span> <span class="v">Site Manager</span></div>
+        </div>
+      </div>
+      <div class="summary-strip"><div class="stat stat-total"><div class="num">8</div><div class="lbl">Total</div></div><div class="stat stat-closed"><div class="num">2</div><div class="lbl">Closed</div></div><div class="stat stat-issued"><div class="num">4</div><div class="lbl">Issued</div></div><div class="stat stat-ready"><div class="num">1</div><div class="lbl">Ready</div></div><div class="stat stat-overdue"><div class="num">6</div><div class="lbl">Overdue</div></div></div>
+    </section>
+    <p class="doc-note">Original issue → rectification → supervisor sign-off.</p><section class="report-section" aria-label="Project Defect Register"><section class="group"><h3>Block A - L03</h3>
+    <article class="item status-overdue">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">INC-001</div><div class="type">Incomplete Work</div></div>
+          <span class="priority-badge priority-high">High</span>
+        </div>
+        <span class="status-badge status-overdue">Overdue</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block A / L03 / A-305 / Laundry</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Joinery</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">TrueLine Joinery</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">3 Jul 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Laundry overhead cabinet doors not yet hung. Hinges on site.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiMxRDRFRDgiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPk1pc3NpbmcgZG9vcnM8L3RleHQ+PC9zdmc+" alt="INC-001 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="none evidence-empty">No closeout evidence uploaded</div></div></div>
+      <div class="sig-block unsigned"><div class="sig-label">Sign-off</div><div class="sig-empty">Awaiting supervisor sign-off</div></div>
+      <div class="meta-line"><span class="ev original">Original 1</span><span class="ev rectification">Rectification 0</span><span class="ev closeout">Closeout 0</span><span class="due overdue">Due 3 Jul 2026</span></div>
+      <div class="audit-line">Created (Inc-001) by Site Manager · 27 Jun 2026, 2:27am</div>
+    </article>
+    <article class="item status-closed">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">DEF-007</div><div class="type">Defect</div></div>
+          <span class="priority-badge priority-high">High</span>
+        </div>
+        <span class="status-badge status-closed">Closed</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block A / L03 / A-304 / Kitchen</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Painting</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">Coastline Painting</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">26 Jun 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div><div class="meta-cell"><span class="meta-label">Closed</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Paint scuff and roller marks to kitchen feature wall.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNDMjc4MDMiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPlJvbGxlciBtYXJrczwvdGV4dD48L3N2Zz4=" alt="DEF-007 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiMxOEE5NEYiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPkNsb3Nlb3V0IHBob3RvPC90ZXh0Pjwvc3ZnPg==" alt="DEF-007 closeout evidence" /><div class="cap">I confirm the work is complete and acceptable.</div><div class="by">Site Manager (Site Manager)</div><div class="time">27 Jun 2026, 2:27am</div></div><div class="rect-stage-note">Rectification evidence on file (1 record)</div></div></div>
+      <div class="sig-block signed"><div class="sig-label">Sign-off</div><div class="sig-body"><div class="sig-image"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiMxOEE5NEYiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPkNsb3Nlb3V0IHBob3RvPC90ZXh0Pjwvc3ZnPg==" alt="DEF-007 signature" /></div><div class="sig-detail"><div class="sig-name">Site Manager</div><div class="sig-role">Site Manager</div><div class="sig-date">27 Jun 2026, 2:27am</div></div></div><div class="sig-note">I confirm the work is complete and acceptable.</div></div>
+      <div class="meta-line"><span class="ev original">Original 1</span><span class="ev rectification">Rectification 1</span><span class="ev closeout">Closeout 1</span><span class="due">Due 26 Jun 2026</span></div>
+      <div class="audit-line">Created (Def-007) by Site Manager · 27 Jun 2026, 2:27am</div>
+    </article>
+    <article class="item status-overdue">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">DEF-004</div><div class="type">Defect</div></div>
+          <span class="priority-badge priority-high">High</span>
+        </div>
+        <span class="status-badge status-overdue">Overdue</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block A / L03 / A-304 / Bathroom</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Tiling</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">Sterling Tiling</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">29 Jun 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Grout discolouration along bath hob, re-grout required.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNDMjc4MDMiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPkdyb3V0IHN0YWluaW5nPC90ZXh0Pjwvc3ZnPg==" alt="DEF-004 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiMxOEE5NEYiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPlJlY3RpZmljYXRpb24gcGhvdG88L3RleHQ+PC9zdmc+" alt="DEF-004 rectification evidence" /><div class="cap">Rectification complete.</div><div class="by">Sterling Tiling</div><div class="time">27 Jun 2026, 2:27am</div></div></div></div>
+      <div class="sig-block unsigned"><div class="sig-label">Sign-off</div><div class="sig-empty">Awaiting supervisor sign-off</div></div>
+      <div class="meta-line"><span class="ev original">Original 1</span><span class="ev rectification">Rectification 1</span><span class="ev closeout">Closeout 0</span><span class="due overdue">Due 29 Jun 2026</span></div>
+      <div class="audit-line">Created (Def-004) by Site Manager · 27 Jun 2026, 2:27am</div>
+    </article>
+    <article class="item status-overdue">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">DEF-002</div><div class="type">Defect</div></div>
+          <span class="priority-badge priority-urgent">Urgent</span>
+        </div>
+        <span class="status-badge status-overdue">Overdue</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block A / L03 / A-305 / Ensuite</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Waterproofing</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">AquaSeal Waterproofing</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">29 Jun 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Active moisture behind shower wall — membrane suspected compromised.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNCNDIzMTgiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPk1vaXN0dXJlIHN0YWluPC90ZXh0Pjwvc3ZnPg==" alt="DEF-002 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="none evidence-empty">No closeout evidence uploaded</div></div></div>
+      <div class="sig-block unsigned"><div class="sig-label">Sign-off</div><div class="sig-empty">Awaiting supervisor sign-off</div></div>
+      <div class="meta-line"><span class="ev original">Original 1</span><span class="ev rectification">Rectification 0</span><span class="ev closeout">Closeout 0</span><span class="due overdue">Due 29 Jun 2026</span></div>
+      <div class="audit-line">Created (Def-002) by Site Manager · 27 Jun 2026, 2:27am</div>
+    </article></section><section class="group"><h3>Block B - L01</h3>
+    <article class="item status-overdue">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">DEF-006</div><div class="type">Defect</div></div>
+          <span class="priority-badge priority-urgent">Urgent</span>
+        </div>
+        <span class="status-badge status-overdue">Overdue</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block B / L01 / B-112 / Ensuite</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Tiling</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">Sterling Tiling</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">27 Jun 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Hollow tiles to ensuite floor, multiple drummy areas.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNCNDIzMTgiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPkRydW1teSB0aWxlczwvdGV4dD48L3N2Zz4=" alt="DEF-006 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNDMjc4MDMiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPlJlLWZpeGVkIHRpbGVzPC90ZXh0Pjwvc3ZnPg==" alt="DEF-006 rectification evidence" /><div class="cap">Re-fixed two tiles.</div><div class="by">Sterling Tiling</div><div class="time">27 Jun 2026, 2:27am</div></div></div></div>
+      <div class="sig-block unsigned"><div class="sig-label">Sign-off</div><div class="sig-empty">Awaiting supervisor sign-off</div></div>
+      <div class="meta-line"><span class="ev original">Original 1</span><span class="ev rectification">Rectification 1</span><span class="ev closeout">Closeout 0</span><span class="due overdue">Due 27 Jun 2026</span></div>
+      <div class="audit-line">Created (Def-006) by Site Manager · 27 Jun 2026, 2:27am</div>
+    </article></section><section class="group"><h3>Block B - L02</h3>
+    <article class="item status-complete">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">INC-003</div><div class="type">Incomplete Work</div></div>
+          <span class="priority-badge priority-high">High</span>
+        </div>
+        <span class="status-badge status-complete">Closed</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block B / L02 / B-204 / Living</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Electrical</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">Northline Electrical</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">27 Jun 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div><div class="meta-cell"><span class="meta-label">Closed</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Two GPO face plates pending in living area.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="none evidence-empty">No original evidence uploaded</div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="none evidence-empty">No closeout evidence uploaded</div></div></div>
+      <div class="sig-block unsigned"><div class="sig-label">Sign-off</div><div class="sig-empty">Awaiting supervisor sign-off</div></div>
+      <div class="meta-line"><span class="ev original">Original 0</span><span class="ev rectification">Rectification 0</span><span class="ev closeout">Closeout 0</span><span class="due">Due 27 Jun 2026</span></div>
+      <div class="audit-line">Completed (No Photo Required) by Site Manager · 28 Jun 2026, 2:27am</div>
+    </article>
+    <article class="item status-overdue">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">DEF-008</div><div class="type">Defect</div></div>
+          <span class="priority-badge priority-high">High</span>
+        </div>
+        <span class="status-badge status-overdue">Overdue</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block B / L02 / B-204 / Bathroom</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Tiling</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">Sterling Tiling</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">2 Jul 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Damaged tile beside vanity in Block B level two, unit B-204 bathroom.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNDMjc4MDMiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPkRhbWFnZWQgdGlsZTwvdGV4dD48L3N2Zz4=" alt="DEF-008 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="none evidence-empty">No closeout evidence uploaded</div></div></div>
+      <div class="sig-block unsigned"><div class="sig-label">Sign-off</div><div class="sig-empty">Awaiting supervisor sign-off</div></div>
+      <div class="meta-line"><span class="ev original">Original 1</span><span class="ev rectification">Rectification 0</span><span class="ev closeout">Closeout 0</span><span class="due overdue">Due 2 Jul 2026</span></div>
+      <div class="audit-line">Created (Def-008) by Site Manager · 27 Jun 2026, 2:27am</div>
+    </article>
+    <article class="item status-overdue">
+      <div class="item-head">
+        <div class="item-head-main">
+          <div><div class="code">DEF-001</div><div class="type">Defect</div></div>
+          <span class="priority-badge priority-high">High</span>
+        </div>
+        <span class="status-badge status-overdue">Overdue</span>
+      </div>
+      <div class="meta-grid"><div class="meta-cell"><span class="meta-label">Location</span><span class="meta-value">Block B / L02 / B-204 / Bathroom</span></div><div class="meta-cell"><span class="meta-label">Trade</span><span class="meta-value">Tiling</span></div><div class="meta-cell"><span class="meta-label">Subcontractor</span><span class="meta-value">Sterling Tiling</span></div><div class="meta-cell"><span class="meta-label">Due</span><span class="meta-value">30 Jun 2026</span></div><div class="meta-cell"><span class="meta-label">Captured</span><span class="meta-value">27 Jun 2026, 2:27am</span></div></div>
+      <div class="desc">Cracked floor tile beside vanity unit. Chip on adjacent skirting tile.</div>
+      <div class="evidence-matrix"><div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div><div class="photo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNDMjc4MDMiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPkNyYWNrZWQgdGlsZTwvdGV4dD48L3N2Zz4=" alt="DEF-001 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div><div class="photo-thumb-row"><div class="photo compact"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMzYwIiB2aWV3Qm94PSIwIDAgNDgwIDM2MCI+PHJlY3Qgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIzNjAiIGZpbGw9IiNDMjc4MDMiLz48dGV4dCB4PSIyNDAiIHk9IjE4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyMCIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiPlNraXJ0aW5nIGNoaXA8L3RleHQ+PC9zdmc+" alt="DEF-001 original evidence" /><div class="cap">Photo attached</div><div class="time">27 Jun 2026, 2:27am</div></div></div></div><div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div><div class="none evidence-empty">No closeout evidence uploaded</div></div></div>
+      <div class="sig-block unsigned"><div class="sig-label">Sign-off</div><div class="sig-empty">Awaiting supervisor sign-off</div></div>
+      <div class="meta-line"><span class="ev original">Original 2</span><span class="ev rectification">Rectification 0</span><span class="ev closeout">Closeout 0</span><span class="due overdue">Due 30 Jun 2026</span></div>
+      <div class="audit-line">Created (Def-001) by Site Manager · 27 Jun 2026, 2:27am</div>
+    </article></section></section><div class="footer">CleanRun IQ · Jura Noosa · Project Defect Register · Generated 5 Jul 2026</div></div><script>
+function returnToReports(){
+  const app=document.body.dataset.appReturn||"/?route=reports";
+  const target=app.startsWith("http")?app:(location.origin+(app.startsWith("/")?app:"/"+app));
+  try{
+    if(window.opener&&!window.opener.closed){
+      window.opener.location.href=target;
+      window.opener.focus();
+      window.close();
+      return;
+    }
+  }catch(e){}
+  location.href=target;
+}
+
+async function shareReport(){
+  const title=document.title||"CleanRun IQ Report";
+  const filename=document.body.dataset.shareFile||"CleanRun-IQ-Report.html";
+  const imgs=[...document.querySelectorAll(".report-shell img[src]")];
+  const restore=[];
+  for(const img of imgs){
+    const src=img.getAttribute("src");
+    if(!src||src.startsWith("data:"))continue;
+    restore.push([img,src]);
+    const candidates=[img.getAttribute("data-share-src"),src].filter(Boolean);
+    for(const candidate of candidates){
+      try{
+        const res=await fetch(candidate);
+        if(!res.ok)continue;
+        const blob=await res.blob();
+        const dataUrl=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(blob)});
+        img.setAttribute("src",dataUrl);
+        break;
+      }catch(e){}
+    }
+  }
+  const html="<!doctype html><html>"+document.documentElement.innerHTML+"</html>";
+  restore.forEach(([img,src])=>img.setAttribute("src",src));
+  const file=new File([html],filename,{type:"text/html;charset=utf-8"});
+  try{
+    if(navigator.share&&(navigator.canShare?navigator.canShare({files:[file]}):true)){
+      await navigator.share({title,text:title,files:[file]});
+      return;
+    }
+  }catch(err){if(err&&err.name==="AbortError")return}
+  const url=URL.createObjectURL(file);
+  const link=document.createElement("a");
+  link.href=url;
+  link.download=filename;
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+(function(){
+  function classify(img){
+    if(!img.naturalWidth||!img.naturalHeight)return;
+    var cell=img.closest(".photo");
+    if(!cell)return;
+    cell.classList.remove("portrait","landscape","square");
+    var ratio=img.naturalWidth/img.naturalHeight;
+    if(ratio<0.92)cell.classList.add("portrait");
+    else if(ratio>1.08)cell.classList.add("landscape");
+    else cell.classList.add("landscape");
+  }
+  document.querySelectorAll(".photo img").forEach(function(img){
+    if(img.complete)classify(img);
+    else img.addEventListener("load",function(){classify(img)},{once:true});
+  });
+})();
+</script></body></html>

@@ -5,7 +5,7 @@ from datetime import date
 from html import escape
 
 from app.datetime_format import format_field_date
-from app.models import Item, ItemStatus, Settings, STATUS_LABEL, TYPE_LABEL
+from app.models import Item, ItemStatus, Priority, Settings, STATUS_LABEL, TYPE_LABEL
 from app.storage import resolve_photo_url, resolve_share_photo_url
 
 REPORT_TITLES = {
@@ -244,7 +244,8 @@ def photo_cell(value: str | None, caption: str | None = None, by: str | None = N
     by_html = f'<div class="by">{escape(by)}</div>' if by else ""
     at_html = f'<div class="time">{escape(format_field_date(at))}</div>' if at else ""
     img = image_html(value, alt)
-    return f'<div class="photo{seed_class}">{img}<div class="cap">{escape(label)}</div>{by_html}{at_html}</div>'
+    compact_class = " compact" if compact else ""
+    return f'<div class="photo{seed_class}{compact_class}">{img}<div class="cap">{escape(label)}</div>{by_html}{at_html}</div>'
 
 
 def evidence_block(title: str, body: str, *, kind: str) -> str:
@@ -256,48 +257,361 @@ def empty_evidence(label: str) -> str:
     return f'<div class="none evidence-empty">No {escape(label)} uploaded</div>'
 
 
+def priority_badge(item: Item) -> str:
+    label = "Urgent" if item.priority == Priority.URGENT else "High"
+    klass = "urgent" if item.priority == Priority.URGENT else "high"
+    return f'<span class="priority-badge priority-{klass}">{escape(label)}</span>'
+
+
+def signature_block(item: Item) -> str:
+    closeout = item.closeout_evidence[0] if item.closeout_evidence else None
+    if not closeout:
+        return (
+            '<div class="sig-block unsigned">'
+            '<div class="sig-label">Sign-off</div>'
+            '<div class="sig-empty">Awaiting supervisor sign-off</div>'
+            "</div>"
+        )
+    signed_at = format_field_date(closeout.at)
+    note = closeout.confirmation or closeout.note
+    note_html = f'<div class="sig-note">{escape(note)}</div>' if note else ""
+    sig_img = ""
+    if closeout.photo:
+        img = image_html(closeout.photo, f"{item.code} signature")
+        if img:
+            sig_img = f'<div class="sig-image">{img}</div>'
+    return (
+        f'<div class="sig-block signed">'
+        f'<div class="sig-label">Sign-off</div>'
+        f'<div class="sig-body">{sig_img}'
+        f'<div class="sig-detail"><div class="sig-name">{escape(closeout.by)}</div>'
+        f'<div class="sig-role">{escape(closeout.role)}</div>'
+        f'<div class="sig-date">{escape(signed_at)}</div></div></div>'
+        f"{note_html}</div>"
+    )
+
+
+def audit_line(item: Item) -> str:
+    updated = format_field_date(item.updated_at)
+    detail = f"Last updated {escape(updated)}"
+    if item.audit_events:
+        latest = item.audit_events[-1]
+        action = latest.action.replace("_", " ").title()
+        by = latest.by or latest.email or "System"
+        detail = f"{escape(action)} by {escape(by)} · {escape(format_field_date(latest.at))}"
+    return f'<div class="audit-line">{detail}</div>'
+
+
+def report_summary_counts(items: list[Item]) -> dict[str, int]:
+    closed = {ItemStatus.CLOSED, ItemStatus.COMPLETE}
+    issued = {ItemStatus.OPEN, ItemStatus.ISSUED, ItemStatus.IN_PROGRESS}
+    ready = {ItemStatus.READY_FOR_REVIEW, ItemStatus.UNDER_INSPECTION}
+    return {
+        "total": len(items),
+        "closed": len([i for i in items if i.status in closed]),
+        "issued": len([i for i in items if i.status in issued]),
+        "ready": len([i for i in items if i.status in ready]),
+        "overdue": len([i for i in items if is_overdue(i) or i.status == ItemStatus.REJECTED]),
+        "client": len([i for i in items if i.type == "client"]),
+    }
+
+
+def summary_strip_html(counts: dict[str, int]) -> str:
+    cells = (
+        ("total", "Total"),
+        ("closed", "Closed"),
+        ("issued", "Issued"),
+        ("ready", "Ready"),
+        ("overdue", "Overdue"),
+    )
+    return "".join(
+        f'<div class="stat stat-{key}"><div class="num">{counts[key]}</div><div class="lbl">{label}</div></div>'
+        for key, label in cells
+    )
+
+
+def report_styles(*, footer_left: str) -> str:
+    footer_text = footer_left.replace("\\", "\\\\").replace('"', '\\"')
+    return f"""
+*{{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@page{{size:A4 portrait;margin:11mm 11mm 14mm}}
+@page{{@bottom-left{{content:"{footer_text}";font:800 8px/1.2 Inter,Arial,sans-serif;color:#69747D;letter-spacing:.2px}}@bottom-right{{content:"Page " counter(page);font:800 8px/1.2 Inter,Arial,sans-serif;color:#69747D}}}}
+@page:first{{margin-bottom:11mm;@bottom-left{{content:none}}@bottom-right{{content:none}}}}
+body{{font-family:Inter,Arial,sans-serif;color:#161A1D;margin:0;background:#ECEFF2;font-size:11px;line-height:1.35}}
+.report-actions{{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;align-items:center;gap:10px;max-width:210mm;margin:0 auto;padding:2px 11mm;background:#ECEFF2;font-size:9px;line-height:24px}}
+.report-actions button{{border:0;background:transparent;color:#69747D;padding:0;font-weight:700;font-size:9px;cursor:pointer;text-decoration:underline;height:24px;line-height:24px}}
+.report-actions button.share{{color:#1A2332}}
+.report-actions button.print{{color:#0B6E36;text-decoration:none}}
+.report-shell{{max-width:210mm;margin:0 auto;background:#fff;border:1px solid #D5DCE3;padding:7mm 10mm 6mm}}
+.title-block{{border-bottom:2px solid #20C55E;padding-bottom:4px;margin-bottom:5px;max-height:28mm;overflow:hidden}}
+.title-row{{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start}}
+.brand-col{{min-width:0}}
+.logo{{display:flex;align-items:center;gap:6px}}
+.mark{{width:22px;height:22px;flex:0 0 auto}}
+.mark svg{{width:22px;height:22px;display:block}}
+.word,h1,h2,h3,.code,.num{{font-family:Archivo,Arial,sans-serif}}
+.word{{font-size:14px;font-weight:800;line-height:1;white-space:nowrap}}
+.word b{{color:#20C55E}}
+.tag{{color:#69747D;font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;margin-top:2px;line-height:1.15}}
+.title-col{{min-width:0;padding-top:1px}}
+h1{{margin:0;font-size:17px;line-height:1.02;color:#1A2332;font-weight:800}}
+.report-type{{color:#52606D;font-size:9px;font-weight:700;margin-top:2px;line-height:1.2}}
+.meta-col{{text-align:right;font-size:8px;line-height:1.3;color:#52606D;min-width:96px}}
+.meta-col strong{{display:block;color:#161A1D;font-size:9px;margin-bottom:1px}}
+.meta-kv{{margin-top:0}}
+.meta-kv .k{{color:#8B929C;font-weight:700;text-transform:uppercase;font-size:6px;letter-spacing:.3px}}
+.meta-kv .v{{color:#161A1D;font-weight:700}}
+.summary-strip{{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;margin-top:5px}}
+.stat{{background:#F7F9FA;border:1px solid #DDE3E8;border-left:2px solid #52606D;padding:3px 4px;border-radius:3px;min-width:0}}
+.stat-total{{border-left-color:#1A2332}}
+.stat-closed{{border-left-color:#18A94F}}
+.stat-issued{{border-left-color:#C27803}}
+.stat-ready{{border-left-color:#1D4ED8}}
+.stat-overdue{{border-left-color:#B42318}}
+.num{{font-size:14px;font-weight:800;line-height:1;color:#161A1D}}
+.lbl{{font-size:6px;color:#69747D;text-transform:uppercase;letter-spacing:.3px;font-weight:800;margin-top:1px;line-height:1.1}}
+.doc-note{{color:#8B929C;font-size:8px;margin:0 0 5px;line-height:1.25}}
+.report-section{{margin-top:8px}}
+.group h3{{color:#1A2332;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.35px;border-bottom:1px solid #C8D0D8;padding-bottom:2px;margin:6px 0 3px}}
+.item{{border:1px solid #D5DCE3;border-left:3px solid #B8C0C8;border-radius:3px;padding:4px 5px;margin-top:3px;background:#fff}}
+.item.status-closed,.item.status-complete{{border-left-color:#18A94F}}
+.item.status-rejected{{border-left-color:#B42318}}
+.item.status-ready-for-review,.item.status-under-inspection{{border-left-color:#1D4ED8}}
+.item.status-overdue{{border-left-color:#B42318}}
+.item.status-issued{{border-left-color:#D99A21}}
+.item.status-in-progress{{border-left-color:#C27803}}
+.item.status-open{{border-left-color:#8B929C}}
+.item-head{{display:flex;justify-content:space-between;gap:6px;align-items:flex-start}}
+.item-head-main{{display:flex;align-items:flex-start;gap:6px;min-width:0;flex:1}}
+.code{{font-size:12px;font-weight:800;line-height:1;color:#1A2332}}
+.type{{color:#69747D;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}}
+.status-badge{{font-size:7px;font-weight:900;padding:2px 5px;border:1px solid #DDE3E8;background:#F4F6F8;text-transform:uppercase;border-radius:999px;white-space:nowrap;flex:0 0 auto}}
+.status-badge.status-open{{background:#F4F6F8;color:#52606D;border-color:#DDE3E8}}
+.status-badge.status-ready-for-review,.status-badge.status-under-inspection{{background:#E8F0FF;color:#1D4ED8;border-color:#BFD4FF}}
+.status-badge.status-in-progress{{background:#FFF0E0;color:#9A4A00;border-color:#F0D0A8}}
+.status-badge.status-overdue{{background:#FDECEC;color:#8B1E1E;border-color:#F5C2C2}}
+.status-badge.status-closed,.status-badge.status-complete{{background:#EAFBF1;color:#0B6E36;border-color:#BFE8D0}}
+.status-badge.status-issued{{background:#FFF4DF;color:#8A5A00;border-color:#F0D7A4}}
+.status-badge.status-rejected{{background:#FDECEC;color:#8B1E1E;border-color:#F5C2C2}}
+.priority-badge{{font-size:7px;font-weight:900;padding:2px 5px;border:1px solid #DDE3E8;text-transform:uppercase;border-radius:999px;white-space:nowrap;flex:0 0 auto;align-self:flex-start}}
+.priority-badge.priority-high{{background:#F4F6F8;color:#52606D;border-color:#DDE3E8}}
+.priority-badge.priority-urgent{{background:#FDECEC;color:#8B1E1E;border-color:#F5C2C2}}
+.register-line{{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;color:#52606D;font-size:8px;margin-top:4px}}
+.register-line span{{background:#F7F9FA;border:1px solid #E4E9ED;padding:2px 4px;border-radius:2px;line-height:1.2}}
+.meta-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:3px}}
+.meta-cell{{background:#F7F9FA;border:1px solid #E4E9ED;border-radius:2px;padding:2px 4px;min-width:0}}
+.meta-label{{display:block;font-size:6px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#8B929C;line-height:1.05}}
+.meta-value{{display:block;font-size:9px;font-weight:700;color:#161A1D;line-height:1.2;margin-top:0}}
+.desc{{font-size:10px;margin:2px 0 3px;line-height:1.32;color:#161A1D}}
+.evidence-matrix{{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:3px}}
+.evidence-col{{min-width:0;border:1px solid #E4E9ED;border-radius:3px;padding:3px;background:#FAFBFC}}
+.evidence-col-head{{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.3px;color:#52606D;margin:0 0 2px;padding-bottom:2px;border-bottom:1px solid #DDE3E8}}
+.evidence-col.original-col .evidence-col-head{{border-bottom-color:#1A2332;color:#1A2332}}
+.evidence-col.closeout-col .evidence-col-head{{border-bottom-color:#18A94F;color:#0B6E36}}
+.rect-stage-note{{font-size:8px;color:#69747D;margin-top:5px;padding-top:4px;border-top:1px dashed #DDE3E8;line-height:1.3}}
+.evidence-pack{{display:flex;flex-direction:column;gap:7px;margin-top:6px}}
+.evidence-block{{break-inside:avoid;page-break-inside:avoid}}
+.evidence-block.is-empty{{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px;padding:1px 0}}
+.evidence-block.is-empty .evidence-title{{margin:0;padding:0;border:0;display:inline;flex:0 0 auto}}
+.evidence-block.is-empty .evidence-empty{{padding:0;border:0;background:transparent;font-size:8px;display:inline;color:#8B929C}}
+.evidence-title{{color:#69747D;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.4px;margin:0 0 4px;padding-bottom:3px;border-bottom:1px solid #DDE3E8}}
+.evidence-block.original .evidence-title{{border-bottom-color:#1A2332}}
+.evidence-block.rectification .evidence-title{{border-bottom-color:#C27803}}
+.evidence-block.closeout .evidence-title{{border-bottom-color:#18A94F}}
+.project-block{{margin-top:14px;break-inside:avoid;page-break-inside:avoid}}
+.project-heading{{font-size:15px;color:#1A2332;border-bottom:2px solid #20C55E;padding-bottom:4px;margin:0 0 8px;font-weight:800}}
+.photo-stack{{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start}}
+.photo-stack.multi .photo{{flex:1 1 calc(50% - 2px);max-width:calc(50% - 2px);min-width:min(100%,120px)}}
+.photo{{background:#fff;border:1px solid #DDE3E8;padding:3px;font-size:7px;border-radius:3px;display:block;max-width:100%}}
+.photo.landscape{{max-width:52%}}
+.photo.portrait{{max-width:38%}}
+.photo img{{display:block;width:100%;height:auto;max-height:150px;object-fit:contain;object-position:center;background:transparent;border-radius:2px;margin-bottom:1px}}
+.photo-stack.multi .photo.landscape,.photo-stack.multi .photo.portrait{{max-width:calc(50% - 2px)}}
+.photo-stack.multi .photo img{{max-height:130px}}
+.photo.compact{{flex:0 0 auto;max-width:56px;padding:2px}}
+.photo.compact img{{max-height:40px;margin-bottom:1px}}
+.photo-thumb-row{{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}}
+.photo.seed{{background:#fff}}
+.by,.time{{color:#69747D;font-size:7px;margin-top:1px;line-height:1.2}}
+.cap{{font-weight:700;color:#52606D;line-height:1.2}}
+.none{{color:#69747D;font-size:9px;border:1px dashed #C8D0D8;background:#FAFBFC;padding:6px;border-radius:3px}}
+.none.evidence-empty{{padding:0;border:0;background:transparent;font-size:8px;color:#8B929C}}
+.none.block{{padding:8px;background:#F7F9FA;border-radius:4px;border:1px solid #E4E9ED}}
+.sig-block{{border:1px solid #DDE3E8;border-radius:3px;padding:3px 5px;margin-top:3px;min-height:14mm;max-height:18mm;display:flex;flex-direction:column;justify-content:center}}
+.sig-block.signed{{border-color:#BFE8D0;background:#F8FDFA;border-left:3px solid #18A94F}}
+.sig-block.unsigned{{background:#FAFBFC}}
+.sig-label{{font-size:6px;font-weight:900;text-transform:uppercase;letter-spacing:.35px;color:#69747D;margin-bottom:2px}}
+.sig-body{{display:flex;align-items:center;gap:6px}}
+.sig-image{{flex:0 0 auto}}
+.sig-image img{{display:block;max-height:12mm;max-width:32mm;width:auto;height:auto;object-fit:contain}}
+.sig-detail{{min-width:0}}
+.sig-name{{font-size:9px;font-weight:800;color:#0B6E36;line-height:1.15}}
+.sig-role{{font-size:7px;color:#52606D;margin-top:0}}
+.sig-date{{font-size:6px;color:#69747D;margin-top:1px}}
+.sig-note{{font-size:7px;color:#52606D;margin-top:2px;line-height:1.2}}
+.sig-empty{{font-size:8px;color:#8B929C;font-style:italic}}
+.meta-line{{display:flex;gap:3px;align-items:center;margin-top:3px;flex-wrap:wrap;border-top:1px solid #EEF1F4;padding-top:2px}}
+.audit-line{{font-size:6px;color:#8B929C;margin-top:1px;line-height:1.15}}
+.ev{{font-size:7px;font-weight:900;padding:2px 5px;border:1px solid #DDE3E8;background:#fff;text-transform:uppercase;border-radius:999px}}
+.ev.closeout{{background:#EAFBF1;border-color:#BFE8D0}}
+.ev.rectification{{background:#FFF4DF;border-color:#F0D7A4}}
+.ev.original{{background:#F4F6F8}}
+.due{{margin-left:auto;font-size:8px;color:#69747D;font-weight:800}}
+.due.overdue{{color:#B42318}}
+.footer{{margin-top:14px;padding-top:8px;border-top:1px solid #DDE3E8;text-align:center;color:#69747D;font-size:8px;letter-spacing:.35px;font-weight:800}}
+@media (max-width:520px){{
+.title-row{{grid-template-columns:1fr;gap:8px}}
+.meta-col{{text-align:left}}
+.summary-strip{{grid-template-columns:repeat(3,1fr)}}
+.evidence-matrix{{grid-template-columns:1fr}}
+.photo.landscape,.photo.portrait,.photo-stack.multi .photo{{max-width:100%;flex-basis:100%}}
+}}
+@media print{{
+body{{background:#fff}}
+.report-actions{{display:none}}
+.report-shell{{border:0;padding:0;max-width:none}}
+.title-block{{max-height:none;overflow:visible;padding-bottom:3px;margin-bottom:4px}}
+.doc-note{{display:none}}
+.photo,.photo img,.sig-block{{break-inside:avoid;page-break-inside:avoid}}
+.item-head{{break-after:avoid;page-break-after:avoid}}
+.photo img{{max-height:42mm}}
+.photo-stack.multi .photo img{{max-height:38mm}}
+.photo.compact img{{max-height:12mm}}
+.photo.landscape{{max-width:50%}}
+.photo.portrait{{max-width:40%}}
+.photo-stack.multi .photo{{max-width:calc(50% - 2mm)}}
+.item{{margin-top:2px;padding:3px 4px}}
+.evidence-matrix{{gap:3px;margin-top:2px}}
+.sig-block{{min-height:12mm;max-height:16mm;margin-top:2px;padding:2px 4px}}
+.footer{{display:none}}
+}}
+""".strip()
+
+
+def meta_cell(label: str, value: str) -> str:
+    return f'<div class="meta-cell"><span class="meta-label">{escape(label)}</span><span class="meta-value">{escape(value)}</span></div>'
+
+
+def item_metadata_grid(item: Item) -> str:
+    closed_date = ""
+    if item.status in CLOSED_STATUSES:
+        if item.closeout_evidence and item.closeout_evidence[0].at:
+            closed_date = format_field_date(item.closeout_evidence[0].at)
+        elif item.updated_at:
+            closed_date = format_field_date(item.updated_at)
+    cells = [
+        meta_cell("Location", location(item)),
+        meta_cell("Trade", item.trade or "—"),
+        meta_cell("Subcontractor", item.subcontractor or "Unassigned"),
+        meta_cell("Due", format_field_date(item.due_date)),
+        meta_cell("Captured", format_field_date(item.created_at)),
+    ]
+    if closed_date:
+        cells.append(meta_cell("Closed", closed_date))
+    return f'<div class="meta-grid">{"".join(cells)}</div>'
+
+
+def original_evidence_column(item: Item) -> str:
+    photos = item.original_photos
+    if not photos:
+        return empty_evidence("original evidence")
+    primary = photo_cell(photos[0], alt=f"{item.code} original evidence", at=item.created_at)
+    extras = photos[1:]
+    thumbs = ""
+    if extras:
+        thumb_cells = "".join(
+            photo_cell(p, alt=f"{item.code} original evidence", at=item.created_at, compact=True) for p in extras
+        )
+        thumbs = f'<div class="photo-thumb-row">{thumb_cells}</div>'
+    return primary + thumbs
+
+
+def closeout_rectification_column(item: Item) -> tuple[str, str]:
+    closeout_cells = [
+        photo_cell(e.photo, e.confirmation or e.note, f"{e.by} ({e.role})", alt=f"{item.code} closeout evidence", at=e.at)
+        for e in item.closeout_evidence
+        if e.photo or e.note or e.confirmation
+    ]
+    rect_cells = [
+        photo_cell(e.photo, e.comment, e.by, alt=f"{item.code} rectification evidence", at=e.at)
+        for e in item.rectification_evidence
+        if e.photo or e.comment
+    ]
+    rect_note = ""
+    if closeout_cells:
+        body = photo_stack(*closeout_cells)
+        if rect_cells:
+            rect_note = (
+                f'<div class="rect-stage-note">Rectification evidence on file '
+                f"({len(item.rectification_evidence)} record{'s' if len(item.rectification_evidence) != 1 else ''})</div>"
+            )
+        return body, rect_note
+    if rect_cells:
+        return photo_stack(*rect_cells), ""
+    return empty_evidence("closeout evidence"), ""
+
+
+def evidence_matrix_html(item: Item) -> str:
+    original = original_evidence_column(item)
+    closeout_body, rect_note = closeout_rectification_column(item)
+    return (
+        f'<div class="evidence-matrix">'
+        f'<div class="evidence-col original-col"><div class="evidence-col-head">Initial / Original Photo</div>{original}</div>'
+        f'<div class="evidence-col closeout-col"><div class="evidence-col-head">Closeout / Rectification Photo</div>{closeout_body}{rect_note}</div>'
+        f"</div>"
+    )
+
+
+def title_block_html(
+    *,
+    heading: str,
+    report_title: str,
+    settings: Settings,
+    meta_project: str,
+    generated: str,
+    counts: dict[str, int],
+    scope_note: str,
+) -> str:
+    return f"""
+    <section class="title-block">
+      <div class="title-row">
+        <div class="brand-col"><div class="logo">{brand_mark()}</div><div class="tag">Construction closeout evidence register</div></div>
+        <div class="title-col">
+          <h1>{escape(heading)}</h1>
+          <div class="report-type">Defect Rectification / Closeout Register · {escape(report_title)}{escape(scope_note)}</div>
+        </div>
+        <div class="meta-col">
+          <strong>{escape(settings.company)}</strong>
+          <div class="meta-kv"><span class="k">Project</span> <span class="v">{escape(meta_project)}</span></div>
+          <div class="meta-kv"><span class="k">Generated</span> <span class="v">{escape(generated)}</span></div>
+          <div class="meta-kv"><span class="k">Prepared by</span> <span class="v">{escape(settings.prepared_by)}</span></div>
+        </div>
+      </div>
+      <div class="summary-strip">{summary_strip_html(counts)}</div>
+    </section>
+    <p class="doc-note">Original issue → rectification → supervisor sign-off.</p>"""
+
+
 def item_card(item: Item) -> str:
     overdue = is_overdue(item)
     status_class = "overdue" if overdue else str(item.status).replace("_", "-")
     status_label = "Overdue" if overdue else STATUS_LABEL[item.status]
-    closeout = item.closeout_evidence[0] if item.closeout_evidence else None
-    original = photo_stack(
-        *(
-            photo_cell(p, alt=f"{item.code} original evidence", at=item.created_at)
-            for p in item.original_photos
-        )
-    ) or empty_evidence("original evidence")
-    rectification = photo_stack(
-        *(
-            photo_cell(e.photo, e.comment, e.by, alt=f"{item.code} rectification evidence", at=e.at)
-            for e in item.rectification_evidence
-        )
-    ) or empty_evidence("rectification evidence")
-    closeout_html = photo_stack(
-        *(
-            photo_cell(e.photo, e.confirmation or e.note, f"{e.by} ({e.role})", alt=f"{item.code} closeout evidence", at=e.at)
-            for e in item.closeout_evidence
-        )
-    ) or empty_evidence("closeout evidence")
-    signoff = f'<div class="signoff">Signed off by {escape(closeout.by)} - {escape(closeout.role)}</div>' if closeout else ""
     overdue_class = " overdue" if is_overdue(item) else ""
     return f"""
     <article class="item status-{escape(status_class)}">
       <div class="item-head">
-        <div><div class="code">{escape(item.code)}</div><div class="type">{escape(TYPE_LABEL[item.type])}</div></div>
+        <div class="item-head-main">
+          <div><div class="code">{escape(item.code)}</div><div class="type">{escape(TYPE_LABEL[item.type])}</div></div>
+          {priority_badge(item)}
+        </div>
         <span class="status-badge status-{escape(status_class)}">{escape(status_label)}</span>
       </div>
-      <div class="register-line">
-        <span>{escape(location(item))}</span><span>{escape(item.subcontractor or 'Unassigned subcontractor')}</span><span>{escape(item.trade or 'No trade')}</span>
-      </div>
+      {item_metadata_grid(item)}
       <div class="desc">{escape(item.description)}</div>
-      <div class="evidence-pack">
-        {evidence_block("Original photo / issue evidence", original, kind="original")}
-        {evidence_block("Rectification photo / trade evidence", rectification, kind="rectification")}
-        {evidence_block("Closeout / signed-off evidence", closeout_html, kind="closeout")}
-      </div>
-      {signoff}
+      {evidence_matrix_html(item)}
+      {signature_block(item)}
       <div class="meta-line">{evidence_badge('Original', len(item.original_photos), 'original')}{evidence_badge('Rectification', len(item.rectification_evidence), 'rectification')}{evidence_badge('Closeout', len(item.closeout_evidence), 'closeout')}<span class="due{overdue_class}">Due {escape(format_field_date(item.due_date))}</span></div>
+      {audit_line(item)}
     </article>"""
 
 
@@ -379,7 +693,7 @@ def report_share_filename(settings: Settings, report_type: str, *, projects: lis
 def brand_mark() -> str:
     return (
         '<span class="mark" aria-hidden="true">'
-        '<svg viewBox="0 0 100 100" width="34" height="34">'
+        '<svg viewBox="0 0 100 100" width="22" height="22">'
         '<rect width="100" height="100" rx="22" fill="#121619"></rect>'
         '<path d="M30 32 L54 56 L30 80" fill="none" stroke="#8B929C" stroke-width="14" '
         'stroke-linecap="square" stroke-linejoin="miter"></path>'
@@ -400,18 +714,27 @@ def build_report_html(
     title = REPORT_TITLES.get(report_type, "CleanRun IQ")
     project_scope = projects or ([settings.active_project] if settings.active_project else [])
     filtered = filter_items(items, report_type, subcontractor=subcontractor)
-    closed = [i for i in filtered if i.status in CLOSED_STATUSES]
+    counts = report_summary_counts(filtered)
     generated = format_field_date(date.today().isoformat())
-    overdue = len([i for i in filtered if is_overdue(i)])
-    client_count = len([i for i in filtered if i.type == "client"])
     heading = report_scope_heading(project_scope, settings, report_type)
     meta_project = report_scope_meta(project_scope, settings)
-    scope_note = f" Covering {len(project_scope)} projects." if len(project_scope) > 1 else ""
+    scope_note = f" · {len(project_scope)} projects" if len(project_scope) > 1 else ""
     body_html = build_scoped_body(title, filtered, report_type, project_scope)
+    display_title = title
     if subcontractor:
-        title = f"{title} - {subcontractor}"
+        display_title = f"{title} - {subcontractor}"
     share_filename = report_share_filename(settings, report_type, projects=project_scope)
-    return f"""<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>{escape(title)}</title><style>
-*{{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}}@page{{size:A4;margin:12mm}}body{{font-family:Inter,Arial,sans-serif;color:#161A1D;margin:0;background:#F4F6F8;font-size:12px;line-height:1.35}}.report-actions{{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;gap:8px;max-width:1040px;margin:0 auto;padding:10px 0;background:#F4F6F8}}.report-actions button{{border:1px solid #B8C0C8;background:#fff;color:#161A1D;border-radius:999px;padding:8px 12px;font-weight:800}}.report-actions button.share{{background:#121619;border-color:#121619;color:#fff}}.report-actions button.print{{background:#18A94F;border-color:#18A94F}}.report-shell{{max-width:1040px;margin:0 auto;background:#fff;border:1px solid #DDE3E8;padding:18px}}.header{{display:grid;grid-template-columns:1fr auto;gap:20px;border-bottom:3px solid #20C55E;padding-bottom:12px;margin-bottom:14px}}.logo{{display:flex;align-items:center;gap:10px}}.mark{{width:34px;height:34px}}.word,h1,h2,h3,.code,.num{{font-family:Archivo,Arial,sans-serif}}.word{{font-size:25px;font-weight:800}}.word b{{color:#20C55E}}.tag,.meta,.subtitle{{color:#69747D}}.tag{{font-size:11px;font-weight:700;margin-top:3px}}.meta{{text-align:right;font-size:11px;line-height:1.45}}h1{{margin:0;font-size:25px;line-height:1.05}}.subtitle{{font-size:12px;margin:5px 0 14px}}.summary{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 16px}}.stat{{background:#F4F6F8;border:1px solid #DDE3E8;border-left:3px solid #161A1D;padding:9px;border-radius:8px}}.stat:nth-child(2){{border-left-color:#18A94F}}.stat:nth-child(3){{border-left-color:#B42318}}.stat:nth-child(4){{border-left-color:#1D4ED8}}.num{{font-size:22px;font-weight:800}}.lbl{{font-size:9px;color:#69747D;text-transform:uppercase;letter-spacing:.4px;font-weight:800}}.report-section{{margin-top:15px}}.group h3{{color:#161A1D;border-bottom:1px solid #DDE3E8;padding-bottom:4px;margin:12px 0 7px;font-size:13px}}.item{{border:1px solid #DDE3E8;border-left:5px solid #B8C0C8;border-radius:9px;padding:10px;margin-top:8px}}.item.status-closed,.item.status-complete{{border-left-color:#18A94F}}.item.status-rejected{{border-left-color:#B42318}}.item.status-ready-for-review,.item.status-under-inspection{{border-left-color:#1D4ED8}}.item.status-overdue{{border-left-color:#B42318}}.item.status-issued{{border-left-color:#D99A21}}.item.status-in-progress{{border-left-color:#C27803}}
-.status-badge.status-open{{background:#F4F6F8;color:#52606D;border-color:#DDE3E8}}.status-badge.status-ready-for-review,.status-badge.status-under-inspection{{background:#E8F0FF;color:#1D4ED8;border-color:#BFD4FF}}.status-badge.status-in-progress{{background:#FFF0E0;color:#9A4A00;border-color:#F0D0A8}}.status-badge.status-overdue{{background:#FDECEC;color:#8B1E1E;border-color:#F5C2C2}}.status-badge.status-closed,.status-badge.status-complete{{background:#EAFBF1;color:#0B6E36;border-color:#BFE8D0}}.status-badge.status-issued{{background:#FFF4DF;color:#8A5A00;border-color:#F0D7A4}}.item-head{{display:flex;justify-content:space-between;gap:10px;align-items:start}}.code{{font-size:16px;font-weight:800;line-height:1}}.type{{color:#69747D;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.45px;margin-top:2px}}.status-badge{{font-size:9px;font-weight:900;padding:4px 7px;border:1px solid #DDE3E8;background:#F4F6F8;text-transform:uppercase;border-radius:999px}}.status-badge.status-closed,.status-badge.status-complete{{background:#EAFBF1;color:#0B6E36}}.status-badge.status-rejected{{background:#FDECEC;color:#8B1E1E}}.register-line{{display:grid;grid-template-columns:1.25fr 1fr .75fr;gap:6px;color:#69747D;font-size:10px;margin-top:7px}}.register-line span{{background:#F4F6F8;border:1px solid #DDE3E8;padding:5px 6px;border-radius:6px}}.item-head,.register-line,.desc{{break-after:avoid;page-break-after:avoid}}.desc{{font-size:12px;margin:8px 0}}.evidence-pack{{display:flex;flex-direction:column;gap:10px;margin-top:8px}}.evidence-block{{break-inside:avoid;page-break-inside:avoid}}.evidence-block.is-empty{{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:2px 0}}.evidence-block.is-empty .evidence-title{{margin:0;padding:0;border:0;display:inline;flex:0 0 auto}}.evidence-block.is-empty .evidence-empty{{padding:0;border:0;background:transparent;font-size:9px;display:inline}}.evidence-title{{color:#69747D;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.45px;margin:0 0 6px;padding-bottom:4px;border-bottom:2px solid #DDE3E8}}.evidence-block.original .evidence-title{{border-bottom-color:#161A1D}}.evidence-block.rectification .evidence-title{{border-bottom-color:#C27803}}.evidence-block.closeout .evidence-title{{border-bottom-color:#18A94F}}.project-block{{margin-top:18px;break-inside:avoid;page-break-inside:avoid}}.project-heading{{font-size:17px;color:#161A1D;border-bottom:2px solid #20C55E;padding-bottom:5px;margin:0 0 10px}}.photo-stack{{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;break-inside:avoid;page-break-inside:avoid}}.photo-stack.multi .photo{{flex:1 1 calc(50% - 5px);max-width:calc(50% - 5px);min-width:min(100%,200px)}}.photo{{background:#fff;border:1px solid #DDE3E8;padding:6px;font-size:9px;border-radius:8px;break-inside:avoid;page-break-inside:avoid;display:block;max-width:100%}}.photo.landscape{{max-width:60%}}.photo.portrait{{max-width:44%}}.photo img{{display:block;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent;border-radius:6px;margin-bottom:4px;break-inside:avoid;page-break-inside:avoid}}.photo.landscape img{{max-height:280px}}.photo.portrait img{{max-height:360px}}.photo-stack.multi .photo.landscape,.photo-stack.multi .photo.portrait{{max-width:calc(50% - 5px)}}.photo-stack.multi .photo.landscape img{{max-height:240px}}.photo-stack.multi .photo.portrait img{{max-height:300px}}.photo.seed{{background:#fff}}.by,.time{{color:#69747D;font-size:8px;margin-top:2px}}.none{{color:#69747D;font-size:10px;border:1px dashed #B8C0C8;background:#fff;padding:8px;border-radius:6px}}.none.evidence-empty{{padding:7px 8px;font-size:9px}}.none.block{{padding:10px;background:#F4F6F8;border-radius:8px}}.signoff{{color:#0B6E36;font-weight:800;font-size:11px;margin-top:7px}}.meta-line{{display:flex;gap:5px;align-items:center;margin-top:7px;flex-wrap:wrap}}.ev{{font-size:8px;font-weight:900;padding:3px 6px;border:1px solid #DDE3E8;background:#fff;text-transform:uppercase;border-radius:999px}}.ev.closeout{{background:#EAFBF1}}.ev.rectification{{background:#FFF4DF}}.due{{margin-left:auto;font-size:9px;color:#69747D;font-weight:800}}.due.overdue{{color:#B42318}}.footer{{margin-top:18px;padding-top:10px;border-top:1px solid #DDE3E8;text-align:center;color:#69747D;font-size:9px;letter-spacing:.4px;font-weight:800}}@media (max-width:520px){{.photo.landscape,.photo.portrait,.photo-stack.multi .photo{{max-width:100%;flex-basis:100%}}}}@media print{{body{{background:#fff}}.report-actions{{display:none}}.report-shell{{border:0;padding:0;max-width:none}}.item-head,.register-line,.desc,.evidence-block,.photo-stack,.photo,.photo img{{break-inside:avoid;page-break-inside:avoid}}.item-head,.register-line,.desc{{break-after:avoid;page-break-after:avoid}}.photo.landscape{{max-width:60%}}.photo.portrait{{max-width:42%}}.photo.landscape img{{max-height:90mm}}.photo.portrait img{{max-height:100mm}}.photo-stack.multi .photo{{max-width:calc(50% - 4mm)}}.photo-stack.multi .photo.landscape img{{max-height:82mm}}.photo-stack.multi .photo.portrait img{{max-height:95mm}}.item{{margin-top:6px}}}}
-</style></head><body data-share-file="{escape(share_filename)}" data-app-return="/?route=reports"><div class="report-actions"><button type="button" onclick="returnToReports()">Return to reports</button><button type="button" class="share" onclick="shareReport()">Share Report</button><button type="button" class="print" onclick="window.print()">Print Report</button></div><div class="report-shell"><div class="header"><div><div class="logo">{brand_mark()}</div><div class="tag">Site QA Control - Evidence Register</div></div><div class="meta"><strong>{escape(settings.company)}</strong><br />{escape(meta_project)}<br />Generated {escape(generated)}</div></div><h1>{escape(heading)}</h1><div class="subtitle">{escape(title)}.{scope_note} Original issue, subcontractor rectification and supervisor closeout evidence in one printable register.</div><div class="summary"><div class="stat"><div class="num">{len(filtered)}</div><div class="lbl">Items</div></div><div class="stat"><div class="num">{len(closed)}</div><div class="lbl">Closed / Complete</div></div><div class="stat"><div class="num">{overdue}</div><div class="lbl">Overdue</div></div><div class="stat"><div class="num">{client_count}</div><div class="lbl">Client Defects</div></div></div>{body_html}<div class="footer">CleanRun IQ - Capture the item. Assign the trade. Close it with proof.</div></div><script>{RETURN_REPORTS_SCRIPT}{SHARE_REPORT_SCRIPT}{PHOTO_ORIENTATION_SCRIPT}</script></body></html>"""
+    footer_left = f"CleanRun IQ · {meta_project} · {display_title}"
+    styles = report_styles(footer_left=footer_left)
+    cover = title_block_html(
+        heading=heading,
+        report_title=display_title,
+        settings=settings,
+        meta_project=meta_project,
+        generated=generated,
+        counts=counts,
+        scope_note=scope_note,
+    )
+    return f"""<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>{escape(display_title)}</title><style>
+{styles}
+</style></head><body data-share-file="{escape(share_filename)}" data-app-return="/?route=reports"><div class="report-actions"><button type="button" onclick="returnToReports()">← Reports</button><button type="button" class="share" onclick="shareReport()">Share</button><button type="button" class="print" onclick="window.print()">Print</button></div><div class="report-shell">{cover}{body_html}<div class="footer">CleanRun IQ · {escape(meta_project)} · {escape(display_title)} · Generated {escape(generated)}</div></div><script>{RETURN_REPORTS_SCRIPT}{SHARE_REPORT_SCRIPT}{PHOTO_ORIENTATION_SCRIPT}</script></body></html>"""
