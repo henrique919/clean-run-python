@@ -30,7 +30,7 @@ Core backend modules:
 | `/api/items/*`, `/api/reports/*` | Both UIs |
 | `/api/reset` and `/api/reset-demo` | Demo reset (gated by env) |
 
-**Known gap:** Render3 Plans UI calls `/api/plans`, but the canonical backend does not implement those routes. `/api/state` returns `"plans": []`.
+**Plans (deliberately deferred):** the Plans nav is intercepted with a "coming soon" toast (`CleanRun-IQ-Full-App-Render3/index.html`, `go()`), so the legacy Plans UI is unreachable in production. The backend `/api/plans` routes are intentionally absent and `/api/state` returns `"plans": []`. Do not build them — floor-plan pinning is on the deferred list in `CLAUDE.md`.
 
 ## Legacy Copies
 

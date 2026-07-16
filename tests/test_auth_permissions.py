@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from app import main as app_main
 from app.auth import _user_from_claims
-from app.models import ItemCreate, RectificationEvidence
+from app.models import ItemCreate, ItemStatus, RectificationEvidence
 from app.store import CleanRunStore
 
 
@@ -522,7 +522,12 @@ class AuthPermissionTests(unittest.TestCase):
         updated_items = []
         for current in data.items:
             if current.id == overdue.id:
-                updated_items.append(current.model_copy(update={"due_date": "2020-01-01", "status": "issued"}))
+                # model_copy() never validates, so the status must be the typed
+                # enum — a raw "issued" string here serializes with a Pydantic
+                # UserWarning and puts an invalid value on an ItemStatus field.
+                updated_items.append(
+                    current.model_copy(update={"due_date": "2020-01-01", "status": ItemStatus.ISSUED})
+                )
             else:
                 updated_items.append(current)
         self.store._write(data.model_copy(update={"items": updated_items}))
