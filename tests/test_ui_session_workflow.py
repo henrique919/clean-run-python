@@ -99,7 +99,7 @@ def test_render3_phase1_field_speed_ux_markers():
     """Phase 1 speed UX: quick capture, sticky location, scan cards, capture-next."""
     enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
 
-    assert 'CLEANRUN_FRONTEND_BUILD="cards61"' in enhancements
+    assert 'CLEANRUN_FRONTEND_BUILD="cards62"' in enhancements
     assert "window.uploadSettingsSheet=async function" in enhancements
     assert "window.defaultCaptureDueDate=defaultCaptureDueDate" in enhancements
     assert "dueDate" not in enhancements.split("rememberCaptureFields")[1].split("}")[0]
@@ -112,14 +112,14 @@ def test_render3_phase1_field_speed_ux_markers():
 
 
 def test_render3_save_switch_and_scope_ux_markers():
-    """Markup/edit save merges PATCH locally; project switch uses active lazy reload."""
+    """Markup/edit save merges PATCH locally; project switch uses active thumbs reload."""
     enhancements = ENHANCEMENTS.read_text(encoding="utf-8")
     save_edit = enhancements.split("saveItemEdit=async function")[1].split("};")[0]
 
     assert "mergeSavedItem(updated)" in save_edit
     assert "stateNeedsGlobalRefresh=true" in save_edit
     assert "await reload()" not in save_edit
-    assert 'reload({scope:"active",photos:"lazy"})' in enhancements
+    assert 'reload({scope:"active",photos:"thumbs"})' in enhancements
     assert "window.switchProject=async function" in enhancements
     assert "report-scope-option" in enhancements
     assert 'setBusyButton(btn,"Saving…")' in enhancements
