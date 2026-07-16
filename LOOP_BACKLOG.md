@@ -213,6 +213,45 @@ instead of three.
 
 ---
 
+### - [ ] QUEUE-01 — Offline queue head-of-line blocking (found during VERIFY-01 emulated run, 16 Jul 2026)
+
+- **Plain English:** if any queued offline request permanently fails when the
+  connection returns, everything behind it in the queue silently never syncs
+  and the pill sticks on "Syncing N…" forever.
+- **Evidence (reproduced in emulated VERIFY-01 run):** capture offline →
+  queue held [`POST /api/photos/stage`, `POST /api/items`]. On reconnect the
+  stage request kept failing (503 in local storage mode) and
+  `flushQueue()`'s `catch{break}` (`enhancements.js:1657`) stopped the whole
+  flush at entry 1 — the item POST behind it never sent, no error surfaced,
+  pill stuck at "Syncing 2…". Removing the doomed entry let the item sync
+  perfectly (real code assigned, photo intact, no duplicate).
+- **Production exposure:** stage normally succeeds against Supabase, so the
+  common path works — but any entry that hits a permanent 4xx/5xx (validation
+  reject, oversized photo, expired auth semantics) freezes all later syncs
+  with zero user feedback. Evidence-capture product: silent sync freeze is a
+  trust breaker.
+- **Suggested shape of fix (for discussion, not prescriptive):** distinguish
+  permanent failures (4xx except 401/408/429) from transient ones — skip or
+  dead-letter permanent failures with a visible per-item error, keep
+  retrying transient ones. Never silently drop evidence.
+- **Risk:** medium (touches sync logic; needs careful iOS QA).
+  **Phone QA:** yes. **Owner gate:** merge approval.
+
+---
+
+## Verification evidence — VERIFY-01 emulated run (agent, 16 Jul 2026)
+
+Run via Playwright (Chromium, 390×844) against a local instance
+(`CLEANRUN_STORAGE=local`, `CLEANRUN_LOGIN_REQUIRED=true`), server process
+killed/restarted to simulate signal loss. Results: offline save instant with
+"saved offline - queued to sync" toast and OFF- code · item visible on list
+with photo while offline · reconnect flush → real code (DEF-11), photo
+attached, exactly one item client-side AND server-side (JSON store
+inspected), pill "Synced ✓" · plus the QUEUE-01 finding above. This proves
+the mechanics; the owner's real-iPhone airplane-mode run
+(`docs/VERIFY-01-offline-field-test.md`) is still the final word for iOS
+Safari + real camera.
+
 ## Blocked records
 
 (Agents append `**Blocked:** <task ID> — <evidence>` entries here via their
