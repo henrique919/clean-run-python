@@ -876,7 +876,13 @@ def create_item(payload: dict[str, object], issue_now: bool = Query(default=Fals
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Item create failed for user=%s project=%s issue_now=%s", ctx.user.email, payload.project, issue_now)
-        raise HTTPException(status_code=503, detail="Could not save item. Check Render logs for the Supabase write error.") from exc
+        # Keep the toast short; include a one-line cause so field diagnosis does
+        # not require opening Render logs on every save failure.
+        cause = str(exc).strip().splitlines()[0][:160] if str(exc).strip() else type(exc).__name__
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not save item ({cause}). If this persists after refresh, check Render logs.",
+        ) from exc
 
 
 @app.patch("/api/items/{item_id}")

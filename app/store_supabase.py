@@ -31,7 +31,7 @@ from app.models import (
 from app.config import is_production
 from app.store import CleanRunStore, seed_data, seed_settings
 from app.storage import normalize_photo, reset_upload_timing_ms, read_upload_timing_ms
-from app.supabase_client import get_supabase_client
+from app.supabase_client import get_data_supabase_client
 from app.validation import validate_capture
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,10 @@ class SupabaseCleanRunStore(CleanRunStore):
 
     @property
     def client(self):
-        return get_supabase_client()
+        # Launch mode: use anon/publishable client for table writes (same as
+        # storage.py for cleanrun/public/*). API auth still requires login;
+        # attaching the user JWT here is what broke create-after-login.
+        return get_data_supabase_client()
 
     def _bootstrap_if_empty(self) -> None:
         response = self.client.table("items").select("id").limit(1).execute()
