@@ -32,7 +32,7 @@ services:
       - key: CLEANRUN_LAUNCH_ADMIN_EMAILS
         value: "info@cleanruniq.com,harrysfuel@outlook.com"
       - key: CLEANRUN_LOGIN_REQUIRED
-        value: "false"
+        value: "true"
       - key: CLEANRUN_OPEN_ACCESS_EMAIL
         sync: false
       - key: CLEANRUN_OPEN_ACCESS_PASSWORD
