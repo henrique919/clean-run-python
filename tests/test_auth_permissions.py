@@ -101,7 +101,13 @@ class AuthPermissionTests(unittest.TestCase):
         self.store_patch.stop()
         self.temp_dir.cleanup()
 
-    def create_direct_item(self, *, project: str = "Jura Noosa", subcontractor: str = "ASTW Tiling"):
+    def create_direct_item(
+        self,
+        *,
+        project: str = "Jura Noosa",
+        subcontractor: str = "ASTW Tiling",
+        original_photos: list[str] | None = None,
+    ):
         return self.store.create_item(
             ItemCreate(
                 project=project,
@@ -113,7 +119,7 @@ class AuthPermissionTests(unittest.TestCase):
                 subcontractor=subcontractor,
                 due_date="2026-07-01",
                 description="Tile lip at shower entry",
-                original_photos=["seed://photo"],
+                original_photos=original_photos if original_photos is not None else ["seed://photo"],
                 created_by="Fixture",
             )
         )
@@ -147,8 +153,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards60", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards60", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards61", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards61", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_state_scope_active_returns_only_active_project(self) -> None:
@@ -161,6 +167,22 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertGreaterEqual(len(full["items"]), len(active["items"]))
         if active["items"]:
             self.assertEqual(active["items"][0].get("originalPhotoThumbnails"), [])
+
+    def test_state_photos_thumbs_signs_list_thumbnails_only(self) -> None:
+        self.create_direct_item(
+            project="Other Project",
+            subcontractor="Other Trade",
+            original_photos=["projects/other/items/def-1/original/photo.jpg"],
+        )
+        thumbs = self.client.get("/api/state?scope=all&photos=thumbs", headers=bearer("dev-site-manager")).json()
+        self.assertTrue(thumbs["items"])
+        for item in thumbs["items"]:
+            originals = item.get("originalPhotos") or []
+            # thumbs mode leaves originals as storage paths (not signed http URLs)
+            self.assertTrue(all(not str(photo).startswith("http") for photo in originals))
+            thumb_list = item.get("originalPhotoThumbnails") or []
+            if any(str(photo).startswith("projects/") for photo in originals):
+                self.assertEqual(len(thumb_list), len(originals))
 
     def test_anonymous_access_request_is_accepted_without_app_access(self) -> None:
         response = self.client.post(

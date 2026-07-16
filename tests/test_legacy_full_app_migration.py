@@ -124,7 +124,7 @@ class ItemsFocusSourceTests(unittest.TestCase):
 
 
 class SignOffModalSourceTests(unittest.TestCase):
-    """Migrated verbatim: sign-off ceremony avoids native dialogs (cards60)."""
+    """Migrated verbatim: sign-off ceremony avoids native dialogs (cards61)."""
 
     @classmethod
     def setUpClass(cls) -> None:
