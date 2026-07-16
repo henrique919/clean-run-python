@@ -81,18 +81,22 @@ Verified against `origin/main` at commit `37adbd1` on 2026-07-16.
 - **Plain English:** Two pieces of earlier login work need to be in place
   before we can turn logins on, and one of them only exists on your computer.
 - **What the owner must do (agents must NOT do this):**
-  1. Push `scripts/provision_launch_admins.sql` from your machine to GitHub —
-     it is not in the repo today (verified: `scripts/` contains only
-     generate/migrate/perf scripts).
+  1. ~~Push `scripts/provision_launch_admins.sql` from your machine~~ —
+     **resolved**: the original was lost from the owner's machine, so the
+     script was regenerated from the actual claim shape in `app/auth.py`
+     (`_user_from_claims()`) and committed as
+     `scripts/provision_launch_admins.sql` (16 Jul 2026). Nothing to push.
   2. ~~Push commit `eba7129` ("Add gated QA access mode")~~ — **already
      done**: `eba7129` is the tip of the `codex/stability-health-pass` branch
      on GitHub (verified 2026-07-16; it sits 142 commits behind `main`).
      Nothing to push — the AUTH-03 agent will cherry-pick it onto a current
      branch. Do not delete that branch.
-  3. Create (or confirm) the QA and admin accounts in Supabase with the
-     `app_metadata.cleanrun` claims listed in the AUTH-01 report, using the
-     SQL script above. Agents never receive or request your credentials —
-     QA accounts only.
+  3. Create (or confirm) the accounts in Supabase Dashboard → Authentication
+     → Users: your two admin emails and `qa@cleanruniq.com`, each with a
+     password. Then run `scripts/provision_launch_admins.sql` in the Supabase
+     SQL Editor (instructions are at the top of the file) and check the
+     verification query output. Agents never receive or request your
+     credentials — QA accounts only.
 - **How to record completion:** tick this checkbox yourself on GitHub (edit
   this file on `main`), or tell the assistant "AUTH-02 is done" and the next
   iteration will verify (SQL script visible on `main` + your confirmation)
