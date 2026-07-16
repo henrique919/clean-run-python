@@ -153,8 +153,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards61", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards61", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards62", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards62", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_state_scope_active_returns_only_active_project(self) -> None:
@@ -167,6 +167,24 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertGreaterEqual(len(full["items"]), len(active["items"]))
         if active["items"]:
             self.assertEqual(active["items"][0].get("originalPhotoThumbnails"), [])
+
+    def test_get_item_returns_camel_signed_photos(self) -> None:
+        item = self.create_direct_item(
+            original_photos=["projects/jura/items/def-1/original/photo.jpg"],
+        )
+        with patch("app.main.resolve_photo_url", return_value="https://signed.example/full.jpg"):
+            with patch("app.main.resolve_thumbnail_url", return_value="https://signed.example/thumb.jpg"):
+                with patch("app.main.prefetch_item_photo_urls") as prefetch:
+                    response = self.client.get(
+                        f"/api/items/{item.id}?photos=full",
+                        headers=bearer("dev-site-manager"),
+                    )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("originalPhotos", payload)
+        self.assertIn("originalPhotoThumbnails", payload)
+        self.assertEqual(payload["originalPhotos"], ["https://signed.example/full.jpg"])
+        prefetch.assert_called_once()
 
     def test_state_photos_thumbs_signs_list_thumbnails_only(self) -> None:
         self.create_direct_item(

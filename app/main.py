@@ -706,11 +706,12 @@ def legacy_state(
     photo_mode = (photos or "full").lower()
     if photo_mode not in {"full", "thumbs", "lazy"}:
         photo_mode = "full"
+    started = time.perf_counter()
     if photo_mode == "full":
         prefetch_item_photo_urls(visible)
     elif photo_mode == "thumbs":
         prefetch_item_thumbnail_urls(visible)
-    return {
+    payload = {
         "settings": camel_settings(settings),
         "items": [camel_item(item, sign_photos=photo_mode) for item in visible],
         "plans": [],
@@ -718,6 +719,16 @@ def legacy_state(
         "raisedByOptions": RAISED_BY_OPTIONS,
         "user": user_payload(ctx, camel=True),
     }
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        "state photos=%s scope=%s items=%d sign_cache=%s elapsed=%.0fms",
+        photo_mode,
+        scope,
+        len(visible),
+        signed_url_cache.stats(),
+        elapsed_ms,
+    )
+    return payload
 
 
 @app.post("/api/photos/stage")
@@ -874,8 +885,21 @@ def list_items(
 
 
 @app.get("/api/items/{item_id}")
-def get_item(item_id: str, ctx: RequestContext = Depends(get_request_context)):
-    return get_authorized_item(item_id, ctx)
+def get_item(
+    item_id: str,
+    photos: str = Query(default="full"),
+    ctx: RequestContext = Depends(get_request_context),
+):
+    """Return one item for the Render3 UI (camelCase), with optional photo signing."""
+    item = get_authorized_item(item_id, ctx)
+    photo_mode = (photos or "full").lower()
+    if photo_mode not in {"full", "thumbs", "lazy"}:
+        photo_mode = "full"
+    if photo_mode == "full":
+        prefetch_item_photo_urls([item])
+    elif photo_mode == "thumbs":
+        prefetch_item_thumbnail_urls([item])
+    return camel_item(item, sign_photos=photo_mode)
 
 
 @app.post("/api/items", status_code=201)

@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards61)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards62)."""
 
 from __future__ import annotations
 
@@ -315,16 +315,18 @@ class Phase3ThumbnailChurnChecklist(unittest.TestCase):
 
     def test_background_refresh_skips_full_render_on_items_home(self) -> None:
         apply_at = self.enh.index("function applyStatePayload")
-        apply_block = self.enh[apply_at : apply_at + 1600]
+        apply_block = self.enh[apply_at : apply_at + 2200]
         self.assertIn('if(route==="items")filterItems()', apply_block)
         self.assertIn('else if(route==="home")refreshHomeNextCards()', apply_block)
         self.assertNotIn('if(route==="home"||route==="items"', apply_block)
         refresh_at = self.enh.index("async function refreshStateBackground")
-        refresh_block = self.enh[refresh_at : refresh_at + 700]
-        self.assertIn('stateApiPath("active","full")', refresh_block)
+        refresh_block = self.enh[refresh_at : refresh_at + 900]
         self.assertIn('stateApiPath("all","thumbs")', refresh_block)
+        self.assertIn('stateApiPath("active","full")', refresh_block)
+        self.assertIn("mergePhotosOnly", refresh_block)
         self.assertNotIn('stateApiPath("all","full")', refresh_block)
-        self.assertIn("keepRicherPhotos", refresh_block)
+        # Full signing must not block card paint.
+        self.assertIn(".then(fresh=>applyStatePayload(fresh,{mergePhotosOnly:true}))", refresh_block)
 
     def test_boot_skips_cached_list_paint_and_rerender_timers(self) -> None:
         boot_at = self.enh.index("async function bootWorkspace")
@@ -333,12 +335,20 @@ class Phase3ThumbnailChurnChecklist(unittest.TestCase):
         self.assertNotIn("else if(route!==\"home\")render()", boot_block)
         self.assertNotIn("rerenderLatestHome", self.enh)
 
-    def test_reload_defaults_to_active_lazy_not_all_full(self) -> None:
+    def test_reload_defaults_to_active_thumbs_not_all_full(self) -> None:
         reload_at = self.enh.index("reload=async function")
         block = self.enh[reload_at : reload_at + 350]
         self.assertIn('options.scope||"active"', block)
-        self.assertIn('options.photos||"lazy"', block)
+        self.assertIn('options.photos||"thumbs"', block)
         self.assertNotIn('options.scope||"all"', block)
+
+    def test_boot_loads_active_thumbs_not_lazy(self) -> None:
+        boot_at = self.enh.index("async function bootWorkspace")
+        boot_block = self.enh[boot_at : boot_at + 900]
+        self.assertIn('reload({scope:"active",photos:"thumbs"})', boot_block)
+        self.assertNotIn('photos:"lazy"', boot_block)
+        self.assertIn("hydrateOpenItemPhotos", self.enh)
+        self.assertIn("itemNeedsPhotoHydration", self.enh)
 
 
 if __name__ == "__main__":

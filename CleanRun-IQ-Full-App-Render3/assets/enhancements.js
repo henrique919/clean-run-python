@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards61";
-  document.documentElement.dataset.cleanrunBuild="cards61";
+  window.CLEANRUN_FRONTEND_BUILD="cards62";
+  document.documentElement.dataset.cleanrunBuild="cards62";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -448,25 +448,58 @@
     if(photos)params.set("photos",photos);
     return `/api/state?${params}`;
   }
-  function applyStatePayload(fresh,{keepRicherPhotos=false}={}){
-    if(keepRicherPhotos&&state?.items?.length&&fresh?.items){
-      const prevById=new Map(state.items.map(item=>[item.id,item]));
-      fresh.items=fresh.items.map(item=>{
-        const prev=prevById.get(item.id);
-        if(!prev)return item;
-        const prevSigned=Array.isArray(prev.originalPhotos)&&prev.originalPhotos.some(p=>/^https?:/i.test(String(p))||String(p).startsWith("data:"));
-        const nextSigned=Array.isArray(item.originalPhotos)&&item.originalPhotos.some(p=>/^https?:/i.test(String(p))||String(p).startsWith("data:"));
-        if(!prevSigned||nextSigned)return item;
-        return {
-          ...item,
-          originalPhotos:prev.originalPhotos,
-          originalPhotoThumbnails:(item.originalPhotoThumbnails&&item.originalPhotoThumbnails.length)?item.originalPhotoThumbnails:(prev.originalPhotoThumbnails||[]),
-          rectificationEvidence:prev.rectificationEvidence,
-          closeoutEvidence:prev.closeoutEvidence
-        };
-      });
+  function photosAreSigned(list){
+    return Array.isArray(list)&&list.some(p=>/^https?:/i.test(String(p))||String(p).startsWith("data:"));
+  }
+  function mergeItemPhotoFields(base,incoming){
+    if(!base)return incoming;
+    if(!incoming)return base;
+    const incomingSigned=photosAreSigned(incoming.originalPhotos);
+    const baseSigned=photosAreSigned(base.originalPhotos);
+    const thumbs=()=>{
+      if(incoming.originalPhotoThumbnails?.length)return incoming.originalPhotoThumbnails;
+      if(base.originalPhotoThumbnails?.length)return base.originalPhotoThumbnails;
+      return [];
+    };
+    if(incomingSigned||!baseSigned){
+      return {
+        ...base,
+        ...incoming,
+        originalPhotoThumbnails:thumbs(),
+        originalPhotos:incomingSigned?incoming.originalPhotos:(base.originalPhotos||incoming.originalPhotos),
+        rectificationEvidence:incomingSigned?incoming.rectificationEvidence:(base.rectificationEvidence||incoming.rectificationEvidence),
+        closeoutEvidence:incomingSigned?incoming.closeoutEvidence:(base.closeoutEvidence||incoming.closeoutEvidence)
+      };
     }
-    state=fresh;
+    return {
+      ...incoming,
+      ...base,
+      originalPhotoThumbnails:thumbs(),
+      originalPhotos:base.originalPhotos,
+      rectificationEvidence:base.rectificationEvidence,
+      closeoutEvidence:base.closeoutEvidence
+    };
+  }
+  function applyStatePayload(fresh,{keepRicherPhotos=false,mergePhotosOnly=false}={}){
+    if(!fresh)return;
+    if(mergePhotosOnly&&state?.items?.length&&fresh?.items){
+      const incomingById=new Map(fresh.items.map(item=>[item.id,item]));
+      const existingIds=new Set(state.items.map(item=>item.id));
+      state={
+        ...state,
+        settings:fresh.settings||state.settings,
+        items:[
+          ...state.items.map(item=>mergeItemPhotoFields(item,incomingById.get(item.id))),
+          ...fresh.items.filter(item=>!existingIds.has(item.id))
+        ]
+      };
+    }else if(keepRicherPhotos&&state?.items?.length&&fresh?.items){
+      const prevById=new Map(state.items.map(item=>[item.id,item]));
+      fresh.items=fresh.items.map(item=>mergeItemPhotoFields(prevById.get(item.id),item));
+      state=fresh;
+    }else{
+      state=fresh;
+    }
     cacheState();
     updateOfflinePill();
     if(route==="items")filterItems();
@@ -474,9 +507,9 @@
     else if(route==="review"||route==="detail")render();
   }
   reload=async function(options={}){
-    // Default to the active project — signing every photo in every project was the 2-minute stall.
+    // Default: active project + list thumbnails (cards show without signing every evidence photo).
     const scope=options.scope||"active";
-    const photos=options.photos||"lazy";
+    const photos=options.photos||"thumbs";
     stateNeedsGlobalRefresh=false;
     state=await api(stateApiPath(scope,photos));
     cacheState();
@@ -494,7 +527,7 @@
     else render();
     try{
       await api("/api/settings",{method:"POST",body:JSON.stringify({activeProject:next})});
-      await reload({scope:"active",photos:"lazy"});
+      await reload({scope:"active",photos:"thumbs"});
       refreshStateBackground();
       if(route==="capture")applyCaptureDefaults();
       toast(`Switched to ${next}`);
@@ -506,19 +539,19 @@
   };
   async function refreshStateBackground(){
     try{
-      // 1) Active project with full photos — home/item cards + detail appear in seconds.
-      const activeFull=await api(stateApiPath("active","full"));
-      applyStatePayload(activeFull);
-      // 2) All projects with thumbnails only — project switcher/lists stay light (not all+full).
+      // Cards/home: all-project thumbnails only (no full evidence signing on the critical path).
       const allThumbs=await api(stateApiPath("all","thumbs"));
       applyStatePayload(allThumbs,{keepRicherPhotos:true});
+      // Detail/review originals: merge into existing all-project state; never replace it.
+      api(stateApiPath("active","full"))
+        .then(fresh=>applyStatePayload(fresh,{mergePhotosOnly:true}))
+        .catch(()=>{});
     }catch{}
-  }
   const baseGo=go;
   go=function(next){
     if(stateNeedsGlobalRefresh&&(next==="home"||next==="review")){
       stateNeedsGlobalRefresh=false;
-      reload({scope:"active",photos:"full"}).then(()=>{baseGo(next)}).catch(()=>baseGo(next));
+      reload({scope:"active",photos:"thumbs"}).then(()=>{baseGo(next)}).catch(()=>baseGo(next));
       return;
     }
     baseGo(next);
@@ -1540,7 +1573,7 @@
     return ret;
   }
   async function afterSignOffModal(id,ret){
-    await reload({scope:"active",photos:"full"});
+    await reload({scope:"active",photos:"thumbs"});
     if(ret==="detail"){const item=findItemById(id);if(item)showItem(item.id);else{route="items";render()}}
     else{route="review";render()}
   }
@@ -1610,11 +1643,50 @@
     }catch(err){toast(err.message,true)}finally{release()}
   };
 
+  function photoNeedsSign(value){
+    const src=String(value||"");
+    return !!src && !/^https?:/i.test(src) && !src.startsWith("data:") && !src.startsWith("seed://");
+  }
+  function itemNeedsPhotoHydration(item){
+    if(!item)return false;
+    if((item.originalPhotos||[]).some(photoNeedsSign))return true;
+    if((item.rectificationEvidence||[]).some(e=>photoNeedsSign(e?.photo)))return true;
+    if((item.closeoutEvidence||[]).some(e=>photoNeedsSign(e?.photo)))return true;
+    return false;
+  }
+  let detailPhotoHydrateId="";
+  function hydrateOpenItemPhotos(id){
+    const itemId=canonicalItemId(id);
+    if(!itemId||detailPhotoHydrateId===itemId)return;
+    const current=findItemById(itemId);
+    if(!itemNeedsPhotoHydration(current))return;
+    detailPhotoHydrateId=itemId;
+    api(`/api/items/${encodeURIComponent(itemId)}?photos=full`)
+      .then(fresh=>{
+        if(!fresh?.id)return;
+        const merged=mergeSavedItem(fresh);
+        if($("#modal")?.hidden)return;
+        if(canonicalItemId(merged?.id||itemId)!==detailPhotoHydrateId)return;
+        showItem(merged.id||itemId);
+      })
+      .catch(()=>{})
+      .finally(()=>{if(detailPhotoHydrateId===itemId)detailPhotoHydrateId=""});
+  }
   const originalShowItem=showItem;
   showItem=function(id){
     const i=findItemById(id);
     if(!i)return toast("Item not found. Refresh and try again.",true);
-    originalShowItem(canonicalItemId(i.id));
+    // Prefer signed thumbs in the modal until full originals finish hydrating.
+    if(itemNeedsPhotoHydration(i)&&Array.isArray(i.originalPhotoThumbnails)&&i.originalPhotoThumbnails.length){
+      const preview={...i,originalPhotos:i.originalPhotos.map((photo,index)=>photoNeedsSign(photo)?(i.originalPhotoThumbnails[index]||photo):photo)};
+      const idx=state.items.findIndex(x=>itemIdKey(x.id)===itemIdKey(i.id));
+      if(idx>=0){
+        const previous=state.items[idx];
+        state.items[idx]=preview;
+        originalShowItem(canonicalItemId(i.id));
+        state.items[idx]=previous;
+      }else originalShowItem(canonicalItemId(i.id));
+    }else originalShowItem(canonicalItemId(i.id));
     const cards=[...document.querySelectorAll("#modalBody .native-card")],original=cards.find(c=>c.querySelector("h2")?.textContent==="Original Issue");
     const summary=cards[0];
     if(summary&&i){
@@ -1629,6 +1701,7 @@
     }
     if(original){const photos=[...original.querySelectorAll(".photo-preview img")];photos.forEach((img,n)=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,`${i.code} · Original issue ${n+1}`,null);const meta=i.originalPhotoMeta?.[n];const caption=geoLabel(meta);if(caption){const cap=document.createElement("div");cap.className="photo-caption";cap.textContent=caption;img.insertAdjacentElement("afterend",cap)}});const add=document.createElement("button");add.className="btn alt small";add.textContent="＋ Add / mark up photos";add.onclick=()=>editItemForm(i.id);original.querySelector("h2")?.insertAdjacentElement("afterend",add)}
     document.querySelectorAll("#modalBody .evidence img").forEach(img=>{img.title="Open enlarged photo";img.onclick=()=>openWorkbench(img.src,img.alt||"Evidence photo",null)});
+    hydrateOpenItemPhotos(i.id);
   };
 
   function offlineError(err){return !navigator.onLine||err instanceof TypeError||/fetch|network|offline/i.test(String(err?.message||err))}
@@ -1815,7 +1888,7 @@
       const to=commandFindSubcontractor(issue[2]),body={to,by:state.settings.preparedBy,reissue:item.status==="rejected"};
       await api(`/api/items/${item.id}/actions/issue`,{method:"POST",body:JSON.stringify(body)});
       item.status="issued";item.subcontractor=to;item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to,by:body.by,reissue:!!body.reissue});
-      closeModal();toast(`${item.code} issued to ${to}`);await reload({scope:"active",photos:"full"});openDashboardSearch(item.code,"Issued");offerIssueNotification(state.items.find(x=>x.id===item.id)||item);return;
+      closeModal();toast(`${item.code} issued to ${to}`);await reload({scope:"active",photos:"thumbs"});openDashboardSearch(item.code,"Issued");offerIssueNotification(state.items.find(x=>x.id===item.id)||item);return;
     }
     const find=q.match(/^(?:find|show|search)\s+(?:all\s+)?(?:(open|captured|issued|ready|closed|overdue|rejected)\s+)?(?:items?|defects?|works?)?\s*(.*)$/i);
     if(find){closeModal();openDashboardSearch(cleanCommandText(find[2]),commandStatus(find[1]));return}
@@ -2310,7 +2383,7 @@
       if(route==="capture")render();
     }
     try{
-      await reload({scope:"active",photos:"lazy"});
+      await reload({scope:"active",photos:"thumbs"});
       if(routeParam==="capture")route="capture";
       render();
       refreshStateBackground();
