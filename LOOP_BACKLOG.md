@@ -76,7 +76,7 @@ Verified against `origin/main` at commit `37adbd1` on 2026-07-16.
   this PR contains documentation only.
 - **Risk:** none (docs only). **Phone QA:** no. **Owner gate:** merge approval.
 
-### - [ ] AUTH-02 — OWNER TASK: provision and verify QA/admin accounts
+### - [x] AUTH-02 — OWNER TASK: provision and verify QA/admin accounts — done 16 Jul 2026: script on `main` (PR #76), owner ran it in the Supabase SQL Editor and confirmed ("done")
 
 - **Plain English:** Two pieces of earlier login work need to be in place
   before we can turn logins on, and one of them only exists on your computer.
@@ -105,7 +105,7 @@ Verified against `origin/main` at commit `37adbd1` on 2026-07-16.
 - **Agents:** do not re-derive the SQL script or the gated-QA-access work.
   If AUTH-02 is unticked, AUTH-03 is blocked — skip past it.
 
-### - [ ] AUTH-03 — Secure-login activation PR (depends: AUTH-01, AUTH-02)
+### - [x] AUTH-03 — Secure-login activation PR (depends: AUTH-01, AUTH-02) — PR prepared as owner-gated draft; ships only on explicit "Yes, proceed" after preview phone QA. Declared deviation: the eba7129 cherry-pick was deliberately NOT included (the gated QA-token mode is superseded by the real `qa@cleanruniq.com` account provisioned in AUTH-02; rationale in the PR body; owner may overrule)
 
 - **Plain English:** The pull request that actually turns logins on. It gets
   prepared by the agent, tested on your phone via a preview link, and only
