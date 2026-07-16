@@ -30,6 +30,27 @@ def get_supabase_client() -> Any:
     return get_public_supabase_client()
 
 
+def use_public_launch_data_client() -> bool:
+    """True when production is still on the temporary public-launch Supabase path.
+
+    Storage already writes evidence under cleanrun/public/* with the anon key
+    (see app/storage.py). Table writes must match: attaching a user JWT switches
+    PostgREST to the authenticated role, and if authenticated launch RLS is
+    missing/incomplete, item create fails with a 503 after login is enabled.
+    """
+    if (os.getenv("CLEANRUN_ENV") or "").lower() != "production":
+        return False
+    prefix = (os.getenv("CLEANRUN_STORAGE_PATH_PREFIX") or "cleanrun/public").strip().strip("/")
+    return prefix == "cleanrun/public" or prefix.startswith("cleanrun/public/")
+
+
+def get_data_supabase_client() -> Any:
+    """Client for item/settings table reads and writes in the active storage mode."""
+    if use_public_launch_data_client():
+        return get_public_supabase_client()
+    return get_supabase_client()
+
+
 def _build_supabase_client(access_token: str | None = None) -> Any:
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
