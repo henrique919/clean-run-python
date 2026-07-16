@@ -130,7 +130,7 @@ Verified against `origin/main` at commit `37adbd1` on 2026-07-16.
   "Yes, proceed" required; preview shares production Supabase, so QA captures
   must use a sandbox project.
 
-### - [ ] VERIFY-01 — Offline capture field test (agent writes script; owner runs it)
+### - [x] VERIFY-01 — Offline capture field test (agent writes script; owner runs it) — script delivered: `docs/VERIFY-01-offline-field-test.md`; awaiting owner's phone run
 
 - **Plain English:** The app is supposed to keep working with no signal — you
   capture defects, and they upload automatically when you're back online.
