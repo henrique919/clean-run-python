@@ -323,11 +323,31 @@ def collect_item_sign_requests(item) -> list[tuple[str, dict[str, object] | None
     return requests
 
 
+def collect_thumbnail_sign_requests(item) -> list[tuple[str, dict[str, object] | None]]:
+    """List/home cards only need centre-cropped original thumbnails."""
+    requests: list[tuple[str, dict[str, object] | None]] = []
+    thumb_transform = list_thumbnail_transform()
+    for photo in item.original_photos:
+        path = storage_path_from_value(photo)
+        if not path or path.startswith(("data:image/", "seed://")):
+            continue
+        requests.append((path, thumb_transform))
+    return requests
+
+
 def prefetch_item_photo_urls(items) -> None:
     """Parallel prefetch for /api/state cold-cache loads."""
     requests: list[tuple[str, dict[str, object] | None]] = []
     for item in items:
         requests.extend(collect_item_sign_requests(item))
+    signed_url_cache.prefetch(requests)
+
+
+def prefetch_item_thumbnail_urls(items) -> None:
+    """Parallel prefetch for /api/state?photos=thumbs (cards/home only)."""
+    requests: list[tuple[str, dict[str, object] | None]] = []
+    for item in items:
+        requests.extend(collect_thumbnail_sign_requests(item))
     signed_url_cache.prefetch(requests)
 
 

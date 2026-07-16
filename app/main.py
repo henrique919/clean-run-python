@@ -44,6 +44,7 @@ from app.storage import (
     is_markup_source_path_allowed,
     list_thumbnail_transform,
     prefetch_item_photo_urls,
+    prefetch_item_thumbnail_urls,
     prefetch_report_photo_urls,
     resolve_photo_url,
     resolve_thumbnail_url,
@@ -272,8 +273,16 @@ def sign_item_photos(item: Item) -> Item:
     )
 
 
-def camel_item(item, *, sign_photos: bool = True) -> dict[str, object]:
-    source_item = sign_item_photos(item) if sign_photos else item
+def camel_item(item, *, sign_photos: bool | str = True) -> dict[str, object]:
+    """Serialize an item for the Render3 UI.
+
+    sign_photos:
+      True/"full" — sign originals + evidence + thumbnails (detail/reports)
+      "thumbs" — sign list thumbnails only (home/items cards; originals stay paths)
+      False/"lazy" — no signing (fast shell load)
+    """
+    mode = "full" if sign_photos is True else ("lazy" if sign_photos is False else str(sign_photos))
+    source_item = sign_item_photos(item) if mode == "full" else item
     payload = source_item.model_dump(mode="json")
     rename = {
         "due_date": "dueDate",
@@ -298,9 +307,13 @@ def camel_item(item, *, sign_photos: bool = True) -> dict[str, object]:
     for source, target in rename.items():
         if source in payload:
             payload[target] = payload.pop(source)
-    if sign_photos:
+    if mode == "full":
         payload["originalPhotoThumbnails"] = [
             resolve_thumbnail_url(photo) or resolve_photo_url(photo) or photo for photo in item.original_photos
+        ]
+    elif mode == "thumbs":
+        payload["originalPhotoThumbnails"] = [
+            resolve_thumbnail_url(photo) or photo for photo in item.original_photos
         ]
     else:
         payload["originalPhotoThumbnails"] = []
@@ -690,12 +703,16 @@ def legacy_state(
     visible = visible_items(ctx.user, data.items)
     if scope == "active":
         visible = [item for item in visible if item.project == settings.active_project]
-    sign_photos = photos != "lazy"
-    if sign_photos:
+    photo_mode = (photos or "full").lower()
+    if photo_mode not in {"full", "thumbs", "lazy"}:
+        photo_mode = "full"
+    if photo_mode == "full":
         prefetch_item_photo_urls(visible)
+    elif photo_mode == "thumbs":
+        prefetch_item_thumbnail_urls(visible)
     return {
         "settings": camel_settings(settings),
-        "items": [camel_item(item, sign_photos=sign_photos) for item in visible],
+        "items": [camel_item(item, sign_photos=photo_mode) for item in visible],
         "plans": [],
         "trades": TRADES,
         "raisedByOptions": RAISED_BY_OPTIONS,

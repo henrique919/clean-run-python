@@ -1,4 +1,4 @@
-"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards60)."""
+"""Phase 3 checklist — issue=notify offers, mid-size report photos, field-first Home (cards61)."""
 
 from __future__ import annotations
 
@@ -314,11 +314,17 @@ class Phase3ThumbnailChurnChecklist(unittest.TestCase):
         self.assertIn('if(route==="home")refreshHomeNextCards()', render_block)
 
     def test_background_refresh_skips_full_render_on_items_home(self) -> None:
+        apply_at = self.enh.index("function applyStatePayload")
+        apply_block = self.enh[apply_at : apply_at + 1600]
+        self.assertIn('if(route==="items")filterItems()', apply_block)
+        self.assertIn('else if(route==="home")refreshHomeNextCards()', apply_block)
+        self.assertNotIn('if(route==="home"||route==="items"', apply_block)
         refresh_at = self.enh.index("async function refreshStateBackground")
-        block = self.enh[refresh_at : refresh_at + 450]
-        self.assertIn('if(route==="items")filterItems()', block)
-        self.assertIn('else if(route==="home")refreshHomeNextCards()', block)
-        self.assertNotIn('if(route==="home"||route==="items"', block)
+        refresh_block = self.enh[refresh_at : refresh_at + 700]
+        self.assertIn('stateApiPath("active","full")', refresh_block)
+        self.assertIn('stateApiPath("all","thumbs")', refresh_block)
+        self.assertNotIn('stateApiPath("all","full")', refresh_block)
+        self.assertIn("keepRicherPhotos", refresh_block)
 
     def test_boot_skips_cached_list_paint_and_rerender_timers(self) -> None:
         boot_at = self.enh.index("async function bootWorkspace")
@@ -326,6 +332,13 @@ class Phase3ThumbnailChurnChecklist(unittest.TestCase):
         self.assertIn("Skip cached paint for list routes", boot_block)
         self.assertNotIn("else if(route!==\"home\")render()", boot_block)
         self.assertNotIn("rerenderLatestHome", self.enh)
+
+    def test_reload_defaults_to_active_lazy_not_all_full(self) -> None:
+        reload_at = self.enh.index("reload=async function")
+        block = self.enh[reload_at : reload_at + 350]
+        self.assertIn('options.scope||"active"', block)
+        self.assertIn('options.photos||"lazy"', block)
+        self.assertNotIn('options.scope||"all"', block)
 
 
 if __name__ == "__main__":

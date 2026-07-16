@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards60";
-  document.documentElement.dataset.cleanrunBuild="cards60";
+  window.CLEANRUN_FRONTEND_BUILD="cards61";
+  document.documentElement.dataset.cleanrunBuild="cards61";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -448,9 +448,35 @@
     if(photos)params.set("photos",photos);
     return `/api/state?${params}`;
   }
+  function applyStatePayload(fresh,{keepRicherPhotos=false}={}){
+    if(keepRicherPhotos&&state?.items?.length&&fresh?.items){
+      const prevById=new Map(state.items.map(item=>[item.id,item]));
+      fresh.items=fresh.items.map(item=>{
+        const prev=prevById.get(item.id);
+        if(!prev)return item;
+        const prevSigned=Array.isArray(prev.originalPhotos)&&prev.originalPhotos.some(p=>/^https?:/i.test(String(p))||String(p).startsWith("data:"));
+        const nextSigned=Array.isArray(item.originalPhotos)&&item.originalPhotos.some(p=>/^https?:/i.test(String(p))||String(p).startsWith("data:"));
+        if(!prevSigned||nextSigned)return item;
+        return {
+          ...item,
+          originalPhotos:prev.originalPhotos,
+          originalPhotoThumbnails:(item.originalPhotoThumbnails&&item.originalPhotoThumbnails.length)?item.originalPhotoThumbnails:(prev.originalPhotoThumbnails||[]),
+          rectificationEvidence:prev.rectificationEvidence,
+          closeoutEvidence:prev.closeoutEvidence
+        };
+      });
+    }
+    state=fresh;
+    cacheState();
+    updateOfflinePill();
+    if(route==="items")filterItems();
+    else if(route==="home")refreshHomeNextCards();
+    else if(route==="review"||route==="detail")render();
+  }
   reload=async function(options={}){
-    const scope=options.scope||"all";
-    const photos=options.photos||(scope==="all"?"full":"lazy");
+    // Default to the active project — signing every photo in every project was the 2-minute stall.
+    const scope=options.scope||"active";
+    const photos=options.photos||"lazy";
     stateNeedsGlobalRefresh=false;
     state=await api(stateApiPath(scope,photos));
     cacheState();
@@ -480,20 +506,19 @@
   };
   async function refreshStateBackground(){
     try{
-      const fresh=await api(stateApiPath("all","full"));
-      state=fresh;
-      cacheState();
-      updateOfflinePill();
-      if(route==="items")filterItems();
-      else if(route==="home")refreshHomeNextCards();
-      else if(route==="review")render();
+      // 1) Active project with full photos — home/item cards + detail appear in seconds.
+      const activeFull=await api(stateApiPath("active","full"));
+      applyStatePayload(activeFull);
+      // 2) All projects with thumbnails only — project switcher/lists stay light (not all+full).
+      const allThumbs=await api(stateApiPath("all","thumbs"));
+      applyStatePayload(allThumbs,{keepRicherPhotos:true});
     }catch{}
   }
   const baseGo=go;
   go=function(next){
     if(stateNeedsGlobalRefresh&&(next==="home"||next==="review")){
       stateNeedsGlobalRefresh=false;
-      reload().then(()=>{baseGo(next)}).catch(()=>baseGo(next));
+      reload({scope:"active",photos:"full"}).then(()=>{baseGo(next)}).catch(()=>baseGo(next));
       return;
     }
     baseGo(next);
@@ -1515,7 +1540,7 @@
     return ret;
   }
   async function afterSignOffModal(id,ret){
-    await reload();
+    await reload({scope:"active",photos:"full"});
     if(ret==="detail"){const item=findItemById(id);if(item)showItem(item.id);else{route="items";render()}}
     else{route="review";render()}
   }
@@ -1790,7 +1815,7 @@
       const to=commandFindSubcontractor(issue[2]),body={to,by:state.settings.preparedBy,reissue:item.status==="rejected"};
       await api(`/api/items/${item.id}/actions/issue`,{method:"POST",body:JSON.stringify(body)});
       item.status="issued";item.subcontractor=to;item.issuedAt=item.issuedAt||new Date().toISOString();item.updatedAt=new Date().toISOString();item.issueHistory=item.issueHistory||[];item.issueHistory.push({at:item.updatedAt,to,by:body.by,reissue:!!body.reissue});
-      closeModal();toast(`${item.code} issued to ${to}`);await reload();openDashboardSearch(item.code,"Issued");offerIssueNotification(state.items.find(x=>x.id===item.id)||item);return;
+      closeModal();toast(`${item.code} issued to ${to}`);await reload({scope:"active",photos:"full"});openDashboardSearch(item.code,"Issued");offerIssueNotification(state.items.find(x=>x.id===item.id)||item);return;
     }
     const find=q.match(/^(?:find|show|search)\s+(?:all\s+)?(?:(open|captured|issued|ready|closed|overdue|rejected)\s+)?(?:items?|defects?|works?)?\s*(.*)$/i);
     if(find){closeModal();openDashboardSearch(cleanCommandText(find[2]),commandStatus(find[1]));return}
