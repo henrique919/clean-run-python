@@ -33,7 +33,7 @@ Verified against `origin/main` at commit `37adbd1` on 2026-07-16.
 
 ## Tasks (priority order)
 
-### - [ ] AUTH-01 — Secure-login readiness audit (report only)
+### - [x] AUTH-01 — Secure-login readiness audit (report only) — done: `docs/AUTH-01-secure-login-audit.md`
 
 - **Plain English:** Today anyone who opens app.cleanruniq.com gets full admin
   access without logging in. Before we turn logins on, this task writes a
