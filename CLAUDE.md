@@ -57,7 +57,10 @@ decisions in plain English in all summaries.
    Behaviour changed beyond tasks (must be empty or justified) · Known risks
    or follow-ups. Then STOP for approval.
 7. **Measure before optimising.** Performance work reports numbers first,
-   proposes ranked fixes, waits for approval.
+ proposes ranked fixes, waits for approval.
+8. **Agents never receive or request owner credentials; QA accounts only.**
+ Anything requiring authenticated production access is flagged for the
+ owner instead.
 
 ## Product decisions already made (do not relitigate)
 - Status vocabulary: Captured / Issued / In Progress / Ready / Rejected /
@@ -83,10 +86,13 @@ builder, enterprise dashboards, server-side PDF, offline sync rework,
 multi-worker hosting changes, item-data caching (signed-URL caching is fine).
 
 ## Known follow-ups (logged, build only when assigned)
-- Expired-thumbnail recovery: onerror re-sign/refresh for signed URLs older
-  than TTL while a tab stays open.
-- Share Report file size: inline mid-size transforms (~1200px) instead of
-  originals; ~5.7MB at 15 items today, linear growth.
 - Dashboard "Issued" KPI counts issued + in_progress together (accepted).
-- Field extraction is substring-only ("L01" won't match "Level 1").
-- Rename/verify Render instance type vs render.yaml `starter`.
+- One-time owner check: confirm the instance type in the Render dashboard
+ matches render.yaml `starter`. Paid Starter instances do not spin down
+ (only Free does) — no code work; dashboard verification only.
+
+Shipped and removed from this list: expired-thumbnail recovery
+(`/api/photos/refresh-url` + client onerror, PR #44), Share Report mid-size
+images (`SHARE_IMAGE_WIDTH=1200` in `app/storage.py`, PR #44), and field
+alias matching ("Level 1" → "L01", `app/parse_fields.py` +
+`tests/test_parse_fields.py`).

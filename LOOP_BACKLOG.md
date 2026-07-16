@@ -157,7 +157,7 @@ Verified against `origin/main` at commit `37adbd1` on 2026-07-16.
 - **Risk:** none (docs only). **Phone QA:** the owner executing the script IS
   the QA. **Owner gate:** merge approval, then owner runs the test.
 
-### - [ ] CLEANUP-BATCH-01 — Docs truth-up + legacy test retirement + serializer warning (DOC-01 + TEST-01 + HYGIENE-01)
+### - [x] CLEANUP-BATCH-01 — Docs truth-up + legacy test retirement + serializer warning (DOC-01 + TEST-01 + HYGIENE-01) — done; migrated coverage in `tests/test_legacy_full_app_migration.py`
 
 One branch, one PR titled `CLEANUP-BATCH-01`. Combined because none of the
 three changes production behaviour and they touch disjoint files; one review
