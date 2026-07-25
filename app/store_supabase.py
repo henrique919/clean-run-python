@@ -41,11 +41,16 @@ CREATE_CONTEXT_SELECT = (
     "id, code, type, project, building, level, unit, room, trade, subcontractor, "
     "due_date, description, created_by_label, created_at"
 )
+# payload is a legacy full-item snapshot (~2 kB/row, 258 kB across current
+# production) written for rollback only. Reads need just two keys from it —
+# select them as JSON paths instead of dragging the whole blob over the wire
+# on every state load.
 ITEM_ROW_SELECT = (
     "id, code, type, status, project, building, level, unit, room, trade, subcontractor, "
     "priority, due_date, description, raised_by, created_by_label, rejection_reason, "
     "issued_at, started_at, ready_at, inspected_at, closed_at, created_at, updated_at, "
-    "client_request_id, payload"
+    "client_request_id, issue_history:payload->issue_history, "
+    "inspection_history:payload->inspection_history"
 )
 UPLOAD_MAX_WORKERS = int(os.getenv("CLEANRUN_UPLOAD_MAX_WORKERS", "4"))
 
@@ -220,16 +225,25 @@ class SupabaseCleanRunStore(CleanRunStore):
             audit_events = self._children_by_item("item_audit_events", [db_item_id]).get(db_item_id, [])
             return self._item_from_rows(row, photos, comments, audit_events)
 
-    def _read(self) -> AppData:
+    def snapshot(self, project: str | None = None) -> AppData:
+        return self._read(project=project)
+
+    def settings_snapshot(self) -> Settings:
         with self.lock:
-            item_rows = (
-                self.client.table("items")
-                .select(ITEM_ROW_SELECT)
-                .order("updated_at", desc=True)
-                .execute()
-                .data
-                or []
-            )
+            return self._read_settings()
+
+    def _read(self, project: str | None = None) -> AppData:
+        with self.lock:
+            query = self.client.table("items").select(ITEM_ROW_SELECT)
+            if project:
+                # Server-side scoping for active-project state loads: only
+                # this project's rows (and their children below) cross the
+                # wire instead of every item in the company. An empty-string
+                # active project never reaches here (callers fall back to the
+                # unscoped read), so NULL-project rows keep their legacy
+                # hydrate-to-"" behaviour.
+                query = query.eq("project", project)
+            item_rows = query.order("updated_at", desc=True).execute().data or []
             item_ids = [row["id"] for row in item_rows if row.get("id")]
             photos = self._children_by_item("item_photos", item_ids)
             comments = self._children_by_item("item_comments", item_ids)
@@ -394,16 +408,21 @@ class SupabaseCleanRunStore(CleanRunStore):
             )
             for event in audit_rows
         ]
+        # Aliased JSON-path columns from ITEM_ROW_SELECT are the primary
+        # source; the whole-payload key remains as a fallback for callers
+        # (and existing tests) that still pass full rows.
         payload = row.get("payload") or {}
+        raw_issue_history = row.get("issue_history") or payload.get("issue_history") or []
+        raw_inspection_history = row.get("inspection_history") or payload.get("inspection_history") or []
         issue_history = [
             IssueEvent.model_validate(event)
-            for event in payload.get("issue_history", [])
+            for event in raw_issue_history
             if isinstance(event, dict)
         ]
         issue_history = self._hydrate_issue_history(issue_history, audit_rows, row)
         inspection_history = [
             InspectionEvent.model_validate(event)
-            for event in payload.get("inspection_history", [])
+            for event in raw_inspection_history
             if isinstance(event, dict)
         ]
         return Item(

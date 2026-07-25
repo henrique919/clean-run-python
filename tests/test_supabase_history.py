@@ -63,6 +63,57 @@ class SupabaseHistoryHydrationTests(unittest.TestCase):
         self.assertEqual(item.inspection_history[0].action, "rejected")
         self.assertEqual(item.inspection_history[0].reason, "Not acceptable")
 
+    def test_hydrates_history_from_json_path_aliased_columns(self) -> None:
+        # ITEM_ROW_SELECT now selects payload->issue_history and
+        # payload->inspection_history as top-level aliased columns instead of
+        # the whole legacy payload blob; rows arrive in this shape.
+        store = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore)
+        row = {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "code": "DEF-1003",
+            "type": "defect",
+            "status": ItemStatus.REJECTED,
+            "project": "Jura Noosa",
+            "subcontractor": "ASTW Tiling",
+            "rejection_reason": "Not acceptable",
+            "issued_at": "2026-06-01T00:00:00Z",
+            "created_by_label": "Site Manager",
+            "created_at": "2026-06-01T00:00:00Z",
+            "updated_at": "2026-06-02T00:00:00Z",
+            "issue_history": [
+                {
+                    "at": "2026-06-01T00:00:00Z",
+                    "to": "ASTW Tiling",
+                    "by": "Site Manager",
+                    "note": "Please fix",
+                    "reissue": False,
+                }
+            ],
+            "inspection_history": [
+                {
+                    "at": "2026-06-02T00:00:00Z",
+                    "by": "Supervisor",
+                    "action": "rejected",
+                    "reason": "Not acceptable",
+                }
+            ],
+        }
+
+        item = store._item_from_rows(row, [], [], [])
+
+        self.assertEqual(len(item.issue_history), 1)
+        self.assertEqual(item.issue_history[0].to, "ASTW Tiling")
+        self.assertEqual(len(item.inspection_history), 1)
+        self.assertEqual(item.inspection_history[0].action, "rejected")
+
+    def test_item_row_select_does_not_fetch_whole_payload_blob(self) -> None:
+        from app.store_supabase import ITEM_ROW_SELECT
+
+        columns = [part.strip() for part in ITEM_ROW_SELECT.split(",")]
+        self.assertNotIn("payload", columns)
+        self.assertIn("issue_history:payload->issue_history", columns)
+        self.assertIn("inspection_history:payload->inspection_history", columns)
+
     def test_issue_history_rebuilt_from_audit_when_payload_missing(self) -> None:
         store = SupabaseCleanRunStore.__new__(SupabaseCleanRunStore)
         row = {

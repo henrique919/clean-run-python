@@ -734,15 +734,19 @@ def legacy_state(
     photos: str = Query(default="full"),
     ctx: RequestContext = Depends(get_request_context),
 ):
-    data = store.snapshot()
-    settings = scoped_settings(data.settings, ctx)
-    visible = visible_items(ctx.user, data.items)
-    if scope == "active":
-        visible = [item for item in visible if item.project == settings.active_project]
+    started = time.perf_counter()
+    settings = scoped_settings(store.settings_snapshot(), ctx)
+    if scope == "active" and settings.active_project:
+        data = store.snapshot(project=settings.active_project)
+        visible = visible_items(ctx.user, data.items)
+    else:
+        data = store.snapshot()
+        visible = visible_items(ctx.user, data.items)
+        if scope == "active":
+            visible = [item for item in visible if item.project == settings.active_project]
     photo_mode = (photos or "full").lower()
     if photo_mode not in {"full", "thumbs", "lazy"}:
         photo_mode = "full"
-    started = time.perf_counter()
     if photo_mode == "full":
         prefetch_item_photo_urls(visible)
     elif photo_mode == "thumbs":
