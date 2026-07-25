@@ -27,6 +27,8 @@ services:
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
+      - key: SUPABASE_JWT_AUDIENCE
+        value: "authenticated"
       - key: CLEANRUN_ENABLE_DEMO_RESET
         value: "false"
       - key: CLEANRUN_BOOTSTRAP_SEED_DATA

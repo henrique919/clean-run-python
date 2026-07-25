@@ -319,7 +319,7 @@ instead of three.
 
 ---
 
-### - [ ] SEC-02 — JWT audience never verified; wrong/stale secret means a network round-trip on every request (found during launch assessment, 25 Jul 2026)
+### - [x] SEC-02 — JWT audience never verified; wrong/stale secret means a network round-trip on every request (found during launch assessment, 25 Jul 2026) — done: PR #82, `app/auth.py` + `render.yaml`, `tests/test_jwt_verification.py`
 
 - **Plain English:** two related gaps in how the server checks a login
   token. Neither is exploitable on its own today, but together they mean a
