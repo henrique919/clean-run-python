@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards64";
-  document.documentElement.dataset.cleanrunBuild="cards64";
+  window.CLEANRUN_FRONTEND_BUILD="cards65";
+  document.documentElement.dataset.cleanrunBuild="cards65";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
@@ -1392,10 +1392,9 @@
 
   const originalCaptureView=captureView;
   captureView=function(){
-    // Walk mode is the default capture state. toggleWalkCapture() has
-    // always written the walkModeOff opt-out flag, but nothing ever read
-    // it, so walk mode silently defaulted OFF for every fresh session.
-    if(!walkMode&&sessionStorage.getItem("walkModeOff")!=="1"){walkMode=true;}
+    // Owner decision (25 Jul): Capture opens in single-photo mode; walk
+    // mode (multi-capture loop) is opt-in via the top-right pill only.
+    // Do not auto-enable walk mode here.
     const s=state.settings;
     const cfg=s.projectConfigs[s.activeProject]||{};
     const walkBanner=walkMode?`<div class="walk-session-banner">Walk mode · ${walkCount} captured this walk · next save loops back here</div>`:"";

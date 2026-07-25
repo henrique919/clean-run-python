@@ -70,7 +70,10 @@ decisions in plain English in all summaries.
   gold, Captured neutral. Green means done, blue means action available.
 - Markup NEVER auto-opens after photo attach. User-initiated only. Default
   tool is Arrow.
-- Walk mode is the default capture state.
+- Capture opens in single-photo mode. Walk mode (multi-capture loop) is
+  opt-in only, via the top-right pill on the Capture screen — it is NOT the
+  default. (Owner correction, 25 Jul 2026 — supersedes the earlier "walk
+  mode is the default capture state" line that briefly stood here.)
 - Thumbnails: single centre-crop (Supabase transform cover at 2x card size +
   CSS object-fit cover on 142×108). Full-size views use originals.
 - Capture defaults chip strip: collapsed after first save, expanded when no
