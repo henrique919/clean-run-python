@@ -7,6 +7,7 @@ working directory the service happens to use.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -17,6 +18,16 @@ import uvicorn
 REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+# Must run before `from app.main import app` below: module import triggers
+# repository construction (Supabase bootstrap, seed-skip decision) that logs
+# via app.*-named loggers. Uvicorn only configures its own `uvicorn*`
+# loggers, so without this, every app.* log record — including errors —
+# fell through to logging.lastResort and never reached Render's log stream.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 print(
     "[CleanRun boot] "

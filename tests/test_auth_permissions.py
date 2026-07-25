@@ -130,12 +130,12 @@ class AuthPermissionTests(unittest.TestCase):
             response = self.client.post("/api/items", json={})
             self.assertEqual(response.status_code, 401)
 
-    def test_open_access_is_default_without_env(self) -> None:
+    def test_login_required_is_default_without_env(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CLEANRUN_LOGIN_REQUIRED", None)
             from app.config import login_required
 
-            self.assertFalse(login_required())
+            self.assertTrue(login_required())
 
     def test_anonymous_production_requests_are_rejected(self) -> None:
         with patch.dict(os.environ, {"APP_ENV": "production", "CLEANRUN_ENV": "production", "CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):

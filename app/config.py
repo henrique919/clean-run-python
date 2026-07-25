@@ -23,5 +23,8 @@ def storage_backend() -> str:
 
 
 def login_required() -> bool:
-    # Default off for the current launch window; set CLEANRUN_LOGIN_REQUIRED=true to restore sign-in.
-    return bool_env("CLEANRUN_LOGIN_REQUIRED", default=False)
+    # Default ON: a missing/misconfigured env var must fail closed, not grant
+    # anonymous callers open-access admin (see _open_access_user in auth.py).
+    # Set CLEANRUN_LOGIN_REQUIRED=false to explicitly opt into open access
+    # (local dev only; render.yaml pins "true" in production regardless).
+    return bool_env("CLEANRUN_LOGIN_REQUIRED", default=True)

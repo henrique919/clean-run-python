@@ -105,7 +105,11 @@ class SupabaseCleanRunStore(CleanRunStore):
     def __init__(self) -> None:
         self.lock = RLock()
         if is_production():
-            if os.getenv("CLEANRUN_BOOTSTRAP_SEED_DATA", "true").lower() in {"1", "true", "yes", "on"}:
+            # Default OFF: a missing env var must never re-arm the demo-data
+            # backfill against a live production database (it overwrites
+            # real item status/description and deletes photo rows not in
+            # the seed set — see cleanrun_data.json).
+            if os.getenv("CLEANRUN_BOOTSTRAP_SEED_DATA", "false").lower() in {"1", "true", "yes", "on"}:
                 logger.info("Backfilling Supabase production bootstrap data.")
                 self._backfill_seed_data()
             else:

@@ -29,6 +29,8 @@ services:
         sync: false
       - key: CLEANRUN_ENABLE_DEMO_RESET
         value: "false"
+      - key: CLEANRUN_BOOTSTRAP_SEED_DATA
+        value: "false"
       - key: CLEANRUN_LAUNCH_ADMIN_EMAILS
         value: "info@cleanruniq.com,harrysfuel@outlook.com"
       - key: CLEANRUN_LOGIN_REQUIRED
