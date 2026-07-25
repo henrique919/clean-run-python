@@ -266,9 +266,7 @@ class AuthPermissionTests(unittest.TestCase):
         class FakeClient:
             storage = FakeStorage()
 
-        with patch("app.storage.get_supabase_client", return_value=FakeClient()), patch(
-            "app.storage.get_public_supabase_client", return_value=FakeClient()
-        ):
+        with patch("app.storage.get_supabase_client", return_value=FakeClient()):
             allowed = self.client.post(
                 "/api/photos/stage",
                 headers=bearer("dev-site-manager"),
@@ -475,9 +473,7 @@ class AuthPermissionTests(unittest.TestCase):
         )
         self.store._write(self.store._read().model_copy(update={"items": [item]}))
 
-        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")), patch(
-            "app.storage.get_public_supabase_client", side_effect=RuntimeError("signing failed")
-        ):
+        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")):
             response = self.client.get("/api/reports/register", headers=bearer("dev-site-manager"))
 
         self.assertEqual(response.status_code, 200)
@@ -563,9 +559,7 @@ class AuthPermissionTests(unittest.TestCase):
         self._set_first_item_photo(path)
         stale = f"https://x.supabase.co/storage/v1/object/sign/cleanrun-evidence/{path}?token=expired"
 
-        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")), patch(
-            "app.storage.get_public_supabase_client", side_effect=RuntimeError("signing failed")
-        ):
+        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")):
             response = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": stale})
 
         self.assertEqual(response.status_code, 502)
