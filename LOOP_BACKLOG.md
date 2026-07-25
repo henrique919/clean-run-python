@@ -435,6 +435,41 @@ instead of three.
 - **Risk:** low-medium (touches logout, a rarely-exercised path — test
   carefully). **Phone QA:** yes. **Owner gate:** merge approval.
 
+### - [ ] DEPLOY-01 — production build may not be installed from requirements.txt (found during launch-readiness session, 25 Jul 2026)
+
+- **Plain English:** the running server's photo-storage library reported
+  itself as a version (`storage3 v0.12.1`) that today's `requirements.txt`
+  cannot install (`supabase==2.10.0` pins `storage3 <0.10`). That means at
+  least the build serving traffic at 22:46 UTC on 25 Jul was built from a
+  stale dependency cache, not from what the repo says. Fixes tested against
+  the repo's pinned versions can behave differently on a drifted build.
+- **Evidence:** Supabase storage logs, 22:46-22:48 UTC 25 Jul — user-agent
+  `supabase-py/storage3 v0.12.1` on every request; `requirements.txt` pins
+  `supabase==2.10.0` whose metadata requires `storage3 >=0.9.0,<0.10.0`.
+- **Suggested fix:** owner action in the Render dashboard — "Clear build
+  cache & deploy" once; then confirm the next storage log line reports
+  `storage3 v0.9.x`. No code change.
+- **Risk:** none (dashboard action). **Phone QA:** no. **Owner gate:**
+  owner performs the dashboard step.
+
+### - [ ] STORAGE-02 — bucket-info check logs noisy failures now that storage requires login (found 25 Jul 2026)
+
+- **Plain English:** before each upload the server asks "does the photo
+  bucket exist?" — that check now gets refused (the locked-down storage
+  rules have no allowance for reading bucket info), so every upload writes
+  a scary-looking failure line to the logs before proceeding fine.
+  Harmless in production (the code skips on), but it muddies the logs and
+  in non-production it can still abort uploads.
+- **Evidence:** two `GET/POST /storage/v1/bucket/...` 400s in the
+  25 Jul storage logs alongside the (since-fixed) upload failures;
+  `app/storage.py::_ensure_bucket` get_bucket → exception → production
+  skip-and-continue.
+- **Suggested fix:** either stop calling `_ensure_bucket` per-upload in
+  production entirely (the bucket is migration-managed), or add a
+  `storage.buckets` SELECT policy for `authenticated`. First option is
+  simpler and has no policy surface.
+- **Risk:** low. **Phone QA:** no. **Owner gate:** merge approval.
+
 ---
 
 ## Verification evidence — VERIFY-01 emulated run (agent, 16 Jul 2026)
