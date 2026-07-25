@@ -236,10 +236,16 @@ instead of three.
   retrying transient ones. Never silently drop evidence.
 - **Risk:** medium (touches sync logic; needs careful iOS QA).
   **Phone QA:** yes. **Owner gate:** merge approval.
-- **Status (25 Jul 2026):** a fix is in progress as part of the launch
-  assessment — see PR #82. Do not tick this box until that PR is reviewed,
-  merged, and phone-QA'd; the fix touches the same `flushQueue()` code path
-  this entry describes.
+- **Status (25 Jul 2026):** fix implemented and code-reviewed, on branch in
+  PR #82 (build tag cards63) — `flushQueue()` now classifies
+  transient-vs-permanent failures, quarantines permanent failures into a
+  visible failed-queue with a Discard action instead of blocking the drain
+  forever, and gained a re-entrancy guard for the separate concurrent-flush
+  bug found alongside this one. Still **not ticked**: this needs phone QA
+  on a Render preview (poison-pill recovery, concurrent flush via
+  airplane-mode toggling) before it can be considered verified per this
+  repo's rules for anything touching capture/sync — see PR #82 for the
+  exact test script.
 
 ---
 
