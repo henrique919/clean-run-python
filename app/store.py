@@ -251,8 +251,17 @@ class CleanRunStore:
                 temp_path = Path(temp.name)
             temp_path.replace(self.path)
 
-    def snapshot(self) -> AppData:
-        return self._read()
+    def snapshot(self, project: str | None = None) -> AppData:
+        data = self._read()
+        if project:
+            return AppData(
+                items=[item for item in data.items if item.project == project],
+                settings=data.settings,
+            )
+        return data
+
+    def settings_snapshot(self) -> Settings:
+        return self._read().settings
 
     def list_items(self, project: str | None = None, status: str | None = None) -> list[Item]:
         data = self._read()

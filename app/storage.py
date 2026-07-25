@@ -39,7 +39,10 @@ SIGNED_URL_CACHE_MAX_AGE_SECONDS = int(
         str(max(60, SIGNED_URL_TTL_SECONDS - 86400)),
     )
 )
-SIGN_URL_MAX_WORKERS = int(os.getenv("CLEANRUN_SIGN_URL_MAX_WORKERS", "10"))
+# 16 IO-bound threads: a cold cache (every deploy restarts the process) signs
+# a whole project's thumbnails before /api/state can return — 28-76 calls on
+# current production projects — so pool width directly bounds first-load wait.
+SIGN_URL_MAX_WORKERS = int(os.getenv("CLEANRUN_SIGN_URL_MAX_WORKERS", "16"))
 SIGN_URL_RETRY_BACKOFF_SECONDS = float(os.getenv("CLEANRUN_SIGN_URL_RETRY_BACKOFF_SECONDS", "0.75"))
 # Item card is 142×108 CSS px; thumbnails are centre-cropped at 2× for retina.
 LIST_CARD_THUMB_WIDTH = 284
