@@ -365,6 +365,7 @@ def snake_item_payload(payload: dict[str, object]) -> dict[str, object]:
         "createdBy": "created_by",
         "raisedBy": "raised_by",
         "appendOriginalPhotos": "append_original_photos",
+        "clientRequestId": "client_request_id",
     }
     result = dict(payload)
     for source, target in rename.items():
