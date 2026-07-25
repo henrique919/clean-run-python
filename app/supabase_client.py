@@ -23,10 +23,20 @@ def get_public_supabase_client() -> Any:
     return _build_supabase_client()
 
 
+# Keyed by the exact JWT so clients (and their pooled HTTP connections) are
+# reused across the many storage/table calls a single request fans out to,
+# instead of paying client + connection setup per call. Distinct tokens get
+# distinct entries, so no cross-user reuse; expired-token entries just 401
+# and age out of the LRU.
+@lru_cache(maxsize=32)
+def _authenticated_supabase_client(access_token: str) -> Any:
+    return _build_supabase_client(access_token)
+
+
 def get_supabase_client() -> Any:
     token = _access_token.get()
     if token:
-        return _build_supabase_client(token)
+        return _authenticated_supabase_client(token)
     return get_public_supabase_client()
 
 
@@ -59,16 +69,20 @@ def _build_supabase_client(access_token: str | None = None) -> Any:
     if not supabase_key:
         raise RuntimeError("Missing SUPABASE_PUBLISHABLE_KEY environment variable")
 
-    create_client = _load_supabase_create_client()
-    client = create_client(supabase_url, supabase_key)
+    create_client, client_options_cls = _load_supabase_create_client()
     if access_token:
-        auth = getattr(getattr(client, "postgrest", None), "auth", None)
-        if callable(auth):
-            auth(access_token)
-    return client
+        # The Authorization header must be set at construction: every
+        # sub-client (postgrest AND storage) copies options.headers when it
+        # is created. The previous postgrest.auth(access_token) call only
+        # updated postgrest, so storage requests (upload, sign) kept going
+        # out as the anon key — which storage RLS now rejects (migration
+        # 202607250001_close_anon_data_access.sql).
+        options = client_options_cls(headers={"Authorization": f"Bearer {access_token}"})
+        return create_client(supabase_url, supabase_key, options)
+    return create_client(supabase_url, supabase_key)
 
 
-def _load_supabase_create_client() -> Any:
+def _load_supabase_create_client() -> tuple[Any, Any]:
     repo_root = Path(__file__).resolve().parents[1]
     original_path = list(sys.path)
     existing = sys.modules.get("supabase")
@@ -91,4 +105,8 @@ def _load_supabase_create_client() -> Any:
     if create_client is None:
         raise RuntimeError("Installed Supabase Python client does not expose create_client")
 
-    return create_client
+    client_options_cls = getattr(module, "ClientOptions", None)
+    if client_options_cls is None:
+        raise RuntimeError("Installed Supabase Python client does not expose ClientOptions")
+
+    return create_client, client_options_cls
