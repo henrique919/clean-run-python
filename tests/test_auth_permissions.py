@@ -236,6 +236,39 @@ class AuthPermissionTests(unittest.TestCase):
         blocked = self.client.post("/api/access-requests", json=payload)
         self.assertEqual(blocked.status_code, 429)
 
+    def test_access_request_rate_limit_keys_on_last_forwarded_ip_not_first(self) -> None:
+        # Render is a single reverse-proxy hop: the trustworthy IP is the
+        # LAST entry in X-Forwarded-For (the one Render's edge appended),
+        # not the first (which a caller can set to any value they like).
+        payload = {
+            "full_name": "Harry Site",
+            "email": "harry@example.com",
+            "company": "qld Built",
+            "role_requested": "Project Manager",
+            "project_site": "Jura Noosa",
+            "message": "Please approve access.",
+        }
+        for i in range(5):
+            response = self.client.post(
+                "/api/access-requests",
+                headers={"X-Forwarded-For": f"9.9.9.{i}, 203.0.113.50"},
+                json=payload,
+            )
+            self.assertEqual(response.status_code, 201)
+        blocked = self.client.post(
+            "/api/access-requests",
+            headers={"X-Forwarded-For": "9.9.9.250, 203.0.113.50"},
+            json=payload,
+        )
+        self.assertEqual(blocked.status_code, 429)
+
+        other_visitor = self.client.post(
+            "/api/access-requests",
+            headers={"X-Forwarded-For": "9.9.9.9, 203.0.113.99"},
+            json=payload,
+        )
+        self.assertEqual(other_visitor.status_code, 201)
+
     def test_deploy_status_requires_admin(self) -> None:
         with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
             self.assertEqual(self.client.get("/api/deploy").status_code, 401)

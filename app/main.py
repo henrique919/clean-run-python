@@ -485,9 +485,15 @@ _ACCESS_REQUEST_MAX_PER_WINDOW = 5
 
 
 def _client_ip(request: Request) -> str:
+    # Render sits in front of this service as a single reverse-proxy hop, so
+    # the LAST entry in X-Forwarded-For is the one Render's own edge
+    # appended (the real peer IP it observed) — trustworthy regardless of
+    # whether Render strips or preserves whatever the client sent ahead of
+    # it. Taking the FIRST entry would let a caller trivially bypass the
+    # rate limit by sending a fake value as their own X-Forwarded-For.
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
