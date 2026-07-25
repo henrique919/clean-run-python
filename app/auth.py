@@ -95,6 +95,14 @@ def _dev_users() -> dict[str, AuthUser]:
             project_roles={"Other Project": "site_manager"},
             auth_method="dev",
         ),
+        "dev-no-project-access": AuthUser(
+            id="dev-no-project-access",
+            email="no.access@cleanrun.local",
+            company_id="demo-company",
+            company_role=None,
+            project_roles={},
+            auth_method="dev",
+        ),
     }
 
 

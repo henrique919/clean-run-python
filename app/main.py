@@ -6,10 +6,11 @@ import json
 import tempfile
 import csv
 import time
+from collections import defaultdict
 from io import BytesIO, StringIO
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -21,6 +22,7 @@ from app.parse_description import clean_parsed_description
 from app.parse_fields import match_config_value, match_level, match_room, match_trade, match_unit
 from app.models import AccessRequest, canonical_item_id, CloseoutEvidence, Comment, Item, ItemCreate, ItemStatus, ItemUpdate, ProjectConfig, RectificationEvidence, RAISED_BY_OPTIONS, Settings, SubProfile, TRADES
 from app.permissions import (
+    require_any_project_access,
     require_close_item,
     require_comment_access,
     require_create_item,
@@ -477,8 +479,34 @@ def auth_config() -> dict[str, object]:
     }
 
 
+_access_request_hits: dict[str, list[float]] = defaultdict(list)
+_ACCESS_REQUEST_WINDOW_SECONDS = 3600
+_ACCESS_REQUEST_MAX_PER_WINDOW = 5
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_access_request_rate_limit(request: Request) -> None:
+    now = time.time()
+    ip = _client_ip(request)
+    hits = _access_request_hits[ip]
+    hits[:] = [hit for hit in hits if now - hit < _ACCESS_REQUEST_WINDOW_SECONDS]
+    if len(hits) >= _ACCESS_REQUEST_MAX_PER_WINDOW:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please try again later or email info@cleanruniq.com.",
+        )
+    hits.append(now)
+
+
 @app.post("/api/access-requests", status_code=201)
-def create_access_request(payload: AccessRequest):
+def create_access_request(payload: AccessRequest, request: Request):
+    _enforce_access_request_rate_limit(request)
     try:
         return store.create_access_request(payload)
     except ValueError as exc:
@@ -492,7 +520,8 @@ def create_access_request(payload: AccessRequest):
 
 
 @app.get("/api/deploy")
-def deploy_status() -> dict[str, object]:
+def deploy_status(ctx: RequestContext = Depends(get_request_context)) -> dict[str, object]:
+    require_storage_status_access(ctx.user)
     return {
         "app": "cleanrun-iq",
         "version": app.version,
@@ -736,6 +765,7 @@ def stage_photo(payload: dict[str, object], ctx: RequestContext = Depends(get_re
     """Upload capture evidence while the user is still filling the form."""
     from app.storage import StorageUploadError, upload_data_url
 
+    require_any_project_access(ctx.user)
     photo = str(payload.get("photo") or "").strip()
     if not photo.startswith("data:image/"):
         raise HTTPException(status_code=422, detail="Photo must be a browser data URL.")

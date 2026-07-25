@@ -96,6 +96,7 @@ class AuthPermissionTests(unittest.TestCase):
         self.store_patch = patch.object(app_main, "store", self.store)
         self.store_patch.start()
         self.client = AsgiClient(app_main.app)
+        app_main._access_request_hits.clear()
 
     def tearDown(self) -> None:
         self.store_patch.stop()
@@ -219,6 +220,62 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "pending")
         with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
             self.assertEqual(self.client.get("/api/bootstrap").status_code, 401)
+
+    def test_access_request_rate_limit_blocks_after_five_per_hour(self) -> None:
+        payload = {
+            "full_name": "Harry Site",
+            "email": "harry@example.com",
+            "company": "qld Built",
+            "role_requested": "Project Manager",
+            "project_site": "Jura Noosa",
+            "message": "Please approve access.",
+        }
+        for _ in range(5):
+            response = self.client.post("/api/access-requests", json=payload)
+            self.assertEqual(response.status_code, 201)
+        blocked = self.client.post("/api/access-requests", json=payload)
+        self.assertEqual(blocked.status_code, 429)
+
+    def test_deploy_status_requires_admin(self) -> None:
+        with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
+            self.assertEqual(self.client.get("/api/deploy").status_code, 401)
+        self.assertEqual(self.client.get("/api/deploy", headers=bearer("dev-viewer")).status_code, 403)
+        admin = self.client.get("/api/deploy", headers=bearer("dev-site-manager"))
+        self.assertEqual(admin.status_code, 200)
+        self.assertEqual(admin.json()["app"], "cleanrun-iq")
+
+    def test_photo_stage_requires_project_access(self) -> None:
+        denied = self.client.post(
+            "/api/photos/stage",
+            headers=bearer("dev-no-project-access"),
+            json={"photo": "data:image/png;base64,aGVsbG8="},
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        class FakeBucket:
+            def upload(self, *, path, file, file_options):
+                return None
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+            def get_bucket(self, bucket):
+                return {"id": bucket}
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        with patch("app.storage.get_supabase_client", return_value=FakeClient()), patch(
+            "app.storage.get_public_supabase_client", return_value=FakeClient()
+        ):
+            allowed = self.client.post(
+                "/api/photos/stage",
+                headers=bearer("dev-site-manager"),
+                json={"photo": "data:image/png;base64,aGVsbG8="},
+            )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertIn("path", allowed.json())
 
     def test_project_scope_is_not_leaked_between_companies(self) -> None:
         other_item = self.create_direct_item(project="Other Project", subcontractor="Other Trade")
