@@ -552,6 +552,7 @@
         .then(fresh=>applyStatePayload(fresh,{mergePhotosOnly:true}))
         .catch(()=>{});
     }catch{}
+  }
   const baseGo=go;
   go=function(next){
     if(stateNeedsGlobalRefresh&&(next==="home"||next==="review")){
