@@ -287,10 +287,15 @@ class CleanRunStore:
             if cfg and cfg.code_prefix_locked and cfg.code_prefix:
                 project_prefix = cfg.code_prefix
         code_stem = f"{project_prefix}-{type_prefix}" if project_prefix else type_prefix
+        # The DB unique constraint on items.code is GLOBAL, so the max must
+        # be taken across every row sharing the stem — not just the target
+        # project's rows. A cross-project row holding a stem code (real
+        # production case: ESP-DEF-1029 sat under project "Speed Tesst",
+        # 3 Jul) otherwise gets skipped by a project filter here, and every
+        # subsequent capture in the prefixed project re-allocates that same
+        # taken code and dies on the constraint, forever.
         numbers: list[int] = []
         for item in items:
-            if project_prefix and item.project != project:
-                continue
             if item.code.startswith(f"{code_stem}-"):
                 try:
                     numbers.append(int(item.code.rsplit("-", 1)[1]))

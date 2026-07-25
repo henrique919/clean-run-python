@@ -37,6 +37,12 @@ from app.validation import validate_capture
 logger = logging.getLogger(__name__)
 SETTINGS_ID = "default"
 DEFAULT_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
+
+
+def _is_code_conflict(exc: Exception) -> bool:
+    """True when a raised error is the items.code unique-key violation."""
+    text = str(exc)
+    return "items_code_key" in text or ("23505" in text and "duplicate key" in text)
 CREATE_CONTEXT_SELECT = (
     "id, code, type, project, building, level, unit, room, trade, subcontractor, "
     "due_date, description, created_by_label, created_at"
@@ -484,22 +490,38 @@ class SupabaseCleanRunStore(CleanRunStore):
             duplicate = self._recent_duplicate(data.items, payload, now)
             if duplicate:
                 return duplicate
-        code = self.next_code(self._read_code_index(), payload.type, project=payload.project, settings=data.settings)
         payload_data = payload.model_dump(exclude={"status"})
-        item = Item(
-            **payload_data,
-            code=code,
-            status=ItemStatus.OPEN,
-            created_at=now,
-            updated_at=now,
-            sync=SyncState.SYNCED,
-        )
-        item = self._audit(item, f"Created ({code})", by=payload.created_by, at=now, actor=actor)
-        if issue_now:
-            item = self._issue_mutation(item, to=payload.subcontractor, by=payload.created_by, actor=actor)
-        with self.lock:
-            db_item_id = self._upsert_item(item, data.settings)
-        return item.model_copy(update={"id": canonical_item_id(db_item_id)})
+        # Collision safety net: the global-stem max in next_code() prevents
+        # the known deterministic collision, but a true concurrent race
+        # (two captures allocating in the same instant — RACE-01) can still
+        # collide on the DB's global unique code constraint. Re-read the
+        # index and retry with a fresh code instead of surfacing a raw
+        # duplicate-key error to someone standing on site.
+        last_error: Exception | None = None
+        for _attempt in range(3):
+            code = self.next_code(self._read_code_index(), payload.type, project=payload.project, settings=data.settings)
+            item = Item(
+                **payload_data,
+                code=code,
+                status=ItemStatus.OPEN,
+                created_at=now,
+                updated_at=now,
+                sync=SyncState.SYNCED,
+            )
+            item = self._audit(item, f"Created ({code})", by=payload.created_by, at=now, actor=actor)
+            if issue_now:
+                item = self._issue_mutation(item, to=payload.subcontractor, by=payload.created_by, actor=actor)
+            try:
+                with self.lock:
+                    db_item_id = self._upsert_item(item, data.settings)
+                return item.model_copy(update={"id": canonical_item_id(db_item_id)})
+            except Exception as exc:
+                if _is_code_conflict(exc):
+                    last_error = exc
+                    logger.warning("Item code %s collided on insert; re-allocating (attempt %d)", code, _attempt + 1)
+                    continue
+                raise
+        raise last_error if last_error else RuntimeError("Could not allocate a unique item code")
 
     def _patch(self, item_id: str, mutator: Callable[[Item], Item]) -> Item:
         settings = self._read_settings()
