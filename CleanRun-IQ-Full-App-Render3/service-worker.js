@@ -4,17 +4,17 @@ const SHELL = [
   "/index.html",
   "/assets/icon-mark.png",
   "/assets/chevrons.svg",
-  "/assets/enhancements.css?v=cards63",
-  "/assets/enhancements.js?v=cards63",
+  "/assets/enhancements.css?v=cards64",
+  "/assets/enhancements.js?v=cards64",
   "/manifest.webmanifest",
 ];
 const NETWORK_FIRST = new Set([
   "/",
   "/index.html",
   "/assets/enhancements.css",
-  "/assets/enhancements.css?v=cards63",
+  "/assets/enhancements.css?v=cards64",
   "/assets/enhancements.js",
-  "/assets/enhancements.js?v=cards63",
+  "/assets/enhancements.js?v=cards64",
   "/service-worker.js",
   "/manifest.webmanifest",
 ]);
