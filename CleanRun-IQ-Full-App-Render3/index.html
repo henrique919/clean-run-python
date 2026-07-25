@@ -30,7 +30,7 @@
     .loading-shell{min-height:100vh;display:grid;place-items:center;background:#121619;color:#fff;position:relative;overflow:hidden}.loading-shell:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#ffffff08 1px,transparent 1px),linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(135deg,transparent 0 38%,#00000022 38% 45%,transparent 45% 100%);background-size:74px 74px,74px 74px,460px 460px}.loading-shell img{position:relative;width:min(210px,34vw);filter:drop-shadow(0 0 34px #20C55E33);animation:loadPulse 1.6s ease-in-out infinite}.loading-shell span{position:relative;margin-top:16px;color:#AAB2BD;font:700 12px var(--font-heading);letter-spacing:.16em;text-transform:uppercase}@keyframes loadPulse{50%{transform:scale(1.045);opacity:.82}}
     @media(max-width:520px){.native-grid{grid-template-columns:1fr 1fr}.screen-scroll{padding:14px}.photo-actions{grid-template-columns:1fr 1fr}.action-bar{bottom:calc(72px + env(safe-area-inset-bottom))}.plan{min-height:310px}.fields{grid-template-columns:1fr}.fields .span{grid-column:auto}}
   </style>
-  <link rel="stylesheet" href="/assets/enhancements.css?v=cards62">
+  <link rel="stylesheet" href="/assets/enhancements.css?v=cards63">
   <style>
     .auth-shell{min-height:100vh;background:#121619;color:#fff;display:grid;place-items:center;padding:24px;position:relative;overflow:hidden}.auth-shell:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#ffffff08 1px,transparent 1px),linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(135deg,transparent 0 38%,#00000022 38% 45%,transparent 45% 100%);background-size:74px 74px,74px 74px,460px 460px}.auth-card{position:relative;width:min(420px,100%);background:#fff;color:#121619;border:1px solid #dde1e5;border-radius:16px;padding:24px;box-shadow:0 24px 70px #00000045}.auth-brand{display:flex;align-items:center;gap:14px;margin-bottom:18px}.auth-brand img{width:34px;height:34px}.auth-brand b{font-family:var(--font-heading);font-size:25px}.auth-brand span{color:#20C55E}.auth-card h1{font-size:24px;margin:0}.auth-card p{color:#6B7280;margin:8px 0 20px;line-height:1.45}.auth-form{display:grid;gap:12px}.auth-form input{border-radius:12px;padding:13px}.auth-error{background:#fee2e2;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}.auth-card .btn{width:100%;margin-top:4px}.auth-foot{margin-top:16px;text-align:center;color:#6B7280;font-size:12px}
   </style>
@@ -40,7 +40,7 @@
   <div class="modal" id="modal" hidden><section class="dialog"><header class="dialog-top"><strong id="modalTitle">Item</strong><button class="close" type="button" onclick="closeModal()" aria-label="Close">×</button></header><div class="dialog-body" id="modalBody"></div></section></div>
   <div class="bottom-sheet" id="bottomSheet" hidden><div class="bottom-sheet-backdrop" onclick="closeBottomSheet()"></div><section class="bottom-sheet-panel"><header class="bottom-sheet-top"><strong id="bottomSheetTitle">Choose</strong><button class="close" type="button" onclick="closeBottomSheet()" aria-label="Close">×</button></header><div id="bottomSheetBody"></div></section></div>
   <div class="toast" id="toast" hidden></div>
-  <script src="/assets/format-dates.js?v=cards62"></script>
+  <script src="/assets/format-dates.js?v=cards63"></script>
   <script>
   "use strict";
   // The frontend needs the Python API. If this file was double-clicked, move to
@@ -75,21 +75,105 @@
   const photoPlaceholder='<span style="font-size:10px;font-weight:800;color:#667085">PHOTO</span>';
   let state,route="home",capturePhotos=[],walkMode=false,walkCount=0,captureSaving=false;
   const AUTH_TOKEN_KEY="cleanrun_auth_token";
+  const REFRESH_TOKEN_KEY="cleanrun_refresh_token";
+  const TOKEN_EXPIRES_KEY="cleanrun_token_expires_at";
+  const TOKEN_REFRESH_BUFFER_MS=60000;
   let authToken=localStorage.getItem(AUTH_TOKEN_KEY)||"";
+  let refreshToken=localStorage.getItem(REFRESH_TOKEN_KEY)||"";
+  let tokenExpiresAt=Number(localStorage.getItem(TOKEN_EXPIRES_KEY))||0;
+  let refreshInFlight=null;
   function cookieSecure(){return location.protocol==="https:"?"; Secure":""}
-  function setAuthToken(token){authToken=token;localStorage.setItem(AUTH_TOKEN_KEY,token);document.cookie=`cleanrun_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax${cookieSecure()}`}
-  function clearAuthToken(){authToken="";localStorage.removeItem(AUTH_TOKEN_KEY);document.cookie=`cleanrun_access_token=; Path=/; SameSite=Lax${cookieSecure()}; Max-Age=0`}
+  function setAuthToken(token,refresh,expiresIn){
+    authToken=token;
+    localStorage.setItem(AUTH_TOKEN_KEY,token);
+    document.cookie=`cleanrun_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax${cookieSecure()}`;
+    if(refresh!==undefined){
+      refreshToken=refresh||"";
+      if(refreshToken)localStorage.setItem(REFRESH_TOKEN_KEY,refreshToken);else localStorage.removeItem(REFRESH_TOKEN_KEY);
+    }
+    if(expiresIn!==undefined){
+      tokenExpiresAt=expiresIn?Date.now()+Number(expiresIn)*1000:0;
+      if(tokenExpiresAt)localStorage.setItem(TOKEN_EXPIRES_KEY,String(tokenExpiresAt));else localStorage.removeItem(TOKEN_EXPIRES_KEY);
+    }
+  }
+  function clearAuthToken(){
+    authToken="";refreshToken="";tokenExpiresAt=0;
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXPIRES_KEY);
+    document.cookie=`cleanrun_access_token=; Path=/; SameSite=Lax${cookieSecure()}; Max-Age=0`;
+  }
   let appAuthConfig={environment:"development"};
   async function loadAuthConfig(){try{appAuthConfig=await fetch("/api/auth/config").then(r=>r.json())}catch{}}
   function isProductionApp(){return String(appAuthConfig.environment||"").toLowerCase()==="production"}
   function loginRequired(){return appAuthConfig.login_required!==false}
   function logout(){clearAuthToken();route="home";closeModal();if(loginRequired())renderLogin("You have been signed out.");else reload().catch(()=>{})}
-  function authError(message){return Object.assign(new Error(message||"Authentication required"),{authRequired:true})}
+  function authError(message){return Object.assign(new Error(message||"Authentication required"),{authRequired:true,status:401})}
+  // A capture with attached photos in progress is expensive to lose; used by
+  // the 401 fallback below to decide whether it's safe to blow away #app.
+  function captureDraftAtRisk(){return typeof capturePhotos!=="undefined"&&capturePhotos.length>0}
   function renderLogin(message=""){if(!loginRequired())return;$("#nav").innerHTML="";$("#app").innerHTML=`<section class="auth-shell"><div class="auth-card"><div class="auth-brand"><img src="/assets/chevrons.svg" alt=""><b>CleanRun <span>IQ</span></b></div><h1>Sign in</h1><p>Use your CleanRun IQ account to open the live project workspace.</p>${message?`<div class="auth-error">${esc(message)}</div>`:""}<form class="auth-form" onsubmit="return loginWithPassword(event)"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="btn" type="submit">Sign in</button></form><button class="btn alt" type="button" style="margin-top:10px" onclick="renderAccessRequest()">Request access</button><div class="auth-foot">Secure Supabase authentication</div></div></section>`;setTimeout(()=>document.querySelector('input[name="email"]')?.focus(),0)}
   function renderAccessRequest(message=""){if(!loginRequired())return;$("#nav").innerHTML="";$("#app").innerHTML=`<section class="auth-shell"><div class="auth-card"><div class="auth-brand"><img src="/assets/chevrons.svg" alt=""><b>CleanRun <span>IQ</span></b></div><h1>Request access</h1><p>Tell us who you are and which project you need. An admin will approve access before any project data is visible.</p>${message?`<div class="auth-error" style="background:#dcfce7;color:#15803d">${esc(message)}</div>`:""}<form class="auth-form" onsubmit="return submitAccessRequest(event)"><label>Full name<input name="full_name" autocomplete="name" required></label><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Company<input name="company" autocomplete="organization" required></label><label>Role requested<input name="role_requested" placeholder="Project Manager, Site Manager, Subcontractor" required></label><label>Project/site<input name="project_site" placeholder="Jura Noosa, Meta Street, or new project" required></label><label>Message<textarea name="message" placeholder="Anything the admin should know"></textarea></label><button class="btn" type="submit">Submit request</button></form><div class="auth-foot">Need help? Email info@cleanruniq.com</div><button class="btn alt" type="button" style="margin-top:10px" onclick="renderLogin()">Back to sign in</button></div></section>`;setTimeout(()=>document.querySelector('input[name="full_name"]')?.focus(),0)}
   async function submitAccessRequest(e){e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type='submit']"),payload=Object.fromEntries(new FormData(form));button.disabled=true;button.textContent="Submitting...";try{const res=await fetch("/api/access-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.detail||"Could not submit request. Please email info@cleanruniq.com.");renderAccessRequest("Request submitted. We will review and approve access before login is enabled.")}catch(err){renderAccessRequest(err.message||"Could not submit request. Please email info@cleanruniq.com.")}return false}
-  async function loginWithPassword(e){e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type='submit']"),email=form.email.value.trim(),password=form.password.value;button.disabled=true;button.textContent="Signing in...";try{const cfg=await fetch("/api/auth/config").then(r=>r.json());if(!cfg.supabase_url||!cfg.supabase_publishable_key)throw new Error("Password login is not configured.");const res=await fetch(`${cfg.supabase_url}/auth/v1/token?grant_type=password`,{method:"POST",headers:{"Content-Type":"application/json",apikey:cfg.supabase_publishable_key},body:JSON.stringify({email,password})});const data=await res.json().catch(()=>({}));if(!res.ok||!data.access_token)throw new Error(data.error_description||data.msg||"Login failed.");setAuthToken(data.access_token);button.textContent="Loading workspace...";await reload()}catch(err){clearAuthToken();renderLogin(err.message||"Login failed.")}finally{button.disabled=false}return false}
-  async function api(path,opt={}){const isForm=typeof FormData!=="undefined"&&opt.body instanceof FormData,headers={...(isForm?{}:{"Content-Type":"application/json"}),...(opt.headers||{})};if(authToken)headers.Authorization=`Bearer ${authToken}`;const res=await fetch(path,{...opt,headers});let value;const ct=res.headers.get("content-type")||"";value=ct.includes("json")?await res.json():await res.text();if(res.status===401){clearAuthToken();if(loginRequired()){renderLogin("Sign in to continue.");throw authError()}throw new Error(value.error||value.detail||`Request failed (${res.status})`)}if(!res.ok)throw new Error(value.error||value.detail||`Request failed (${res.status})`);return value}
+  async function loginWithPassword(e){e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type='submit']"),email=form.email.value.trim(),password=form.password.value;button.disabled=true;button.textContent="Signing in...";try{const cfg=await fetch("/api/auth/config").then(r=>r.json());if(!cfg.supabase_url||!cfg.supabase_publishable_key)throw new Error("Password login is not configured.");const res=await fetch(`${cfg.supabase_url}/auth/v1/token?grant_type=password`,{method:"POST",headers:{"Content-Type":"application/json",apikey:cfg.supabase_publishable_key},body:JSON.stringify({email,password})});const data=await res.json().catch(()=>({}));if(!res.ok||!data.access_token)throw new Error(data.error_description||data.msg||"Login failed.");setAuthToken(data.access_token,data.refresh_token,data.expires_in);button.textContent="Loading workspace...";await reload()}catch(err){clearAuthToken();renderLogin(err.message||"Login failed.")}finally{button.disabled=false}return false}
+  // Refreshes the Supabase session using the stored refresh token, mirroring
+  // loginWithPassword's fetch (same base URL + apikey header pattern).
+  // Deduped: concurrent 401s (e.g. several offline-queue entries flushing at
+  // once) must not fire independent refresh calls against a single-use/
+  // rotating refresh token — they all await the same in-flight attempt.
+  async function refreshAuthToken(){
+    if(refreshInFlight)return refreshInFlight;
+    refreshInFlight=(async()=>{
+      if(!refreshToken)throw new Error("No refresh token available.");
+      const cfg=await fetch("/api/auth/config").then(r=>r.json());
+      if(!cfg.supabase_url||!cfg.supabase_publishable_key)throw new Error("Password login is not configured.");
+      const res=await fetch(`${cfg.supabase_url}/auth/v1/token?grant_type=refresh_token`,{method:"POST",headers:{"Content-Type":"application/json",apikey:cfg.supabase_publishable_key},body:JSON.stringify({refresh_token:refreshToken})});
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok||!data.access_token)throw new Error(data.error_description||data.msg||"Session refresh failed.");
+      setAuthToken(data.access_token,data.refresh_token||refreshToken,data.expires_in);
+      return data.access_token;
+    })();
+    try{return await refreshInFlight}
+    finally{refreshInFlight=null}
+  }
+  // Reached once refreshing the session didn't (or couldn't) fix a 401. A
+  // capture mid-flight is expensive to lose, so this only wipes #app via
+  // renderLogin when there's no draft at risk; otherwise it surfaces the
+  // problem as a normal toast (existing catch(err)=>toast(err.message,true)
+  // pattern at every api() call site) and leaves the current view intact.
+  function sessionExpiredFallback(value,status){
+    if(captureDraftAtRisk()){
+      throw Object.assign(new Error("Session expired — sign in again to keep working."),{status:401});
+    }
+    clearAuthToken();
+    if(loginRequired()){renderLogin("Sign in to continue.");throw authError()}
+    throw Object.assign(new Error(value?.error||value?.detail||`Request failed (${status})`),{status});
+  }
+  async function api(path,opt={}){
+    const isForm=typeof FormData!=="undefined"&&opt.body instanceof FormData,
+          headers={...(isForm?{}:{"Content-Type":"application/json"}),...(opt.headers||{})};
+    // Proactive refresh: avoid a guaranteed 401 round trip when the access
+    // token is already known to be at/past its expiry buffer.
+    if(authToken&&refreshToken&&tokenExpiresAt&&Date.now()>=tokenExpiresAt-TOKEN_REFRESH_BUFFER_MS){
+      try{await refreshAuthToken()}catch{/* fall through; the request below will 401 and go through the reactive path */}
+    }
+    for(let attempt=0;attempt<2;attempt++){
+      if(authToken)headers.Authorization=`Bearer ${authToken}`;else delete headers.Authorization;
+      const res=await fetch(path,{...opt,headers});
+      let value;
+      const ct=res.headers.get("content-type")||"";
+      value=ct.includes("json")?await res.json():await res.text();
+      if(res.status===401){
+        if(attempt===0&&refreshToken){
+          try{await refreshAuthToken();continue}
+          catch{return sessionExpiredFallback(value,res.status)}
+        }
+        return sessionExpiredFallback(value,res.status);
+      }
+      if(!res.ok)throw Object.assign(new Error(value.error||value.detail||`Request failed (${res.status})`),{status:res.status});
+      return value;
+    }
+  }
   async function reload(){state=await api("/api/state");render()}
   function toast(msg,error=false){const el=$("#toast");el.textContent=msg;el.className="toast"+(error?" error":"");el.hidden=false;clearTimeout(el.timer);el.timer=setTimeout(()=>el.hidden=true,2600)}
   function go(next){if(next==="plans"){toast("Plans is coming soon. Floor-plan pinning is not available yet.");route="more";render();scrollTo(0,0);return}route=next;render();scrollTo(0,0)}
@@ -184,6 +268,6 @@
   }
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>
-  <script src="/assets/enhancements.js?v=cards62"></script>
+  <script src="/assets/enhancements.js?v=cards63"></script>
 </body>
 </html>

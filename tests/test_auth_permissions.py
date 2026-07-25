@@ -96,6 +96,7 @@ class AuthPermissionTests(unittest.TestCase):
         self.store_patch = patch.object(app_main, "store", self.store)
         self.store_patch.start()
         self.client = AsgiClient(app_main.app)
+        app_main._access_request_hits.clear()
 
     def tearDown(self) -> None:
         self.store_patch.stop()
@@ -130,12 +131,12 @@ class AuthPermissionTests(unittest.TestCase):
             response = self.client.post("/api/items", json={})
             self.assertEqual(response.status_code, 401)
 
-    def test_open_access_is_default_without_env(self) -> None:
+    def test_login_required_is_default_without_env(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CLEANRUN_LOGIN_REQUIRED", None)
             from app.config import login_required
 
-            self.assertFalse(login_required())
+            self.assertTrue(login_required())
 
     def test_anonymous_production_requests_are_rejected(self) -> None:
         with patch.dict(os.environ, {"APP_ENV": "production", "CLEANRUN_ENV": "production", "CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
@@ -153,8 +154,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards62", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards62", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards63", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards63", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_state_scope_active_returns_only_active_project(self) -> None:
@@ -219,6 +220,93 @@ class AuthPermissionTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "pending")
         with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
             self.assertEqual(self.client.get("/api/bootstrap").status_code, 401)
+
+    def test_access_request_rate_limit_blocks_after_five_per_hour(self) -> None:
+        payload = {
+            "full_name": "Harry Site",
+            "email": "harry@example.com",
+            "company": "qld Built",
+            "role_requested": "Project Manager",
+            "project_site": "Jura Noosa",
+            "message": "Please approve access.",
+        }
+        for _ in range(5):
+            response = self.client.post("/api/access-requests", json=payload)
+            self.assertEqual(response.status_code, 201)
+        blocked = self.client.post("/api/access-requests", json=payload)
+        self.assertEqual(blocked.status_code, 429)
+
+    def test_access_request_rate_limit_keys_on_last_forwarded_ip_not_first(self) -> None:
+        # Render is a single reverse-proxy hop: the trustworthy IP is the
+        # LAST entry in X-Forwarded-For (the one Render's edge appended),
+        # not the first (which a caller can set to any value they like).
+        payload = {
+            "full_name": "Harry Site",
+            "email": "harry@example.com",
+            "company": "qld Built",
+            "role_requested": "Project Manager",
+            "project_site": "Jura Noosa",
+            "message": "Please approve access.",
+        }
+        for i in range(5):
+            response = self.client.post(
+                "/api/access-requests",
+                headers={"X-Forwarded-For": f"9.9.9.{i}, 203.0.113.50"},
+                json=payload,
+            )
+            self.assertEqual(response.status_code, 201)
+        blocked = self.client.post(
+            "/api/access-requests",
+            headers={"X-Forwarded-For": "9.9.9.250, 203.0.113.50"},
+            json=payload,
+        )
+        self.assertEqual(blocked.status_code, 429)
+
+        other_visitor = self.client.post(
+            "/api/access-requests",
+            headers={"X-Forwarded-For": "9.9.9.9, 203.0.113.99"},
+            json=payload,
+        )
+        self.assertEqual(other_visitor.status_code, 201)
+
+    def test_deploy_status_requires_admin(self) -> None:
+        with patch.dict(os.environ, {"CLEANRUN_LOGIN_REQUIRED": "true"}, clear=False):
+            self.assertEqual(self.client.get("/api/deploy").status_code, 401)
+        self.assertEqual(self.client.get("/api/deploy", headers=bearer("dev-viewer")).status_code, 403)
+        admin = self.client.get("/api/deploy", headers=bearer("dev-site-manager"))
+        self.assertEqual(admin.status_code, 200)
+        self.assertEqual(admin.json()["app"], "cleanrun-iq")
+
+    def test_photo_stage_requires_project_access(self) -> None:
+        denied = self.client.post(
+            "/api/photos/stage",
+            headers=bearer("dev-no-project-access"),
+            json={"photo": "data:image/png;base64,aGVsbG8="},
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        class FakeBucket:
+            def upload(self, *, path, file, file_options):
+                return None
+
+        class FakeStorage:
+            def from_(self, bucket):
+                return FakeBucket()
+
+            def get_bucket(self, bucket):
+                return {"id": bucket}
+
+        class FakeClient:
+            storage = FakeStorage()
+
+        with patch("app.storage.get_supabase_client", return_value=FakeClient()):
+            allowed = self.client.post(
+                "/api/photos/stage",
+                headers=bearer("dev-site-manager"),
+                json={"photo": "data:image/png;base64,aGVsbG8="},
+            )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertIn("path", allowed.json())
 
     def test_project_scope_is_not_leaked_between_companies(self) -> None:
         other_item = self.create_direct_item(project="Other Project", subcontractor="Other Trade")
@@ -418,9 +506,7 @@ class AuthPermissionTests(unittest.TestCase):
         )
         self.store._write(self.store._read().model_copy(update={"items": [item]}))
 
-        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")), patch(
-            "app.storage.get_public_supabase_client", side_effect=RuntimeError("signing failed")
-        ):
+        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")):
             response = self.client.get("/api/reports/register", headers=bearer("dev-site-manager"))
 
         self.assertEqual(response.status_code, 200)
@@ -506,9 +592,7 @@ class AuthPermissionTests(unittest.TestCase):
         self._set_first_item_photo(path)
         stale = f"https://x.supabase.co/storage/v1/object/sign/cleanrun-evidence/{path}?token=expired"
 
-        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")), patch(
-            "app.storage.get_public_supabase_client", side_effect=RuntimeError("signing failed")
-        ):
+        with patch("app.storage.get_supabase_client", side_effect=RuntimeError("signing failed")):
             response = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": stale})
 
         self.assertEqual(response.status_code, 502)

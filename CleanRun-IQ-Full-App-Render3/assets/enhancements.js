@@ -1,11 +1,12 @@
 (function(){
   "use strict";
 
-  window.CLEANRUN_FRONTEND_BUILD="cards62";
-  document.documentElement.dataset.cleanrunBuild="cards62";
+  window.CLEANRUN_FRONTEND_BUILD="cards63";
+  document.documentElement.dataset.cleanrunBuild="cards63";
   document.documentElement.dataset.theme=localStorage.getItem("cleanrun-theme")||document.documentElement.dataset.theme||"light";
   const CACHE_KEY="cleanrun-offline-state-v1";
   const QUEUE_KEY="cleanrun-offline-queue-v1";
+  const FAILED_QUEUE_KEY="cleanrun-offline-failed-v1";
   const DB_NAME="cleanrun-iq-offline";
   const THEME_KEY="cleanrun-theme";
   const LAST_CAPTURE_KEY="cleanrun-last-capture-fields";
@@ -34,6 +35,8 @@
   let lastChosenPhotoMeta=null;
   let workbench={source:"",title:"Photo evidence",save:null,drawing:false,last:null,history:[],ready:false};
   let offlineQueue=[];
+  let failedQueue=[];
+  let flushing=false;
   let captureSubmitting=false;
   let captureDraftPending=null;
   let captureDraftSaveTimer=null;
@@ -48,6 +51,8 @@
   const cacheState=()=>{if(typeof state!=="undefined"&&state)dbSet(CACHE_KEY,state)};
   const pendingQueue=()=>offlineQueue;
   const setQueue=q=>{offlineQueue=q;dbSet(QUEUE_KEY,q);updateOfflinePill()};
+  const pendingFailedQueue=()=>failedQueue;
+  const setFailedQueue=q=>{failedQueue=q;dbSet(FAILED_QUEUE_KEY,q);updateOfflinePill()};
   const offlineId=()=>`offline-${crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random().toString(16).slice(2)}`;
   const MAX_PHOTO_EDGE=1600;
   const PHOTO_QUALITY=.72;
@@ -1459,7 +1464,11 @@
     const form=e.currentTarget,data=Object.fromEntries(new FormData(form)),mode=e.submitter?.value||"save";
     const release=setBusyForm(form,mode==="issue"?"Issuing…":"Saving…");
     form.dataset.captureRequestId=form.dataset.captureRequestId||offlineId();
-    data.id=form.dataset.captureRequestId;data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
+    // data.id stays the local optimistic-UI correlation key (matched against
+    // mergeSavedItem's replacesId) — unchanged. clientRequestId is a separate,
+    // explicit field the server uses to dedupe retried creates (see
+    // app/models.py ItemCreate.client_request_id); same value, different job.
+    data.id=form.dataset.captureRequestId;data.clientRequestId=form.dataset.captureRequestId;data.createdBy=state.settings.preparedBy;data.originalPhotos=capturePhotos;data.originalPhotoMeta=capturePhotoMeta;
     const voice=$("#voiceText").value.trim();if(voice){data.voiceTranscript=voice;data.voiceNote={transcript:voice,createdAt:new Date().toISOString(),status:"parsed"}}
     ensureCaptureDescription(data,voice);
     const fail=message=>{captureSubmitting=false;release();toast(message,true)};
@@ -1739,23 +1748,55 @@
     }
   };
 
+  // A queue entry's error is either transient (worth retrying later, so it
+  // stays at the front of the queue and draining stops for this pass) or
+  // permanent (this exact request will never succeed, so it's pulled out and
+  // recorded as failed while the rest of the queue keeps draining). Network-
+  // level failures (fetch threw, e.g. TypeError / offline) and 401/408/429
+  // are transient — auth hiccups included, since Fix 4's token refresh may
+  // resolve them by the next flush. Any other non-2xx (422 validation, 403,
+  // 413 oversize, ...) is permanent.
+  function isTransientFlushError(err){
+    const status=err?.status;
+    if(status===401||status===408||status===429)return true;
+    if(status)return false;
+    return offlineError(err);
+  }
+
   async function flushQueue(){
-    if(!navigator.onLine)return updateOfflinePill();let queue=pendingQueue();if(!queue.length)return updateOfflinePill();updateOfflinePill("syncing");let sent=0;
-    while(queue.length){
-      const entry=queue[0];
-      try{
-        const response=await networkApi(entry.path,entry.opt);
-        const method=(entry.opt?.method||"GET").toUpperCase();
-        if(method==="POST"&&entry.path.startsWith("/api/items")&&!entry.path.includes("/actions/")&&response?.id){
-          let clientId=null;
-          try{clientId=JSON.parse(entry.opt?.body||"{}").id}catch{}
-          mergeSavedItem(response,clientId);
+    if(flushing)return;
+    flushing=true;
+    try{
+      if(!navigator.onLine)return updateOfflinePill();
+      let queue=pendingQueue();
+      if(!queue.length)return updateOfflinePill();
+      updateOfflinePill("syncing");
+      let sent=0;
+      while(queue.length){
+        const entry=queue[0];
+        try{
+          const response=await networkApi(entry.path,entry.opt);
+          const method=(entry.opt?.method||"GET").toUpperCase();
+          if(method==="POST"&&entry.path.startsWith("/api/items")&&!entry.path.includes("/actions/")&&response?.id){
+            let clientId=null;
+            try{clientId=JSON.parse(entry.opt?.body||"{}").id}catch{}
+            mergeSavedItem(response,clientId);
+          }
+          queue.shift();setQueue(queue);sent++;
+        }catch(err){
+          if(isTransientFlushError(err))break;
+          queue.shift();setQueue(queue);
+          const failed=pendingFailedQueue();
+          failed.push({...entry,failedAt:new Date().toISOString(),error:String(err?.message||err)||"Could not sync"});
+          setFailedQueue(failed);
         }
-        queue.shift();setQueue(queue);sent++;
-      }catch{break}
+      }
+      if(sent){try{state=await networkApi(stateApiPath("all","full"));cacheState();render()}catch{}}
+      updateOfflinePill();
+      if(sent)toast(`${sent} item${sent===1?"":"s"} synced`);
+    }finally{
+      flushing=false;
     }
-    if(sent){try{state=await networkApi(stateApiPath("all","full"));cacheState();render()}catch{}}
-    updateOfflinePill();if(sent)toast(`${sent} item${sent===1?"":"s"} synced`);
   }
 
   function queueEntrySummary(entry){
@@ -1779,13 +1820,25 @@
   }
   window.openSyncQueueSheet=function(){
     const queue=pendingQueue();
-    if(!queue.length)return;
+    const failed=pendingFailedQueue();
+    if(!queue.length&&!failed.length)return;
     $("#bottomSheetTitle").textContent="Queued to sync";
-    $("#bottomSheetBody").innerHTML=`<div class="sheet-list sync-queue-list">${queue.map(entry=>{
+    const failedRows=failed.map(entry=>{
+      const row=queueEntrySummary(entry);
+      return `<div class="sheet-row sync-queue-row sync-queue-row-failed"><div><b>${esc(row.code)}</b><small class="meta">${esc(entry.error||"Could not sync")}</small></div><button type="button" class="btn alt small" onclick="discardFailedQueueEntry('${esc(entry.queuedAt||"")}')">Discard</button></div>`;
+    }).join("");
+    const pendingRows=queue.map(entry=>{
       const row=queueEntrySummary(entry);
       return `<div class="sheet-row sync-queue-row"><div><b>${esc(row.code)}</b><small class="meta">${esc(row.description)}</small></div><span class="sync-queue-state">${esc(row.state)}</span></div>`;
-    }).join("")}${navigator.onLine?`<button type="button" class="sheet-row sheet-row-add" onclick="closeBottomSheet();flushQueue()">Sync now</button>`:""}</div>`;
+    }).join("");
+    $("#bottomSheetBody").innerHTML=`<div class="sheet-list sync-queue-list">${failedRows}${pendingRows}${navigator.onLine&&queue.length?`<button type="button" class="sheet-row sheet-row-add" onclick="closeBottomSheet();flushQueue()">Sync now</button>`:""}</div>`;
     $("#bottomSheet").hidden=false;
+  };
+  window.discardFailedQueueEntry=function(queuedAt){
+    const remaining=pendingFailedQueue().filter(entry=>entry.queuedAt!==queuedAt);
+    setFailedQueue(remaining);
+    toast("Discarded");
+    openSyncQueueSheet();
   };
 
   // Signed photo URLs can expire (or break) while a tab stays open. On an image
@@ -2063,6 +2116,7 @@
       document.body.appendChild(pill);
     }
     const count=pendingQueue().length;
+    const failedCount=pendingFailedQueue().length;
     const offline=!navigator.onLine;
     pill.hidden=false;
     if(force==="syncing"){
@@ -2071,7 +2125,10 @@
       pill.onclick=()=>openSyncQueueSheet();
       return;
     }
-    if(offline){
+    if(failedCount){
+      pill.className="offline-pill failed";
+      pill.textContent=`Sync issue · ${failedCount} failed`;
+    }else if(offline){
       pill.className="offline-pill offline";
       pill.textContent=`Offline · ${count} queued`;
     }else if(count){
@@ -2081,8 +2138,8 @@
       pill.className="offline-pill synced";
       pill.textContent="Synced ✓";
     }
-    pill.onclick=count||offline?()=>openSyncQueueSheet():null;
-    pill.style.cursor=count||offline?"pointer":"default";
+    pill.onclick=count||offline||failedCount?()=>openSyncQueueSheet():null;
+    pill.style.cursor=count||offline||failedCount?"pointer":"default";
   }
 
   moreView=function(){
@@ -2155,7 +2212,7 @@
     updateNotifyChip();
   };
   window.addEventListener("online",flushQueue);window.addEventListener("offline",updateOfflinePill);
-  async function initialiseOfflineStore(){offlineQueue=await dbGet(QUEUE_KEY)||[];updateOfflinePill();setTimeout(flushQueue,500)}
+  async function initialiseOfflineStore(){offlineQueue=await dbGet(QUEUE_KEY)||[];failedQueue=await dbGet(FAILED_QUEUE_KEY)||[];updateOfflinePill();setTimeout(flushQueue,500)}
   if("serviceWorker" in navigator){
     let refreshing=false;
     navigator.serviceWorker.addEventListener("controllerchange",()=>{if(refreshing)return;refreshing=true;location.reload()});

@@ -54,9 +54,7 @@ class StoragePathTests(unittest.TestCase):
         class FakeClient:
             storage = FakeStorage()
 
-        with patch("app.storage.get_supabase_client", return_value=FakeClient()), patch(
-            "app.storage.get_public_supabase_client", return_value=FakeClient()
-        ):
+        with patch("app.storage.get_supabase_client", return_value=FakeClient()):
             data, content_type = read_markup_bytes("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg")
 
         self.assertEqual(data, b"jpeg-bytes")
@@ -92,8 +90,6 @@ class StoragePathTests(unittest.TestCase):
 
         with patch.dict("os.environ", {"CLEANRUN_STORAGE_PATH_PREFIX": "cleanrun/public"}, clear=False), patch(
             "app.storage.get_supabase_client", return_value=FakeClient()
-        ), patch(
-            "app.storage.get_public_supabase_client", return_value=FakeClient()
         ):
             promoted = normalize_photo(staged_path, folder=item_folder)
 
@@ -123,8 +119,6 @@ class StoragePathTests(unittest.TestCase):
 
         with patch.dict("os.environ", {"CLEANRUN_STORAGE_PATH_PREFIX": "projects/jura/items/def-1005"}, clear=False), patch(
             "app.storage.get_supabase_client", return_value=FakeClient()
-        ), patch(
-            "app.storage.get_public_supabase_client", return_value=FakeClient()
         ):
             path = upload_data_url("data:image/png;base64,aGVsbG8=", folder="original")
 

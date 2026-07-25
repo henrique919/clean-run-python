@@ -11,7 +11,7 @@ from threading import RLock
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
-from app.supabase_client import get_public_supabase_client, get_supabase_client
+from app.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,10 @@ def _uses_public_launch_prefix(path: str | None) -> bool:
 
 
 def _client_for_storage_path(path: str):
-    # Launch mode stores browser evidence under cleanrun/public/* with anon-only
-    # RLS. Do not attach the user's JWT for these temporary public-mode paths.
-    if _uses_public_launch_prefix(path):
-        return get_public_supabase_client()
+    # Storage RLS now requires an authenticated caller for every path,
+    # including cleanrun/public/* (see supabase/migrations/
+    # 202607250001_close_anon_data_access.sql — the anon-role storage
+    # policies were dropped). Always forward the caller's JWT.
     return get_supabase_client()
 
 

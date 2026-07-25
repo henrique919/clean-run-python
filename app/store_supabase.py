@@ -44,7 +44,8 @@ CREATE_CONTEXT_SELECT = (
 ITEM_ROW_SELECT = (
     "id, code, type, status, project, building, level, unit, room, trade, subcontractor, "
     "priority, due_date, description, raised_by, created_by_label, rejection_reason, "
-    "issued_at, started_at, ready_at, inspected_at, closed_at, created_at, updated_at, payload"
+    "issued_at, started_at, ready_at, inspected_at, closed_at, created_at, updated_at, "
+    "client_request_id, payload"
 )
 UPLOAD_MAX_WORKERS = int(os.getenv("CLEANRUN_UPLOAD_MAX_WORKERS", "4"))
 
@@ -105,7 +106,11 @@ class SupabaseCleanRunStore(CleanRunStore):
     def __init__(self) -> None:
         self.lock = RLock()
         if is_production():
-            if os.getenv("CLEANRUN_BOOTSTRAP_SEED_DATA", "true").lower() in {"1", "true", "yes", "on"}:
+            # Default OFF: a missing env var must never re-arm the demo-data
+            # backfill against a live production database (it overwrites
+            # real item status/description and deletes photo rows not in
+            # the seed set — see cleanrun_data.json).
+            if os.getenv("CLEANRUN_BOOTSTRAP_SEED_DATA", "false").lower() in {"1", "true", "yes", "on"}:
                 logger.info("Backfilling Supabase production bootstrap data.")
                 self._backfill_seed_data()
             else:
@@ -187,6 +192,25 @@ class SupabaseCleanRunStore(CleanRunStore):
         with self.lock:
             lookup_id = canonical_item_id(item_id) or item_id
             response = self.client.table("items").select(ITEM_ROW_SELECT).eq("id", lookup_id).limit(1).execute()
+            if not response.data:
+                return None
+            row = response.data[0]
+            db_item_id = str(row["id"])
+            photos = self._children_by_item("item_photos", [db_item_id]).get(db_item_id, [])
+            comments = self._children_by_item("item_comments", [db_item_id]).get(db_item_id, [])
+            audit_events = self._children_by_item("item_audit_events", [db_item_id]).get(db_item_id, [])
+            return self._item_from_rows(row, photos, comments, audit_events)
+
+    def _find_by_client_request_id(self, company_id: str, client_request_id: str) -> Item | None:
+        with self.lock:
+            response = (
+                self.client.table("items")
+                .select(ITEM_ROW_SELECT)
+                .eq("company_id", company_id)
+                .eq("client_request_id", client_request_id)
+                .limit(1)
+                .execute()
+            )
             if not response.data:
                 return None
             row = response.data[0]
@@ -400,6 +424,7 @@ class SupabaseCleanRunStore(CleanRunStore):
             raised_by=row.get("raised_by"),
             original_photos=original_photos,
             created_by=row.get("created_by_label"),
+            client_request_id=row.get("client_request_id"),
             rejection_reason=row.get("rejection_reason"),
             issued_at=row.get("issued_at"),
             in_progress_at=row.get("started_at"),
@@ -426,9 +451,20 @@ class SupabaseCleanRunStore(CleanRunStore):
         validate_capture(payload, for_issue=issue_now)
         data = self._read_create_context()
         now = now_iso()
-        duplicate = self._recent_duplicate(data.items, payload, now)
-        if duplicate:
-            return duplicate
+        if payload.client_request_id:
+            # A stronger signal than the fingerprint check: this is an explicit
+            # client-issued retry (offline queue replay, concurrent flush, or a
+            # double-tap), not a coincidentally-similar distinct capture. Skip
+            # the fingerprint dedupe entirely when present so real captures with
+            # matching short descriptions don't collapse into one item.
+            company_id = self._ensure_company(data.settings.company)
+            existing = self._find_by_client_request_id(company_id, payload.client_request_id)
+            if existing:
+                return existing
+        else:
+            duplicate = self._recent_duplicate(data.items, payload, now)
+            if duplicate:
+                return duplicate
         code = self.next_code(self._read_code_index(), payload.type, project=payload.project, settings=data.settings)
         payload_data = payload.model_dump(exclude={"status"})
         item = Item(
@@ -490,6 +526,7 @@ class SupabaseCleanRunStore(CleanRunStore):
             "description": item.description,
             "raised_by": item.raised_by,
             "created_by_label": item.created_by,
+            "client_request_id": item.client_request_id,
             "rejection_reason": item.rejection_reason,
             "issued_at": item.issued_at,
             "started_at": item.in_progress_at,

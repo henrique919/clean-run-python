@@ -75,6 +75,21 @@ class SupabaseContractTests(unittest.TestCase):
         migrations = read_migrations().lower()
         self.assertIn("legacy compatibility snapshot only", migrations)
 
+    def test_client_request_id_column_and_scoped_unique_index_exist(self) -> None:
+        # Additive migration for the offline-queue idempotency fix: a nullable
+        # client_request_id column plus a unique index scoped to (company_id,
+        # client_request_id) so create_item() can look up a retried capture
+        # instead of inserting a duplicate. Not applied to the live project by
+        # the agent that wrote it — see the migration file's header comment.
+        migrations = read_migrations().lower()
+        self.assertIn("add column if not exists client_request_id text", migrations)
+        self.assertIn(
+            "create unique index if not exists idx_items_company_client_request_id_unique",
+            migrations,
+        )
+        self.assertIn("on public.items (company_id, client_request_id)", migrations)
+        self.assertIn("where client_request_id is not null", migrations)
+
     def test_foreign_key_columns_are_indexed(self) -> None:
         migrations = read_migrations().lower()
         indexed_columns = [

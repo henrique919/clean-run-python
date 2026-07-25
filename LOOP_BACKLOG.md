@@ -236,6 +236,204 @@ instead of three.
   retrying transient ones. Never silently drop evidence.
 - **Risk:** medium (touches sync logic; needs careful iOS QA).
   **Phone QA:** yes. **Owner gate:** merge approval.
+- **Status (25 Jul 2026):** fix implemented and code-reviewed, on branch in
+  PR #82 (build tag cards63) — `flushQueue()` now classifies
+  transient-vs-permanent failures, quarantines permanent failures into a
+  visible failed-queue with a Discard action instead of blocking the drain
+  forever, and gained a re-entrancy guard for the separate concurrent-flush
+  bug found alongside this one. Still **not ticked**: this needs phone QA
+  on a Render preview (poison-pill recovery, concurrent flush via
+  airplane-mode toggling) before it can be considered verified per this
+  repo's rules for anything touching capture/sync — see PR #82 for the
+  exact test script.
+
+---
+
+### - [ ] IDOR-01 — `/api/photos/markup-source` bypasses the item-visibility allowlist (found during launch assessment, 25 Jul 2026)
+
+- **Plain English:** any signed-in account — including one with zero
+  projects assigned — can fetch the raw bytes of any evidence photo in the
+  bucket by guessing/enumerating its storage path, because one of the two
+  checks on this endpoint is a blanket "is it under `cleanrun/public/`"
+  check rather than "is it a photo this user can actually see."
+- **Evidence:** `app/main.py` — `markup_photo_source()` builds an allowlist
+  from `visible_items(ctx.user, ...)` (correct), but then admits the
+  request anyway `if is_markup_source_path_allowed(path)`
+  (`app/storage.py::is_markup_source_path_allowed`), which returns `True`
+  for any path under the public-launch prefix — i.e. every production
+  photo, since all production evidence lives under `cleanrun/public/`.
+  Compare `/api/photos/refresh-url` (`app/main.py`), which does this
+  correctly: allowlist-only, no bypass.
+- **Suggested fix:** delete the `is_public_launch_storage_path(path)` half
+  of the `or` in `is_markup_source_path_allowed` (keep the staging-path
+  half — a user's own in-progress capture upload legitimately isn't in
+  `visible_items` yet). Track staged-but-not-yet-saved paths per session
+  instead if the allowlist needs to admit them.
+- **Depends on:** should land after SAFETY-BATCH-03 (PR #82) is merged and
+  the anon-access migration is applied — this finding is materially worse
+  before that (anon doesn't even need an account), but stays a real bug
+  after it too (any authenticated account, not just ones with project
+  access).
+- **Risk:** medium — no photos/markup UI change, server-side check only.
+  **Phone QA:** confirm markup still loads for a user's own photos after
+  the fix. **Owner gate:** merge approval.
+
+---
+
+### - [ ] RACE-01 — item code allocation race can 503 and orphan uploaded photos (found during launch assessment, 25 Jul 2026)
+
+- **Plain English:** if two site managers save a new item at close to the
+  same moment, both can get assigned the same `DEF-10NN` code. The
+  database correctly refuses the second one, but by then its photos are
+  already uploaded and the capture is lost — the user just sees a failed
+  save.
+- **Evidence:** `app/store_supabase.py` — the `next_code` allocation reads
+  `max(code)+1` outside the per-process lock, and there's nothing
+  preventing two concurrent requests (different processes, or just two
+  people) from computing the same next code before either commits. `code`
+  is `unique not null` (`supabase/migrations/202606280002_core_schema.sql`),
+  so the second insert raises, and `app/main.py`'s create-item handler
+  turns that into a 503 toast (`main.py`, search the create_item route's
+  except block for the 503 detail construction).
+- **Suggested fix:** allocate codes via a Postgres sequence, or retry the
+  insert with a freshly recomputed code on a `23505` unique-violation
+  (bounded retry, not infinite).
+- **Risk:** medium. **Phone QA:** yes — two devices saving concurrently on
+  the same project. **Owner gate:** merge approval.
+
+---
+
+### - [ ] RACE-02 — item patch is last-write-wins across concurrent edits (found during launch assessment, 25 Jul 2026)
+
+- **Plain English:** if two changes land on the same item close together —
+  e.g. a supervisor closes it out with evidence while an offline device
+  replays a queued comment — one of them silently disappears. Whichever
+  read-modify-write finishes last wins, full stop, with no warning to
+  either party.
+- **Evidence:** `app/store_supabase.py::_patch` reads the current item,
+  applies the mutator, then upserts the **entire row** back. The read
+  happens outside any lock that spans the read-modify-write, and the
+  in-process `RLock` doesn't help across the multiple Render worker
+  processes/threads a `starter` instance can run anyway.
+- **Suggested fix:** switch to targeted column updates with an
+  `updated_at`-based optimistic-concurrency check (`where updated_at = $1`,
+  0 rows affected → 409, caller re-reads and retries) instead of a full-row
+  upsert from a stale read.
+- **Risk:** medium-high (touches every item mutation path — needs careful
+  regression testing, not just phone QA). **Owner gate:** merge approval,
+  recommend its own PR rather than bundling with anything else.
+
+---
+
+### - [x] SEC-02 — JWT audience never verified; wrong/stale secret means a network round-trip on every request (found during launch assessment, 25 Jul 2026) — done: PR #82, `app/auth.py` + `render.yaml`, `tests/test_jwt_verification.py`
+
+- **Plain English:** two related gaps in how the server checks a login
+  token. Neither is exploitable on its own today, but together they mean a
+  misconfigured secret would make the app slow for everyone with no error
+  telling you why.
+- **Evidence:** `app/auth.py::_decode_supabase_jwt` — `verify_aud` is only
+  enabled `if os.getenv("SUPABASE_JWT_AUDIENCE")`, and `render.yaml` never
+  sets that variable, so the `aud` claim is never actually checked.
+  Separately, local verification is wrapped in a bare
+  `except Exception: pass` that falls through to a live call to
+  `{SUPABASE_URL}/auth/v1/user` — meaning if the configured
+  `SUPABASE_JWT_SECRET` is ever wrong (e.g. the Supabase project rotates to
+  its newer asymmetric signing keys), *every single authenticated request*
+  silently starts doing a synchronous network round-trip instead of local
+  verification, with nothing in the logs calling it out.
+- **Suggested fix:** set `SUPABASE_JWT_AUDIENCE=authenticated` in
+  `render.yaml`; add `leeway=30` to the `jwt.decode` call; log once
+  (`logger.warning`, not `pass`) when local verification fails so the
+  fallback path is visible instead of invisible.
+- **Risk:** low (additive checks, existing fallback stays as the safety
+  net). **Phone QA:** no. **Owner gate:** merge approval.
+
+---
+
+### - [ ] UI-01 — Reports and Share Report don't work on iOS Safari (found during launch assessment, 25 Jul 2026)
+
+- **Plain English:** the reports customers actually pay for don't reliably
+  open on an iPhone — the two things this product exists to produce.
+- **Evidence:** `enhancements.js` opens the report in a new tab via
+  `window.open(url, "_blank")` *after* an `await fetch(...)` — by then the
+  original tap's "this was a user gesture" permission has expired, so iOS
+  Safari blocks the popup silently (fallback is just a toast asking the
+  user to allow popups). Separately, `app/reporting.py`'s Share Report flow
+  calls `navigator.share({files: [file]})` with an HTML file — iOS Safari's
+  share sheet doesn't accept HTML files, so `canShare` returns false and it
+  falls back to a `download` attribute on a blob URL, which iOS Safari
+  doesn't honour (and does nothing at all in installed-PWA mode).
+- **Suggested fix:** open the tab synchronously in the click handler
+  (`window.open("", "_blank")` first, write into it once the fetch
+  resolves) rather than after the await. For Share, share the report's URL
+  or plain text on iOS instead of an HTML file.
+- **Risk:** medium. **Phone QA:** yes, this is the whole point — verify on
+  a real iPhone. **Owner gate:** merge approval.
+
+---
+
+### - [ ] UI-02 — Issue/Re-Issue button can silently stop working; Reject/other actions can double-fire (found during launch assessment, 25 Jul 2026)
+
+- **Plain English:** two related double-tap-guard bugs. One can make the
+  Issue button look normal but do nothing until the page is reloaded. The
+  other can let a Reject (or similar) action fire twice from one tap.
+- **Evidence:** `enhancements.js` — the Issue/Re-Issue handler does
+  `cardActionLocks.add(id)` using the id as first rendered, then
+  *reassigns* the same local variable via `id=canonicalItemId(item.id)`
+  partway through the async body, and the `.finally()` deletes the lock
+  under the *new* value — so the original lock key is never removed. This
+  happens whenever `canonicalItemId` normalizes the id differently than
+  how it was first passed in (offline-resolved ids, undashed UUIDs).
+  Separately, the Reject handler (and one other action — search for
+  `setBusyButton` call sites and check what runs *before* it) calls
+  `await chooseImage()` (the photo picker) *before* calling
+  `setBusyButton(...)`, so the button stays tappable for the whole time the
+  picker is open.
+- **Suggested fix:** capture the lock key in a `const` before the async
+  body starts and delete by that captured value; move `setBusyButton(...)`
+  to the very first line of each handler, before any `await`.
+- **Risk:** low-medium, UI-only. **Phone QA:** yes — tap-twice and
+  cancel-the-picker checks. **Owner gate:** merge approval.
+
+---
+
+### - [ ] SW-01 — Service worker can cache a 401 and log an offline user out (found during launch assessment, 25 Jul 2026)
+
+- **Plain English:** if your login expires right before you lose signal,
+  the app can lock you out of your own offline data instead of just
+  showing what's cached.
+- **Evidence:** `service-worker.js` — both the `networkFirst` and
+  `cacheFirst` helpers call `cache.put(cacheKey, response.clone())`
+  unconditionally, with no `response.ok` check, and `/api/state` is routed
+  through `networkFirst`. If `/api/state` ever 401s (expired token) while
+  online, that 401 response gets cached; the next time the device goes
+  offline, the cached 401 is served, the client's `api()` wrapper sees
+  `status === 401` and clears the session — an offline user gets logged
+  out by a cached response, not a real one.
+- **Suggested fix:** only `cache.put` when `response.ok`; also fine to just
+  drop `/api/state` from the service worker's cached routes entirely, since
+  the app already keeps its own IndexedDB copy of state for offline use.
+- **Risk:** low. **Phone QA:** yes — force a 401, go offline, confirm no
+  logout. **Owner gate:** merge approval.
+
+---
+
+### - [ ] LOGOUT-01 — signing out doesn't clear the previous user's data from the device (found during launch assessment, 25 Jul 2026)
+
+- **Plain English:** the Settings screen tells people to "sign out on
+  shared devices when you are finished," but signing out doesn't actually
+  clear anything except the login token — the previous user's project data
+  is still sitting in the browser's local storage for the next person who
+  opens the app offline.
+- **Evidence:** `index.html`'s `logout()` clears the auth token/cookie only
+  — no IndexedDB purge of the cached app state, capture draft, walk
+  context, or offline queue, and no service worker cache clear.
+- **Suggested fix:** on logout, purge the IndexedDB keys the app uses for
+  cached state/drafts/queue and clear the service worker's Cache Storage —
+  refuse (or warn loudly) if the offline queue is non-empty rather than
+  silently discarding unsynced work.
+- **Risk:** low-medium (touches logout, a rarely-exercised path — test
+  carefully). **Phone QA:** yes. **Owner gate:** merge approval.
 
 ---
 

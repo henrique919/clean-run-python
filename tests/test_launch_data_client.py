@@ -1,4 +1,14 @@
-"""Launch-mode Supabase data client selection (create-after-login hotfix)."""
+"""Data-plane Supabase client selection always forwards the caller's JWT.
+
+Previously, production launch mode forced table reads/writes through the
+anon/public client regardless of login (use_public_launch_data_client()),
+because the `authenticated` RLS policies were incomplete when this was
+written. Verified against production 2026-07-25: the anon key alone could
+read and write every table with no login at all. supabase/migrations/
+202607250001_close_anon_data_access.sql closes that at the RLS layer;
+get_data_supabase_client() must always forward the JWT so authenticated
+users still have data-plane access once anon is revoked.
+"""
 
 from __future__ import annotations
 
@@ -6,41 +16,24 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.supabase_client import get_data_supabase_client, use_public_launch_data_client
+from app.supabase_client import get_data_supabase_client
 
 
 class LaunchDataClientTests(unittest.TestCase):
-    def test_production_public_prefix_uses_launch_data_client(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"CLEANRUN_ENV": "production", "CLEANRUN_STORAGE_PATH_PREFIX": "cleanrun/public"},
-            clear=False,
-        ):
-            self.assertTrue(use_public_launch_data_client())
-
-    def test_production_default_prefix_is_public_launch(self) -> None:
-        env = {"CLEANRUN_ENV": "production"}
-        with patch.dict(os.environ, env, clear=False):
-            os.environ.pop("CLEANRUN_STORAGE_PATH_PREFIX", None)
-            self.assertTrue(use_public_launch_data_client())
-
-    def test_non_production_does_not_force_public_client(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"CLEANRUN_ENV": "development", "CLEANRUN_STORAGE_PATH_PREFIX": "cleanrun/public"},
-            clear=False,
-        ):
-            self.assertFalse(use_public_launch_data_client())
-
-    def test_get_data_client_uses_public_in_launch_mode(self) -> None:
+    def test_get_data_client_always_forwards_to_authenticated_client(self) -> None:
         sentinel = object()
-        with patch.dict(os.environ, {"CLEANRUN_ENV": "production"}, clear=False):
-            os.environ.pop("CLEANRUN_STORAGE_PATH_PREFIX", None)
-            with patch("app.supabase_client.get_public_supabase_client", return_value=sentinel) as public:
-                with patch("app.supabase_client.get_supabase_client") as authed:
-                    self.assertIs(get_data_supabase_client(), sentinel)
-                    public.assert_called_once()
-                    authed.assert_not_called()
+        for env in ({"CLEANRUN_ENV": "production"}, {"CLEANRUN_ENV": "development"}):
+            with patch.dict(os.environ, env, clear=False):
+                with patch("app.supabase_client.get_supabase_client", return_value=sentinel) as authed:
+                    with patch("app.supabase_client.get_public_supabase_client") as public:
+                        self.assertIs(get_data_supabase_client(), sentinel)
+                        authed.assert_called_once()
+                        public.assert_not_called()
+
+    def test_use_public_launch_data_client_is_removed(self) -> None:
+        import app.supabase_client as supabase_client_module
+
+        self.assertFalse(hasattr(supabase_client_module, "use_public_launch_data_client"))
 
 
 if __name__ == "__main__":

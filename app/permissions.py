@@ -40,6 +40,18 @@ def can_access_project(user: AuthUser, project: str) -> bool:
     return bool(user.is_service_admin or project_role(user, project))
 
 
+def require_any_project_access(user: AuthUser) -> None:
+    """Reject accounts with zero project roles and zero subcontractor assignments.
+
+    Used for actions (like staging a photo upload) that happen before a
+    specific project/item is known, to stop a signed-in account with no
+    granted access from using authenticated-only capacity at all.
+    """
+    if user.is_service_admin or user.project_roles or user.subcontractors:
+        return
+    forbidden("No project access granted for this account yet")
+
+
 def require_project_access(user: AuthUser, project: str, allowed_roles: Iterable[str] | None = None) -> None:
     role = project_role(user, project)
     if user.is_service_admin:

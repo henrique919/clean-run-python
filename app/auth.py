@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import json
 import time
@@ -19,6 +20,8 @@ try:
 except Exception:  # pragma: no cover - production dependency guard
     jwt = None
 
+
+logger = logging.getLogger(__name__)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 DEFAULT_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
@@ -93,6 +96,14 @@ def _dev_users() -> dict[str, AuthUser]:
             company_id="other-company",
             company_role="admin",
             project_roles={"Other Project": "site_manager"},
+            auth_method="dev",
+        ),
+        "dev-no-project-access": AuthUser(
+            id="dev-no-project-access",
+            email="no.access@cleanrun.local",
+            company_id="demo-company",
+            company_role=None,
+            project_roles={},
             auth_method="dev",
         ),
     }
@@ -223,6 +234,7 @@ def _decode_supabase_jwt(token: str) -> AuthUser:
                 jwt_secret,
                 algorithms=["HS256"],
                 audience=os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated"),
+                leeway=30,
                 options={"verify_aud": bool(os.getenv("SUPABASE_JWT_AUDIENCE"))},
             )
             user = _user_from_claims(claims)
@@ -231,11 +243,14 @@ def _decode_supabase_jwt(token: str) -> AuthUser:
             return user
         except HTTPException:
             raise
-        except Exception:
+        except Exception as exc:
             # Fall through to Supabase's Auth API. This keeps production login
             # working if the project rotates signing keys or Render has a stale
             # JWT secret, without ever using a service-role key in the web app.
-            pass
+            # Logged (not silently passed) because this fallback means every
+            # request from here on pays a synchronous network round-trip to
+            # Supabase instead of verifying locally — worth knowing about.
+            logger.warning("Local JWT verification failed (%s: %s); falling back to Supabase Auth API.", type(exc).__name__, exc)
 
     claims = _fetch_supabase_auth_user(token)
     user = _user_from_claims(claims)

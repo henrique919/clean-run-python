@@ -189,6 +189,13 @@ class ItemCreate(BaseModel):
     voice_transcript: str | None = None
     voice_note: VoiceNote | None = None
     created_by: str | None = None
+    # Client-generated idempotency token (offline queue retries, a concurrent
+    # flush, or a plain double-tap can resend the same capture). When set,
+    # create_item() looks this up before falling back to the fingerprint
+    # dedupe check below. See app/main.py's snake_item_payload
+    # (clientRequestId -> client_request_id) and
+    # CleanRun-IQ-Full-App-Render3/assets/enhancements.js (data.clientRequestId).
+    client_request_id: str | None = None
     status: ItemStatus = ItemStatus.OPEN
 
     @field_validator("description")

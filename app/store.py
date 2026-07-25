@@ -293,9 +293,19 @@ class CleanRunStore:
         validate_capture(payload, for_issue=issue_now)
         data = self._read()
         now = now_iso()
-        duplicate = self._recent_duplicate(data.items, payload, now)
-        if duplicate:
-            return duplicate
+        if payload.client_request_id:
+            # A stronger signal than the fingerprint check: this is an explicit
+            # client-issued retry (offline queue replay, concurrent flush, or a
+            # double-tap), not a coincidentally-similar distinct capture. Skip
+            # the fingerprint dedupe entirely when present so real captures with
+            # matching short descriptions don't collapse into one item.
+            existing = self._find_by_client_request_id(data.items, payload.client_request_id)
+            if existing:
+                return existing
+        else:
+            duplicate = self._recent_duplicate(data.items, payload, now)
+            if duplicate:
+                return duplicate
         code = self.next_code(data.items, payload.type, project=payload.project, settings=data.settings)
         payload_data = payload.model_dump(exclude={"status"})
         item = Item(
@@ -312,6 +322,12 @@ class CleanRunStore:
         data.items.insert(0, item)
         self._write(data)
         return item
+
+    def _find_by_client_request_id(self, items: list[Item], client_request_id: str) -> Item | None:
+        for item in items:
+            if item.client_request_id == client_request_id:
+                return item
+        return None
 
     def _recent_duplicate(self, items: list[Item], payload: ItemCreate, now: str) -> Item | None:
         if DUPLICATE_CREATE_WINDOW_SECONDS <= 0:

@@ -181,6 +181,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .offline-pill.synced{background:#F4F6F8;border-color:#DDE3E8;color:#52606D;font-weight:700}
 .offline-pill.offline{background:#FFF4D6;border-color:#D9A321;color:#6B4300}
 .offline-pill.syncing{background:#E1F7E9;border-color:var(--action-green);color:#0C7733}
+.offline-pill.failed{background:#FDECEC;border-color:var(--status-risk);color:#8B1E1E}
 .capture-draft-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 14px 10px;padding:10px 12px;border:1px solid #DDE3E8;border-radius:12px;background:#F8FAFC;color:#52606D;font-size:12px;font-weight:700}
 .capture-draft-bar[hidden]{display:none!important}
 .capture-draft-bar__text{flex:1;min-width:0;line-height:1.35}
@@ -189,6 +190,7 @@ button[onclick="startDictation()"]::before{content:"🎙️ ";font-size:17px}
 .sync-queue-list .sync-queue-row{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left}
 .sync-queue-row small{display:block;margin-top:2px}
 .sync-queue-state{font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#667085}
+.sync-queue-row-failed small{color:var(--status-risk)}
 body[data-route="capture"] .offline-pill{top:calc(54px + env(safe-area-inset-top))}
 .review-hero{border-left:5px solid var(--action-green)}
 .review-card{border-left:5px solid #121619}

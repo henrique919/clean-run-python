@@ -30,24 +30,15 @@ def get_supabase_client() -> Any:
     return get_public_supabase_client()
 
 
-def use_public_launch_data_client() -> bool:
-    """True when production is still on the temporary public-launch Supabase path.
-
-    Storage already writes evidence under cleanrun/public/* with the anon key
-    (see app/storage.py). Table writes must match: attaching a user JWT switches
-    PostgREST to the authenticated role, and if authenticated launch RLS is
-    missing/incomplete, item create fails with a 503 after login is enabled.
-    """
-    if (os.getenv("CLEANRUN_ENV") or "").lower() != "production":
-        return False
-    prefix = (os.getenv("CLEANRUN_STORAGE_PATH_PREFIX") or "cleanrun/public").strip().strip("/")
-    return prefix == "cleanrun/public" or prefix.startswith("cleanrun/public/")
-
-
 def get_data_supabase_client() -> Any:
-    """Client for item/settings table reads and writes in the active storage mode."""
-    if use_public_launch_data_client():
-        return get_public_supabase_client()
+    """Client for item/settings table reads and writes.
+
+    Always forwards the caller's JWT (falls back to the anon/public client
+    only when no request token is set, e.g. no caller context). Table RLS
+    requires `authenticated` for every launch-mode table — see supabase/
+    migrations/202607250001_close_anon_data_access.sql. Do not special-case
+    a public/anon path here again: the anon role has no grants left.
+    """
     return get_supabase_client()
 
 
