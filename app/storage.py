@@ -75,13 +75,6 @@ def _storage_path_prefix() -> str:
     return "cleanrun/public" if _is_production() else "local-dev/unlinked/unlinked"
 
 
-def _uses_public_launch_prefix(path: str | None) -> bool:
-    if not path:
-        return False
-    prefix = _storage_path_prefix()
-    return path == prefix or path.startswith(f"{prefix}/")
-
-
 def _client_for_storage_path(path: str):
     # Storage RLS now requires an authenticated caller for every path,
     # including cleanrun/public/* (see supabase/migrations/
@@ -484,16 +477,18 @@ def is_staging_storage_path(path: str | None) -> bool:
     return "/staging/" in normalized
 
 
-def is_public_launch_storage_path(path: str | None) -> bool:
-    if not path:
-        return False
-    return _uses_public_launch_prefix(path)
-
-
 def is_markup_source_path_allowed(path: str | None) -> bool:
+    """Allow only a user's own in-progress (not-yet-saved) staged upload.
+
+    Anything already attached to an item must pass through the caller's
+    visible_items() allowlist instead — production evidence photos live
+    under the same "public launch" storage prefix for every project, so
+    admitting that whole prefix here (IDOR-01) let any authenticated user
+    read any other project's photos by guessing/enumerating the path.
+    """
     if not path or path.startswith(("http", "data:", "seed://")):
         return False
-    return is_staging_storage_path(path) or is_public_launch_storage_path(path)
+    return is_staging_storage_path(path)
 
 
 def promote_staged_photo(path: str, *, folder: str) -> str:

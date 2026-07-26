@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from unittest.mock import patch
 
 from app import main as app_main
@@ -154,8 +154,8 @@ class AuthPermissionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="bottom-nav"', response.text)
-        self.assertIn("/assets/enhancements.css?v=cards65", response.text)
-        self.assertIn("/assets/enhancements.js?v=cards65", response.text)
+        self.assertIn("/assets/enhancements.css?v=cards67", response.text)
+        self.assertIn("/assets/enhancements.js?v=cards67", response.text)
         self.assertIn("renderLogin", response.text)
 
     def test_state_scope_active_returns_only_active_project(self) -> None:
@@ -576,6 +576,26 @@ class AuthPermissionTests(unittest.TestCase):
 
         with patch("app.storage._client_for_storage_path", return_value=self._fake_signing_client()):
             response = self.client.post("/api/photos/refresh-url", headers=bearer("dev-site-manager"), json={"url": stale})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_markup_source_rejects_paths_outside_visible_items(self) -> None:
+        # IDOR-01 — markup_photo_source() must reject another project's
+        # evidence photo even though it lives under the same
+        # "cleanrun/public/" prefix every production photo shares.
+        hidden = self.create_direct_item(project="Other Project", subcontractor="Other Trade")
+        hidden_path = "cleanrun/public/projects/other/items/def-9002/original/secret.jpg"
+        data = self.store._read()
+        items = [
+            current.model_copy(update={"original_photos": [hidden_path]}) if current.id == hidden.id else current
+            for current in data.items
+        ]
+        self.store._write(data.model_copy(update={"items": items}))
+
+        response = self.client.get(
+            f"/api/photos/markup-source?url={quote(hidden_path, safe='')}",
+            headers=bearer("dev-site-manager"),
+        )
 
         self.assertEqual(response.status_code, 404)
 

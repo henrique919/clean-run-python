@@ -1,20 +1,22 @@
-const CACHE = "cleanrun-iq-shell-v24";
+const CACHE = "cleanrun-iq-shell-v26";
 const SHELL = [
   "/",
   "/index.html",
-  "/assets/icon-mark.png",
+  "/assets/favicon-32.png",
+  "/assets/icon-192.png",
+  "/assets/apple-touch-icon.png",
   "/assets/chevrons.svg",
-  "/assets/enhancements.css?v=cards65",
-  "/assets/enhancements.js?v=cards65",
+  "/assets/enhancements.css?v=cards67",
+  "/assets/enhancements.js?v=cards67",
   "/manifest.webmanifest",
 ];
 const NETWORK_FIRST = new Set([
   "/",
   "/index.html",
   "/assets/enhancements.css",
-  "/assets/enhancements.css?v=cards65",
+  "/assets/enhancements.css?v=cards67",
   "/assets/enhancements.js",
-  "/assets/enhancements.js?v=cards65",
+  "/assets/enhancements.js?v=cards67",
   "/service-worker.js",
   "/manifest.webmanifest",
 ]);
@@ -42,7 +44,11 @@ async function networkFirst(request, cacheKey = request) {
   const cache = await caches.open(CACHE);
   try {
     const response = await fetch(request, { cache: "no-store" });
-    cache.put(cacheKey, response.clone());
+    // Only cache successful responses (SW-01): caching a 401 here (e.g. an
+    // expired /api/state token) means the next offline load replays that
+    // stale 401, and the client's api() wrapper reads it as a real
+    // "logged out" signal — logging an offline user out on cached data.
+    if (response.ok) cache.put(cacheKey, response.clone());
     return response;
   } catch {
     return (await cache.match(cacheKey)) || Response.error();
@@ -54,7 +60,7 @@ async function cacheFirst(request) {
   const cached = await cache.match(request);
   if (cached) return cached;
   const response = await fetch(request);
-  cache.put(request, response.clone());
+  if (response.ok) cache.put(request, response.clone());
   return response;
 }
 

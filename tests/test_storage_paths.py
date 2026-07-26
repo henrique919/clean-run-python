@@ -24,10 +24,16 @@ class StoragePathTests(unittest.TestCase):
         self.assertTrue(is_staging_storage_path("cleanrun/public/staging/abc123.jpg"))
         self.assertFalse(is_staging_storage_path("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg"))
 
-    def test_markup_source_paths_allow_staging_and_project_evidence(self) -> None:
+    def test_markup_source_paths_allow_only_staging(self) -> None:
+        # IDOR-01: any path already attached to an item (project evidence)
+        # must go through the caller's visible_items() allowlist in
+        # main.py's markup_photo_source(), not this blanket check — every
+        # production project's evidence shares the same storage prefix, so
+        # allowing it here let any authenticated user read any other
+        # project's photos.
         self.assertTrue(is_markup_source_path_allowed("cleanrun/public/staging/abc.jpg"))
         with patch.dict("os.environ", {"CLEANRUN_ENV": "production"}, clear=False):
-            self.assertTrue(is_markup_source_path_allowed("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg"))
+            self.assertFalse(is_markup_source_path_allowed("cleanrun/public/projects/demo/items/def-1001/original/abc.jpg"))
         self.assertFalse(is_markup_source_path_allowed("projects/demo/items/def-1001/original/abc.jpg"))
         self.assertFalse(is_markup_source_path_allowed("https://example.com/photo.jpg"))
 
