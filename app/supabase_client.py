@@ -78,8 +78,33 @@ def _build_supabase_client(access_token: str | None = None) -> Any:
         # out as the anon key — which storage RLS now rejects (migration
         # 202607250001_close_anon_data_access.sql).
         options = client_options_cls(headers={"Authorization": f"Bearer {access_token}"})
-        return create_client(supabase_url, supabase_key, options)
+        client = create_client(supabase_url, supabase_key, options)
+        _stamp_storage_authorization(client, access_token)
+        return client
     return create_client(supabase_url, supabase_key)
+
+
+def _stamp_storage_authorization(client: Any, access_token: str) -> None:
+    """Force the user JWT onto the storage sub-client's HTTP session.
+
+    Version-proofing: newer supabase-py releases (production's cached build
+    env drifted onto one — see requirements.txt pins) changed how
+    options.headers merge with the default auth headers, which can leave
+    storage still sending the anon key. Stamping the header directly on the
+    storage HTTP session works on every storage3 layout we can reach and is
+    a no-op when construction already set it correctly.
+    """
+    try:
+        storage = client.storage
+        for attr in ("_client", "session"):
+            http_client = getattr(storage, attr, None)
+            headers = getattr(http_client, "headers", None)
+            if headers is not None:
+                headers["Authorization"] = f"Bearer {access_token}"
+                return
+        logger.warning("Could not stamp Authorization on the storage client (unknown storage3 layout)")
+    except Exception:
+        logger.exception("Failed stamping Authorization on the storage client")
 
 
 def _load_supabase_create_client() -> tuple[Any, Any]:
