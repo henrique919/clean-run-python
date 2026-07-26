@@ -491,45 +491,47 @@ the mechanics; the owner's real-iPhone airplane-mode run
 (`docs/VERIFY-01-offline-field-test.md`) is still the final word for iOS
 Safari + real camera.
 
-### - [ ] APPSTORE-01 — OWNER DECISIONS: what's actually needed before Apple App Store / Google Play submission (found during app-store-readiness review, 26 Jul 2026)
+### - [x] APPSTORE-01 — OWNER DECISIONS: what's actually needed before Apple App Store / Google Play submission (found during app-store-readiness review, 26 Jul 2026) — decisions 1-3 resolved same day per owner reply ("no business. info@. go with optimal icon."); decision 4 (native wrapper) still open
 
 - **Plain English:** CleanRun IQ today is a website/PWA, not a native app —
   there is no iOS or Android project anywhere in this repo. You cannot
   submit a website to either store as-is. Before any of that work starts,
   four decisions are yours to make; nothing below gets built without your
   "Yes, proceed" on each.
-- **1. Icon/logo.** The current app icon (`assets/icon-mark.png`, the
-  chevron mark) is 105×78px — too small and the wrong shape for a real app
-  icon anywhere (home screen, App Store listing, Play listing all need
-  square icons starting at 512–1024px). A completely different, unrelated
-  logo (a running-figure-and-checkmark mark, navy background) was found
-  sitting in an old Expo/mobile-app prototype folder
-  (`rork-cleanrun-iq-3-v3-logo-250-bigger(1)/.../expo/assets/images/icon.png`,
-  a real 1024×1024 file) — agents did **not** switch to it; that is a
-  branding call for you, not a bug fix. **Decide:** keep the chevron mark
-  (and commission/produce a proper high-resolution version of it), switch
-  to the running-figure mark, or something else — then a follow-up task
-  generates the actual icon set (192/512/maskable for Android,
-  apple-touch-icon 180×180 + no-alpha 1024×1024 for iOS/App Store Connect).
-  Config-only manifest/meta-tag groundwork that doesn't depend on this
-  decision is already done (see below).
-- **2. Legal pages aren't submission-ready yet.** `clean-run-website`'s
-  Privacy Policy and Terms of Service both still contain a literal
-  unfilled placeholder — `[Legal entity name — insert ABN]` (Terms also has
-  `[State/Territory — insert]` for governing law) — and both carry a
-  visible on-page banner saying the policy "has not yet been reviewed by a
-  qualified Australian legal adviser... outstanding before this page is
-  considered final." App Store Connect and Play Console reviewers open
-  these URLs directly. **Needed from you:** your registered business name
-  and ABN (and which state/territory governs the Terms), so these can be
-  filled in; and a decision on whether you want an actual legal review
-  before submission or are comfortable shipping the plain-English draft
-  as-is.
-- **3. Support contact address is inconsistent.** The website shows
-  `hello@cleanruniq.com` on the Contact/Demo pages but
-  `info@cleanruniq.com` on Privacy/Terms. **Needed from you:** confirm
-  which inbox is actually monitored so store listings and legal pages
-  point at the same live address.
+- **1. Icon/logo — RESOLVED, "go with optimal icon."** Swapped to the
+  higher-quality 1024×1024 running-figure-and-checkmark mark (the only
+  real square, high-resolution source available; the old
+  105×78 chevron `icon-mark.png` was too small/wrong-shaped for any store
+  and has been removed). Generated and wired up the full set:
+  `assets/icon-192.png`, `icon-512.png`, `icon-maskable-512.png`
+  (content already sits within the maskable safe zone — measured at ~65%
+  width, well inside the 80% circle), `apple-touch-icon.png` (180×180),
+  `favicon-32.png`/`favicon-16.png`, and `icon-1024.png` (no-alpha master,
+  ready for the future App Store Connect / Play Console listing upload —
+  not linked from the app itself). Manifest and `index.html` updated
+  accordingly (cards67). Note: this only changes the home-screen/favicon
+  icon — the in-app brand mark (chevron SVG in the top bar and loading
+  screen, `assets/chevrons.svg`) is a separate element and was **not**
+  touched.
+- **2. Legal pages — RESOLVED, "no business."** Read as: no separate
+  registered company at this stage. Both Privacy Policy and Terms of
+  Service now describe CleanRun IQ as operated by its founder as an
+  individual rather than a registered company, and the outstanding-review
+  banners no longer reference a missing ABN/entity name (that line item is
+  resolved; only the "not yet reviewed by a qualified Australian legal
+  adviser" review itself remains outstanding). Terms' governing-law clause
+  now reads "the laws of Australia" / "Australian courts" generically
+  (no specific state/territory was given — flag to the owner: worth
+  tightening to a specific state once/if you register a business address,
+  but not a blocker to submit as a non-final draft, which the page already
+  discloses it is).
+- **3. Support contact address — RESOLVED, "info@".** Contact and Demo
+  pages' `PUBLIC_CONTACT_EMAIL` fallback (and the two resource-page
+  fallbacks) now default to `info@cleanruniq.com`, matching Privacy/Terms.
+  Note: Render has `PUBLIC_CONTACT_EMAIL` set as a dashboard env var
+  (`sync: false` in `render.yaml`) — if it's currently set to something
+  else there, the dashboard value wins over this code default; only the
+  owner can check/change that in the Render dashboard.
 - **4. Native wrapper path.** Neither store will list the site directly.
   Realistic routes: **Google Play** — a Trusted Web Activity (PWABuilder
   or Bubblewrap) wraps the existing PWA with minimal new code; Google
