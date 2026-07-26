@@ -246,10 +246,12 @@ instead of three.
   airplane-mode toggling) before it can be considered verified per this
   repo's rules for anything touching capture/sync — see PR #82 for the
   exact test script.
+- **Re-verified 26 Jul 2026:** fix confirmed present and unchanged on
+  `main`. Still awaiting the phone QA above before ticking.
 
 ---
 
-### - [ ] IDOR-01 — `/api/photos/markup-source` bypasses the item-visibility allowlist (found during launch assessment, 25 Jul 2026)
+### - [x] IDOR-01 — `/api/photos/markup-source` bypasses the item-visibility allowlist (found during launch assessment, 25 Jul 2026) — done: verified still present 26 Jul, fixed same day (`app/storage.py::is_markup_source_path_allowed`, `tests/test_auth_permissions.py::test_markup_source_rejects_paths_outside_visible_items`)
 
 - **Plain English:** any signed-in account — including one with zero
   projects assigned — can fetch the raw bytes of any evidence photo in the
@@ -280,7 +282,7 @@ instead of three.
 
 ---
 
-### - [ ] RACE-01 — item code allocation race can 503 and orphan uploaded photos (found during launch assessment, 25 Jul 2026)
+### - [x] RACE-01 — item code allocation race can 503 and orphan uploaded photos (found during launch assessment, 25 Jul 2026) — done: fixed on `main` as part of the "Fix Esplanade capture wedge" commit (71132b3) — bounded 3-attempt retry on `items_code_key`/23505 with a freshly recomputed code; verified 26 Jul
 
 - **Plain English:** if two site managers save a new item at close to the
   same moment, both can get assigned the same `DEF-10NN` code. The
@@ -415,6 +417,10 @@ instead of three.
   the app already keeps its own IndexedDB copy of state for offline use.
 - **Risk:** low. **Phone QA:** yes — force a 401, go offline, confirm no
   logout. **Owner gate:** merge approval.
+- **Status (26 Jul 2026):** fix implemented in `service-worker.js`'s
+  `networkFirst`/`cacheFirst` (both now guard `cache.put` on
+  `response.ok`), cache bumped to `cleanrun-iq-shell-v25`. Still **not
+  ticked** — needs the phone QA described above before merge.
 
 ---
 
@@ -484,6 +490,78 @@ inspected), pill "Synced ✓" · plus the QUEUE-01 finding above. This proves
 the mechanics; the owner's real-iPhone airplane-mode run
 (`docs/VERIFY-01-offline-field-test.md`) is still the final word for iOS
 Safari + real camera.
+
+### - [ ] APPSTORE-01 — OWNER DECISIONS: what's actually needed before Apple App Store / Google Play submission (found during app-store-readiness review, 26 Jul 2026)
+
+- **Plain English:** CleanRun IQ today is a website/PWA, not a native app —
+  there is no iOS or Android project anywhere in this repo. You cannot
+  submit a website to either store as-is. Before any of that work starts,
+  four decisions are yours to make; nothing below gets built without your
+  "Yes, proceed" on each.
+- **1. Icon/logo.** The current app icon (`assets/icon-mark.png`, the
+  chevron mark) is 105×78px — too small and the wrong shape for a real app
+  icon anywhere (home screen, App Store listing, Play listing all need
+  square icons starting at 512–1024px). A completely different, unrelated
+  logo (a running-figure-and-checkmark mark, navy background) was found
+  sitting in an old Expo/mobile-app prototype folder
+  (`rork-cleanrun-iq-3-v3-logo-250-bigger(1)/.../expo/assets/images/icon.png`,
+  a real 1024×1024 file) — agents did **not** switch to it; that is a
+  branding call for you, not a bug fix. **Decide:** keep the chevron mark
+  (and commission/produce a proper high-resolution version of it), switch
+  to the running-figure mark, or something else — then a follow-up task
+  generates the actual icon set (192/512/maskable for Android,
+  apple-touch-icon 180×180 + no-alpha 1024×1024 for iOS/App Store Connect).
+  Config-only manifest/meta-tag groundwork that doesn't depend on this
+  decision is already done (see below).
+- **2. Legal pages aren't submission-ready yet.** `clean-run-website`'s
+  Privacy Policy and Terms of Service both still contain a literal
+  unfilled placeholder — `[Legal entity name — insert ABN]` (Terms also has
+  `[State/Territory — insert]` for governing law) — and both carry a
+  visible on-page banner saying the policy "has not yet been reviewed by a
+  qualified Australian legal adviser... outstanding before this page is
+  considered final." App Store Connect and Play Console reviewers open
+  these URLs directly. **Needed from you:** your registered business name
+  and ABN (and which state/territory governs the Terms), so these can be
+  filled in; and a decision on whether you want an actual legal review
+  before submission or are comfortable shipping the plain-English draft
+  as-is.
+- **3. Support contact address is inconsistent.** The website shows
+  `hello@cleanruniq.com` on the Contact/Demo pages but
+  `info@cleanruniq.com` on Privacy/Terms. **Needed from you:** confirm
+  which inbox is actually monitored so store listings and legal pages
+  point at the same live address.
+- **4. Native wrapper path.** Neither store will list the site directly.
+  Realistic routes: **Google Play** — a Trusted Web Activity (PWABuilder
+  or Bubblewrap) wraps the existing PWA with minimal new code; Google
+  explicitly supports this, no "just a website" rejection risk; ~$25
+  one-time account fee; roughly 1–2 weeks once assets exist (longer if
+  Google's new-account closed-testing period applies). **Apple App Store**
+  — needs a real native wrapper (Capacitor is the standard low-effort
+  choice, works with the existing vanilla-JS app with no rewrite);
+  bare-wrapped-website submissions risk rejection under Guideline 4.2, so
+  pairing it with at least one real native feature (Capacitor's Camera
+  plugin fits naturally, and would also route around the iOS Safari camera
+  quirks already flagged in this file) is the safer bet; $99/year Apple
+  Developer account, a Mac or cloud-Mac CI for the Xcode build, and roughly
+  2–4 weeks end to end. Both stores also need a reviewer/demo login with
+  realistic seeded data — **agents cannot create or hold this**
+  (credentials rule); it must be provisioned by you. **Needed from you:**
+  go/no-go on building a wrapper at all, which store to prioritise first
+  (Play is faster and lower-risk), and sign-off to create a new, separate
+  wrapper repo — this is new build tooling (npm/Capacitor or
+  PWABuilder/Bubblewrap) but lives in its own project, the same way
+  `clean-run-website` already sits alongside this repo; it does not touch
+  `index.html`/`enhancements.js`/`app.py`.
+- **Already done, no action needed:** Privacy Policy content itself is
+  accurate against what the app actually collects (photos, optional GPS on
+  capture, account email — cross-checked against
+  `enhancements.js`'s geolocation call and Supabase storage architecture).
+  Config-only PWA meta tags that don't depend on the icon decision are
+  already added (`apple-mobile-web-app-capable`,
+  `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`,
+  `mobile-web-app-capable`, manifest `id`/`scope`).
+- **Risk:** none from the review itself (no live change to who can access
+  what). **Phone QA:** n/a. **Owner gate:** all four decisions above.
 
 ## Blocked records
 
